@@ -83,11 +83,7 @@
                 {
                     "path": "src/filters/use-filters.ts",
                     "type": "registry:hook",
-                    "target": "resources/js/components/filters/use-filter.ts"
-                },
-                {
-                    "path": "src/ui/dropdown-menu-reverted-sub-trigger.tsx",
-                    "type": "registry:component"
+                    "target": "resources/js/components/filters/use-filters.ts"
                 }
             ]
         }
