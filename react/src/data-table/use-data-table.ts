@@ -182,6 +182,7 @@ export function useDataTable<TData>({ tableData, tableName, columnDefs }: UseDat
         [tableData.columns],
     );
 
+    // eslint-disable-next-line react-hooks/incompatible-library
     const table = useReactTable<TData>({
         data: tableData.data,
         columns: columnDefs,

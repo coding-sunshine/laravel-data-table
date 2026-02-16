@@ -1,18 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-} from "@/components/ui/command";
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { ArrowRightIcon, ChevronRightIcon, FilterIcon, Trash2, X } from "lucide-react";
@@ -39,15 +28,15 @@ const BOOL_LABELS: Record<string, string> = { "1": "Oui", "0": "Non" };
 
 function formatValueLabel(
     column: FilterColumn,
-    values: string[],
+    values: string[]
 ): string {
     if (column.type === "boolean") {
         return values.map((v) => BOOL_LABELS[v] ?? v).join(", ");
     }
     if (column.type === "option" && column.options) {
         const labels = values
-            .map((v) => column.options!.find((o) => o.value === v)?.label ?? v)
-            .slice(0, 3);
+        .map((v) => column.options!.find((o) => o.value === v)?.label ?? v)
+        .slice(0, 3);
         const suffix = values.length > 3 ? ` +${values.length - 3}` : "";
         return labels.join(", ") + suffix;
     }
@@ -71,13 +60,13 @@ function getOperatorLabel(column: FilterColumn, operator: string): string {
 type PillSection = "operator" | "value";
 
 function FilterPill({
-    column,
-    filterValue,
-    openSection,
-    onSectionChange,
-    onClear,
-    onSubmit,
-}: {
+                        column,
+                        filterValue,
+                        openSection,
+                        onSectionChange,
+                        onClear,
+                        onSubmit
+                    }: {
     column: FilterColumn;
     filterValue: FilterValue;
     openSection: PillSection | null;
@@ -94,7 +83,8 @@ function FilterPill({
     }
 
     return (
-        <div className="group/pill flex h-7 items-center rounded-2xl border border-border bg-background text-xs shadow-xs transition-colors duration-150 has-[>[data-slot=clear]:hover]:border-destructive/40 has-[>[data-slot=clear]:hover]:bg-destructive/5">
+        <div
+            className="group/pill flex h-7 items-center rounded-2xl border border-border bg-background text-xs shadow-xs transition-colors duration-150 has-[>[data-slot=clear]:hover]:border-destructive/40 has-[>[data-slot=clear]:hover]:bg-destructive/5">
             <span className="flex select-none items-center gap-1 whitespace-nowrap px-2 font-medium">
                 {Icon && <Icon className="size-3.5 stroke-[2.25px]" />}
                 <span>{column.label}</span>
@@ -148,7 +138,7 @@ function FilterPill({
                         type="button"
                         className={cn(
                             "h-full whitespace-nowrap px-2 max-w-[200px] truncate hover:bg-accent transition-colors",
-                            column.type === "number" && "tabular-nums",
+                            column.type === "number" && "tabular-nums"
                         )}
                     >
                         {formatValueLabel(column, filterValue.values)}
@@ -190,12 +180,11 @@ export function Filters({ columns, serverFilters }: FiltersProps) {
 
     const optionColumns = useMemo(
         () => columns.filter((c) => c.type === "option" && c.options),
-        [columns],
+        [columns]
     );
 
     useEffect(() => {
         if (selectorColumn) {
-            setSearch("");
             inputRef.current?.focus();
         }
     }, [selectorColumn]);
@@ -331,7 +320,10 @@ export function Filters({ columns, serverFilters }: FiltersProps) {
                                                 key={col.id}
                                                 value={col.id}
                                                 keywords={[col.label]}
-                                                onSelect={() => setSelectorColumn(col.id)}
+                                                onSelect={() => {
+                                                    setSearch("");
+                                                    setSelectorColumn(col.id);
+                                                }}
                                                 className="group"
                                             >
                                                 <div className="flex w-full items-center justify-between">
@@ -346,7 +338,8 @@ export function Filters({ columns, serverFilters }: FiltersProps) {
                                                             {col.label}
                                                         </span>
                                                     </div>
-                                                    <ArrowRightIcon className="size-4 opacity-0 group-aria-selected:opacity-100" />
+                                                    <ArrowRightIcon
+                                                        className="size-4 opacity-0 group-aria-selected:opacity-100" />
                                                 </div>
                                             </CommandItem>
                                         );
@@ -381,7 +374,8 @@ export function Filters({ columns, serverFilters }: FiltersProps) {
                                                                         <span className="text-muted-foreground">
                                                                             {col.label}
                                                                         </span>
-                                                                        <ChevronRightIcon className="size-3.5 text-muted-foreground/75" />
+                                                                        <ChevronRightIcon
+                                                                            className="size-3.5 text-muted-foreground/75" />
                                                                         <span>{opt.label}</span>
                                                                     </div>
                                                                 </div>
