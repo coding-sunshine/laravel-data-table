@@ -16,5 +16,14 @@ class DataTableResponse extends Data
         public DataTableMeta $meta,
         public ?string $exportUrl = null,
         public ?array $footer = null,
+        public ?string $selectAllUrl = null,
+        /** Full-dataset summary aggregations (sum/avg/min/max/count) */
+        public ?array $summary = null,
+        /** Table configuration for frontend features */
+        public ?array $config = null,
+        /** URL for boolean toggle updates */
+        public ?string $toggleUrl = null,
+        /** Enum filter options resolved from PHP enums */
+        public ?array $enumOptions = null,
     ) {}
 }
