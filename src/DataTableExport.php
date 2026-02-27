@@ -36,7 +36,7 @@ class DataTableExport implements FromQuery, WithHeadings, WithMapping
             $value = data_get($row, $col['id']);
 
             if (is_bool($value)) {
-                return $value ? 'Oui' : 'Non';
+                return $value ? 'Yes' : 'No';
             }
 
             return $value;

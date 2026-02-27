@@ -20,6 +20,7 @@ trait HasExport
     public static function tableExportColumns(): array
     {
         return collect(static::tableColumns())
+            ->filter(fn (Column $col) => ! in_array($col->type, ['image'], true))
             ->map(fn (Column $col) => ['id' => $col->id, 'label' => $col->label])
             ->values()
             ->all();
@@ -67,10 +68,15 @@ trait HasExport
 
         $writerType = match ($format) {
             'csv' => \Maatwebsite\Excel\Excel::CSV,
+            'pdf' => \Maatwebsite\Excel\Excel::DOMPDF,
             default => \Maatwebsite\Excel\Excel::XLSX,
         };
 
-        $extension = $format === 'csv' ? 'csv' : 'xlsx';
+        $extension = match ($format) {
+            'csv' => 'csv',
+            'pdf' => 'pdf',
+            default => 'xlsx',
+        };
 
         $export = new DataTableExport($query->getEloquentBuilder(), $columns);
 

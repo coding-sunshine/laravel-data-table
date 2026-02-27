@@ -11,6 +11,14 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter as DialogFoot,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -21,6 +29,7 @@ import {
     DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Filters } from "../filters/filters";
 import type { FilterColumn } from "../filters/types";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,12 +41,16 @@ import {
     CircleDot,
     Download,
     EllipsisVertical,
+    FileDown,
     FileSpreadsheet,
     FileText,
     GripVertical,
     Hash,
+    Image as ImageIcon,
     List,
+    Search,
     SlidersHorizontal,
+    Tag,
     ToggleLeft,
     Type,
     X,
@@ -49,10 +62,11 @@ import {
 } from "@/components/ui/popover";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { DataTableColumnHeader } from "./data-table-column-header";
+import { defaultTranslations, type DataTableTranslations } from "./i18n";
 import { DataTablePagination } from "./data-table-pagination";
 import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
-import type { DataTableColumnDef, DataTableOptions, DataTableProps } from "./types";
+import type { DataTableColumnDef, DataTableConfirmOptions, DataTableOptions, DataTableProps } from "./types";
 import { useDataTable } from "./use-data-table";
 
 function buildExportUrl(baseUrl: string, format: string, visibleColumns?: string[]): string {
@@ -79,13 +93,13 @@ function getColumnPinningProps<T>(column: Column<T, unknown>) {
             zIndex: 1,
         } as React.CSSProperties,
         className: cn(
-            isPinned === "left" && column.getIsLastColumn("left") && "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]",
-            isPinned === "right" && column.getIsFirstColumn("right") && "shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)]",
+            isPinned === "left" && column.getIsLastColumn("left") && "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_4px_-2px_rgba(255,255,255,0.05)]",
+            isPinned === "right" && column.getIsFirstColumn("right") && "shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)] dark:shadow-[-2px_0_4px_-2px_rgba(255,255,255,0.05)]",
         ),
     };
 }
 
-/** Opaque background for pinned cells in data rows — matches zebra stripe visually */
+/** Opaque background for pinned cells in data rows */
 function getPinnedCellBg(isPinned: string | false, _isEvenRow: boolean, isSelected: boolean): React.CSSProperties {
     if (!isPinned) return {};
     const base: React.CSSProperties = {};
@@ -93,7 +107,17 @@ function getPinnedCellBg(isPinned: string | false, _isEvenRow: boolean, isSelect
     return base;
 }
 
-function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions }: {
+/** Badge variant styles */
+const BADGE_VARIANTS: Record<string, string> = {
+    default: "bg-primary/10 text-primary dark:bg-primary/20",
+    success: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    warning: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+    danger: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+    info: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    secondary: "bg-muted text-muted-foreground",
+};
+
+function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t }: {
     tableData: { quickViews: import("./types").DataTableQuickView[]; exportUrl?: string | null; columns: DataTableColumnDef[] };
     table: TanStackTable<TData>;
     tableName: string;
@@ -104,6 +128,7 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
     handleApplyQuickView: (params: Record<string, unknown>) => void;
     handleApplyCustomSearch: (search: string) => void;
     resolvedOptions: DataTableOptions;
+    t: DataTableTranslations;
 }) {
     return (
         <div className="flex gap-3 px-4">
@@ -119,6 +144,7 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                     onApplyColumns={applyColumns}
                     onApplyColumnOrder={onReorderColumns}
                     enableCustom={resolvedOptions.customQuickViews}
+                    t={t}
                 />
             )}
             {resolvedOptions.exports && tableData.exportUrl && (
@@ -126,11 +152,11 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="h-8">
                             <Download className="h-4 w-4" />
-                            Exporter
+                            {t.export}
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Format d'export</DropdownMenuLabel>
+                        <DropdownMenuLabel>{t.exportFormat}</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem asChild>
                             <a href={buildExportUrl(
@@ -156,6 +182,18 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                                 CSV (.csv)
                             </a>
                         </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                            <a href={buildExportUrl(
+                                tableData.exportUrl,
+                                "pdf",
+                                table.getVisibleLeafColumns()
+                                    .filter((c) => c.getCanHide())
+                                    .map((c) => c.id),
+                            )}>
+                                <FileDown className="mr-2 h-4 w-4" />
+                                PDF (.pdf)
+                            </a>
+                        </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
             )}
@@ -167,19 +205,21 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                     onReorder={onReorderColumns}
                     showVisibility={resolvedOptions.columnVisibility}
                     showOrdering={resolvedOptions.columnOrdering}
+                    t={t}
                 />
             )}
         </div>
     );
 }
 
-function ColumnsDropdown<TData>({ table, tableColumns, columnOrder, onReorder, showVisibility, showOrdering }: {
+function ColumnsDropdown<TData>({ table, tableColumns, columnOrder, onReorder, showVisibility, showOrdering, t }: {
     table: TanStackTable<TData>;
     tableColumns: DataTableColumnDef[];
     columnOrder: ColumnOrderState;
     onReorder: (order: ColumnOrderState) => void;
     showVisibility: boolean;
     showOrdering: boolean;
+    t: DataTableTranslations;
 }) {
     const dragItem = useRef<string | null>(null);
     const dragOverRef = useRef<string | null>(null);
@@ -277,12 +317,12 @@ function ColumnsDropdown<TData>({ table, tableColumns, columnOrder, onReorder, s
             <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8">
                     <SlidersHorizontal className="h-4 w-4" />
-                    Colonnes
+                    {t.columns}
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-h-[400px] w-60 overflow-y-auto">
                 <div className="flex items-center justify-between px-2 py-1.5">
-                    <span className="text-sm font-semibold">Colonnes</span>
+                    <span className="text-sm font-semibold">{t.columns}</span>
                     {showOrdering && (
                         <Button
                             variant="ghost"
@@ -294,7 +334,7 @@ function ColumnsDropdown<TData>({ table, tableColumns, columnOrder, onReorder, s
                                 setReordering((r) => !r);
                             }}
                         >
-                            {reordering ? "Terminé" : "Réordonner"}
+                            {reordering ? t.done : t.reorder}
                         </Button>
                     )}
                 </div>
@@ -324,6 +364,8 @@ const TYPE_ICON_MAP: Record<string, FilterColumn["icon"]> = {
     option: CircleDot,
     multiOption: List,
     boolean: ToggleLeft,
+    image: ImageIcon,
+    badge: Tag,
 };
 
 function buildFilterColumns(columns: DataTableColumnDef[]): FilterColumn[] {
@@ -346,15 +388,29 @@ export function DataTable<TData extends object>({
     className,
     tableData,
     tableName,
+    prefix,
     actions,
     bulkActions,
     renderCell,
     renderHeader,
     renderFooterCell,
     rowClassName,
+    rowDataAttributes,
     groupClassName,
     options: optionsOverride,
+    translations: translationsOverride,
+    onRowClick,
+    rowLink,
+    emptyState,
+    debounceMs,
+    partialReloadKey,
+    slots,
 }: DataTableProps<TData>) {
+    const t = useMemo<DataTableTranslations>(
+        () => ({ ...defaultTranslations, ...translationsOverride }),
+        [translationsOverride],
+    );
+
     const resolvedOptions = useMemo<DataTableOptions>(() => ({
         quickViews: true,
         customQuickViews: true,
@@ -362,10 +418,16 @@ export function DataTable<TData extends object>({
         filters: true,
         columnVisibility: true,
         columnOrdering: true,
+        stickyHeader: false,
+        globalSearch: false,
         ...optionsOverride,
     }), [optionsOverride]);
 
     const hasBulkActions = bulkActions && bulkActions.length > 0;
+    const isClickable = !!onRowClick || !!rowLink;
+
+    // Bulk action confirmation dialog state
+    const [bulkConfirm, setBulkConfirm] = useState<{ action: (typeof bulkActions extends (infer U)[] ? U : never); opts: DataTableConfirmOptions; rows: TData[] } | null>(null);
 
     const columnDefs = useMemo<ColumnDef<TData>[]>(() => {
         function makeLeafCol(col: DataTableColumnDef): ColumnDef<TData> {
@@ -384,21 +446,42 @@ export function DataTable<TData extends object>({
                     if (value === null || value === undefined) {
                         return <span className="text-muted-foreground">—</span>;
                     }
+                    // Image column type
+                    if (col.type === "image" && typeof value === "string") {
+                        return (
+                            <img
+                                src={value}
+                                alt=""
+                                className="h-8 w-8 rounded-md object-cover"
+                            />
+                        );
+                    }
+                    // Badge column type
+                    if (col.type === "badge") {
+                        const strValue = String(value);
+                        const opt = col.options?.find((o) => o.value === strValue);
+                        const variant = opt?.variant ?? "default";
+                        const badgeLabel = opt?.label ?? strValue;
+                        return (
+                            <span className={cn(
+                                "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                BADGE_VARIANTS[variant] ?? BADGE_VARIANTS.default,
+                            )}>
+                                {badgeLabel}
+                            </span>
+                        );
+                    }
                     if (typeof value === "boolean") {
                         return value ? (
-                            <Check className="inline-flex h-4 items-center rounded-full shadow-green-100 font-medium text-green-800 dark:shadow-green-900/30 dark:text-green-400">
-                                Oui
-                            </Check>
+                            <Check className="inline-flex h-4 items-center rounded-full font-medium text-green-800 dark:text-green-400" />
                         ) : (
-                            <X className="inline-flex h-4 items-center rounded-full shadow-red-100 font-medium text-red-800 dark:shadow-red-900/30 dark:text-red-400">
-                                Non
-                            </X>
+                            <X className="inline-flex h-4 items-center rounded-full font-medium text-red-800 dark:text-red-400" />
                         );
                     }
                     if (col.type === "number" && typeof value === "number") {
                         return (
                             <span className="tabular-nums">
-                                {value.toLocaleString("fr-TN")}
+                                {value.toLocaleString()}
                             </span>
                         );
                     }
@@ -412,18 +495,18 @@ export function DataTable<TData extends object>({
         if (hasBulkActions) {
             result.push({
                 id: "_select",
-                header: ({ table: t }) => (
+                header: ({ table: tbl }) => (
                     <Checkbox
-                        checked={t.getIsAllPageRowsSelected() || (t.getIsSomePageRowsSelected() && "indeterminate")}
-                        onCheckedChange={(value) => t.toggleAllPageRowsSelected(!!value)}
-                        aria-label="Tout sélectionner"
+                        checked={tbl.getIsAllPageRowsSelected() || (tbl.getIsSomePageRowsSelected() && "indeterminate")}
+                        onCheckedChange={(value) => tbl.toggleAllPageRowsSelected(!!value)}
+                        aria-label={t.selectAll}
                     />
                 ),
                 cell: ({ row }) => (
                     <Checkbox
                         checked={row.getIsSelected()}
                         onCheckedChange={(value) => row.toggleSelected(!!value)}
-                        aria-label="Sélectionner la ligne"
+                        aria-label={t.selectRow}
                     />
                 ),
                 enableHiding: false,
@@ -452,13 +535,13 @@ export function DataTable<TData extends object>({
                 header: "",
                 enableHiding: false,
                 cell: ({ row }) => (
-                    <DataTableRowActions row={row.original} actions={actions} />
+                    <DataTableRowActions row={row.original} actions={actions} t={t} />
                 ),
             });
         }
 
         return result;
-    }, [tableData.columns, actions, hasBulkActions, renderCell]);
+    }, [tableData.columns, actions, hasBulkActions, renderCell, t]);
 
     const {
         table,
@@ -472,12 +555,17 @@ export function DataTable<TData extends object>({
         handleSort,
         handlePageChange,
         handlePerPageChange,
+        handleCursorChange,
+        handleGlobalSearch,
         handleApplyQuickView,
         handleApplyCustomSearch,
     } = useDataTable<TData>({
         tableData,
         tableName,
         columnDefs,
+        prefix,
+        debounceMs,
+        partialReloadKey,
     });
 
     const filterColumns = useMemo(
@@ -491,57 +579,103 @@ export function DataTable<TData extends object>({
         [rowSelection, tableData.data],
     );
 
+    // Global search state
+    const searchKey = prefix ? `${prefix}_search` : "search";
+    const initialSearch = typeof window !== "undefined"
+        ? new URL(window.location.href).searchParams.get(searchKey) ?? ""
+        : "";
+    const [globalSearchValue, setGlobalSearchValue] = useState(initialSearch);
+
+    function handleGlobalSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
+        setGlobalSearchValue(e.target.value);
+        handleGlobalSearch(e.target.value);
+    }
+
+    function handleBulkClick(action: NonNullable<typeof bulkActions>[number]) {
+        if (action.confirm) {
+            const opts: DataTableConfirmOptions = typeof action.confirm === "object" ? action.confirm : {};
+            setBulkConfirm({ action, opts, rows: selectedRows });
+        } else {
+            action.onClick(selectedRows);
+        }
+    }
+
+    function handleRowInteraction(row: TData, e: React.MouseEvent) {
+        if (rowLink) {
+            const href = rowLink(row);
+            if (e.metaKey || e.ctrlKey) {
+                window.open(href, "_blank");
+            } else {
+                window.location.href = href;
+            }
+        } else if (onRowClick) {
+            onRowClick(row);
+        }
+    }
+
+    const toolbarProps = {
+        tableData,
+        table,
+        tableName,
+        columnVisibility,
+        columnOrder,
+        applyColumns,
+        onReorderColumns: setColumnOrder,
+        handleApplyQuickView,
+        handleApplyCustomSearch,
+        resolvedOptions,
+        t,
+    };
+
     return (
         <div className="space-y-2">
+            {slots?.beforeTable}
             <div className="flex items-center justify-between gap-2 py-1">
-                <div className="flex-1 pl-6">
+                <div className="flex flex-1 items-center gap-2 pl-6">
+                    {resolvedOptions.globalSearch && (
+                        <div className="relative w-64">
+                            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder={t.search}
+                                value={globalSearchValue}
+                                onChange={handleGlobalSearchChange}
+                                className="h-8 pl-8 text-sm"
+                            />
+                        </div>
+                    )}
                     {resolvedOptions.filters && (
                         <Filters
                             columns={filterColumns}
                             serverFilters={meta.filters as Record<string, unknown>}
+                            t={t}
+                            prefix={prefix}
+                            debounceMs={debounceMs}
+                            partialReloadKey={partialReloadKey}
                         />
                     )}
                 </div>
-                <Popover>
-                    <PopoverTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 md:hidden">
-                            <EllipsisVertical className="h-4 w-4" />
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="flex w-auto flex-col gap-2 p-2">
-                        <DataTableToolbar
-                            tableData={tableData}
-                            table={table}
-                            tableName={tableName}
-                            columnVisibility={columnVisibility}
-                            columnOrder={columnOrder}
-                            applyColumns={applyColumns}
-                            onReorderColumns={setColumnOrder}
-                            handleApplyQuickView={handleApplyQuickView}
-                            handleApplyCustomSearch={handleApplyCustomSearch}
-                            resolvedOptions={resolvedOptions}
-                        />
-                    </PopoverContent>
-                </Popover>
-                <div className="hidden items-center gap-2 md:flex">
-                    <DataTableToolbar
-                        tableData={tableData}
-                        table={table}
-                        tableName={tableName}
-                        columnVisibility={columnVisibility}
-                        columnOrder={columnOrder}
-                        applyColumns={applyColumns}
-                        onReorderColumns={setColumnOrder}
-                        handleApplyQuickView={handleApplyQuickView}
-                        handleApplyCustomSearch={handleApplyCustomSearch}
-                        resolvedOptions={resolvedOptions}
-                    />
-                </div>
+                {slots?.toolbar ?? (
+                    <>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 md:hidden">
+                                    <EllipsisVertical className="h-4 w-4" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="flex w-auto flex-col gap-2 p-2">
+                                <DataTableToolbar {...toolbarProps} />
+                            </PopoverContent>
+                        </Popover>
+                        <div className="hidden items-center gap-2 md:flex">
+                            <DataTableToolbar {...toolbarProps} />
+                        </div>
+                    </>
+                )}
             </div>
             {hasBulkActions && selectedRows.length > 0 && (
                 <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2">
                     <span className="text-sm font-medium tabular-nums">
-                        {selectedRows.length} sélectionné{selectedRows.length > 1 ? "s" : ""}
+                        {t.selected(selectedRows.length)}
                     </span>
                     <div className="flex items-center gap-1">
                         {bulkActions.map((action) => {
@@ -554,7 +688,7 @@ export function DataTable<TData extends object>({
                                     size="sm"
                                     className="h-7 text-xs"
                                     disabled={isDisabled}
-                                    onClick={() => action.onClick(selectedRows)}
+                                    onClick={() => handleBulkClick(action)}
                                 >
                                     {Icon && <Icon className="mr-1 h-3.5 w-3.5" />}
                                     {action.label}
@@ -574,7 +708,7 @@ export function DataTable<TData extends object>({
             )}
             <div className={cn("rounded-md border border-x-0 overflow-x-auto", className)}>
                 <Table>
-                    <TableHeader>
+                    <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
                         {table.getHeaderGroups().map((headerGroup, groupIdx) => {
                             const isGroupRow = groupIdx < table.getHeaderGroups().length - 1;
                             return (
@@ -650,48 +784,58 @@ export function DataTable<TData extends object>({
                     </TableHeader>
                     <TableBody>
                         {table.getRowModel().rows.length > 0 ? (
-                            table.getRowModel().rows.map((row, index) => (
-                                <TableRow
-                                    key={row.id}
-                                    data-state={row.getIsSelected() ? "selected" : undefined}
-                                    className={cn(
-                                        index % 2 === 1 && "bg-muted/40",
-                                        row.getIsSelected() && "bg-primary/5",
-                                        rowClassName?.(row.original),
-                                    )}
-                                >
-                                    {row.getVisibleCells().map((cell) => {
-                                        const pin = getColumnPinningProps(cell.column);
-                                        const pinnedBg = getPinnedCellBg(cell.column.getIsPinned(), index % 2 === 1, row.getIsSelected());
-                                        return (
-                                            <TableCell
-                                                key={cell.id}
-                                                style={{ ...pin.style, ...pinnedBg }}
-                                                className={cn(
-                                                    index % 2 === 1 && "bg-muted/40",
-                                                    "whitespace-nowrap py-2",
-                                                    (cell.column.columnDef.meta as { type?: string })?.type === "number" && "text-right",
-                                                    (cell.column.columnDef.meta as { group?: string | null })?.group &&
-                                                        groupClassName?.[(cell.column.columnDef.meta as { group: string }).group],
-                                                    pin.className,
-                                                )}
-                                            >
-                                                {flexRender(
-                                                    cell.column.columnDef.cell,
-                                                    cell.getContext(),
-                                                )}
-                                            </TableCell>
-                                        );
-                                    })}
-                                </TableRow>
-                            ))
+                            table.getRowModel().rows.map((row, index) => {
+                                const dataAttrs = rowDataAttributes?.(row.original) ?? {};
+                                return (
+                                    <TableRow
+                                        key={row.id}
+                                        data-state={row.getIsSelected() ? "selected" : undefined}
+                                        {...dataAttrs}
+                                        className={cn(
+                                            index % 2 === 1 && "bg-muted/40",
+                                            row.getIsSelected() && "bg-primary/5",
+                                            isClickable && "cursor-pointer hover:bg-muted/60",
+                                            rowClassName?.(row.original),
+                                        )}
+                                        onClick={isClickable ? (e) => {
+                                            const target = e.target as HTMLElement;
+                                            if (target.closest("button, a, input, [role='checkbox'], [data-slot='clear']")) return;
+                                            handleRowInteraction(row.original, e);
+                                        } : undefined}
+                                    >
+                                        {row.getVisibleCells().map((cell) => {
+                                            const pin = getColumnPinningProps(cell.column);
+                                            const pinnedBg = getPinnedCellBg(cell.column.getIsPinned(), index % 2 === 1, row.getIsSelected());
+                                            return (
+                                                <TableCell
+                                                    key={cell.id}
+                                                    style={{ ...pin.style, ...pinnedBg }}
+                                                    className={cn(
+                                                        index % 2 === 1 && "bg-muted/40",
+                                                        "whitespace-nowrap py-2",
+                                                        (cell.column.columnDef.meta as { type?: string })?.type === "number" && "text-right",
+                                                        (cell.column.columnDef.meta as { group?: string | null })?.group &&
+                                                            groupClassName?.[(cell.column.columnDef.meta as { group: string }).group],
+                                                        pin.className,
+                                                    )}
+                                                >
+                                                    {flexRender(
+                                                        cell.column.columnDef.cell,
+                                                        cell.getContext(),
+                                                    )}
+                                                </TableCell>
+                                            );
+                                        })}
+                                    </TableRow>
+                                );
+                            })
                         ) : (
                             <TableRow>
                                 <TableCell
                                     colSpan={table.getVisibleLeafColumns().length}
                                     className="h-24 text-center"
                                 >
-                                    Aucun résultat.
+                                    {emptyState ?? t.noData}
                                 </TableCell>
                             </TableRow>
                         )}
@@ -713,12 +857,12 @@ export function DataTable<TData extends object>({
                                                 content = custom;
                                             } else {
                                                 content = isNumber && typeof footerValue === "number"
-                                                    ? footerValue.toLocaleString("fr-TN")
+                                                    ? footerValue.toLocaleString()
                                                     : String(footerValue);
                                             }
                                         } else {
                                             content = isNumber && typeof footerValue === "number"
-                                                ? footerValue.toLocaleString("fr-TN")
+                                                ? footerValue.toLocaleString()
                                                 : String(footerValue);
                                         }
                                     }
@@ -743,11 +887,46 @@ export function DataTable<TData extends object>({
                     )}
                 </Table>
             </div>
-            <DataTablePagination
-                meta={meta}
-                onPageChange={handlePageChange}
-                onPerPageChange={handlePerPageChange}
-            />
+            {slots?.pagination ?? (
+                <DataTablePagination
+                    meta={meta}
+                    onPageChange={handlePageChange}
+                    onPerPageChange={handlePerPageChange}
+                    onCursorChange={handleCursorChange}
+                    t={t}
+                />
+            )}
+            {slots?.afterTable}
+
+            {/* Bulk action confirmation dialog */}
+            <Dialog open={!!bulkConfirm} onOpenChange={(open) => { if (!open) setBulkConfirm(null); }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>
+                            {bulkConfirm?.opts.title ?? t.confirmTitle}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {bulkConfirm?.opts.description ?? t.confirmDescription}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFoot>
+                        <Button variant="outline" onClick={() => setBulkConfirm(null)}>
+                            {bulkConfirm?.opts.cancelLabel ?? t.confirmCancel}
+                        </Button>
+                        <Button
+                            variant={bulkConfirm?.opts.variant ?? bulkConfirm?.action.variant ?? "default"}
+                            onClick={() => {
+                                if (bulkConfirm) {
+                                    bulkConfirm.action.onClick(bulkConfirm.rows);
+                                    setBulkConfirm(null);
+                                }
+                            }}
+                        >
+                            {bulkConfirm?.opts.confirmLabel ?? t.confirmAction}
+                        </Button>
+                    </DialogFoot>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
