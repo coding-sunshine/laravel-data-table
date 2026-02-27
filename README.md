@@ -40,6 +40,19 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Print-friendly** — `@media print` stylesheet with print button
 - **Real-time updates** — Laravel Echo integration for auto-refreshing on server events
 - **Backend saved views** — Database-persisted saved views that follow users across devices
+- **Detail / Expandable rows** — Click to expand nested content per row with `renderDetailRow` prop
+- **Conditional rules** — Server-side declarative rules for row/cell styling (e.g. "when stock < 5, highlight red")
+- **Full-dataset summaries** — Built-in sum/count/avg/min/max aggregations across the entire filtered dataset (not just current page)
+- **Soft deletes toggle** — Show/hide trashed records with a single button click
+- **Boolean toggle switch** — One-click switch to toggle boolean columns inline (e.g. active/inactive)
+- **Enum-based filters** — Automatically resolve filter options from PHP BackedEnum classes
+- **Async filter options** — Lazy-load filter options from the server with search support
+- **Cascading/interdependent filters** — Filter options that depend on parent filter values (e.g. Country → City)
+- **Radio button selection** — Single-select mode via `selectionMode="radio"` prop
+- **Responsive column collapse** — Auto-hide columns on small screens based on priority levels
+- **Auto-refresh polling** — Timer-based automatic data refresh at configurable intervals
+- **Persist state** — Save filters/sort/pagination to localStorage across page reloads
+- **Deferred/lazy loading** — Render table shell immediately, load data asynchronously
 - **Dark mode** — Full dark mode support across all components
 - **Responsive** — Mobile popover for toolbar, horizontal scroll for wide tables
 - **Feature flags** — Disable any feature via frontend `options` prop
@@ -263,6 +276,19 @@ Extend this class for each model. It extends `Spatie\LaravelData\Data`, so it's 
 | `tableAllowedFilters()` | No | Auto-derived from `filterable: true` columns. Override for `OperatorFilter` or custom filters |
 | `tableAllowedSorts()` | No | Auto-derived from `sortable: true` columns. Override for relation sorts |
 | `tableFooter(Collection)` | No | Compute per-page footer aggregations |
+| `tableDetailRowEnabled()` | No | Return `true` to enable expandable rows. Default: `false` |
+| `tableDetailRow(Model)` | No | Return detail data array for the given model |
+| `tableSoftDeletesEnabled()` | No | Return `true` to show soft-delete toggle. Default: `false` |
+| `tableWithTrashedDefault()` | No | Default state of the trashed toggle. Default: `false` |
+| `tableRules()` | No | Return conditional rule arrays for row/cell styling |
+| `tablePollingInterval()` | No | Auto-refresh interval in seconds (0 = disabled). Default: `0` |
+| `tablePersistState()` | No | Persist filters/sorts to localStorage. Default: `false` |
+| `tableDeferLoading()` | No | Defer data loading after initial render. Default: `false` |
+| `tableAsyncFilterColumns()` | No | Column IDs with lazy-loaded filter options |
+| `resolveAsyncFilterOptions(column, ?search)` | No | Return filter options for an async column |
+| `tableEnumFilters()` | No | Map column IDs to BackedEnum classes for auto-resolved options |
+| `tableCascadingFilters()` | No | Map child → parent column IDs for interdependent filters |
+| `resolveCascadingFilterOptions(column, parentValues)` | No | Return options based on parent filter values |
 | `makeTable(?Request, ?string)` | Inherited | Builds the `DataTableResponse` — call this in your route. Optional `$prefix` for multi-table pages |
 
 ### `Column`
@@ -342,6 +368,9 @@ new Column(
     locale: 'fr-FR',   // Renders as "1 234,56 €"
     sortable: true,
     filterable: true,   // Uses number filter operators
+    summary: 'sum',     // Aggregate across full dataset: 'sum', 'count', 'avg', 'min', 'max'
+    toggleable: false,  // Boolean switch column (one-click toggle)
+    responsivePriority: 3, // Auto-hide on small screens (lower = hidden first, null = always visible)
 );
 ```
 
@@ -615,6 +644,306 @@ DataTableExportController::register('products', ProductDataTable::class);
 
 Three formats supported: XLSX, CSV, PDF. Queued exports available via `?queued=true`.
 
+### Detail / Expandable Rows
+
+Show nested content when a row is expanded:
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tableDetailRowEnabled(): bool
+    {
+        return true;
+    }
+
+    public static function tableDetailRow(\Illuminate\Database\Eloquent\Model $model): array
+    {
+        return [
+            'description' => $model->description,
+            'specifications' => $model->specifications,
+            'reviews_count' => $model->reviews()->count(),
+        ];
+    }
+}
+```
+
+Register the controller and pass the `renderDetailRow` prop:
+
+```php
+DataTableDetailRowController::register('products', ProductDataTable::class);
+```
+
+```tsx
+<DataTable<Row>
+    tableData={tableData}
+    tableName="products"
+    renderDetailRow={(row) => (
+        <div className="p-4">
+            <p>{row.description}</p>
+        </div>
+    )}
+/>
+```
+
+### Conditional Rules (Row/Cell Styling)
+
+Define server-side rules for dynamic row or cell styling:
+
+```php
+public static function tableRules(): array
+{
+    return [
+        [
+            'column' => 'stock',
+            'operator' => 'lt',
+            'value' => 5,
+            'row' => ['class' => 'bg-red-50 dark:bg-red-950'],
+        ],
+        [
+            'column' => 'status',
+            'operator' => 'eq',
+            'value' => 'inactive',
+            'cell' => ['class' => 'text-muted-foreground line-through'],
+        ],
+    ];
+}
+```
+
+Supported operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`, `starts_with`, `ends_with`, `is_null`, `is_not_null`, `is_empty`, `is_true`, `is_false`.
+
+### Full-Dataset Summaries
+
+Add aggregation summaries across the **entire** filtered dataset (not just the current page):
+
+```php
+public static function tableColumns(): array
+{
+    return [
+        new Column(id: 'quantity', label: 'Quantity', type: 'number', summary: 'sum'),
+        new Column(id: 'price', label: 'Price', type: 'currency', summary: 'avg'),
+        new Column(id: 'id', label: 'ID', type: 'number', summary: 'count'),
+    ];
+}
+```
+
+The summary row appears at the bottom of the table. Supported aggregations: `sum`, `count`, `avg`, `min`, `max`.
+
+### Soft Deletes Toggle
+
+Show/hide soft-deleted records with a toggle button:
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tableSoftDeletesEnabled(): bool
+    {
+        return true;
+    }
+
+    // Show trashed by default (optional, default: false)
+    public static function tableWithTrashedDefault(): bool
+    {
+        return false;
+    }
+}
+```
+
+The frontend automatically shows a "Show trashed" / "Hide trashed" button. The toggle appends `?with_trashed=1` to the URL.
+
+### Boolean Toggle Switch
+
+One-click switch to toggle boolean columns inline:
+
+```php
+public static function tableColumns(): array
+{
+    return [
+        new Column(id: 'is_active', label: 'Active', type: 'boolean', toggleable: true),
+    ];
+}
+
+// Handle the toggle (called by the controller)
+public static function handleToggle(\Illuminate\Database\Eloquent\Model $model, string $column, bool $value): void
+{
+    $model->update([$column => $value]);
+}
+```
+
+Register the controller:
+
+```php
+DataTableToggleController::register('products', ProductDataTable::class);
+```
+
+The frontend renders a `<Switch>` component that sends a PATCH request to `/data-table/toggle/{table}/{id}`.
+
+### Enum-Based Filters
+
+Automatically resolve filter options from PHP BackedEnum classes:
+
+```php
+enum ProductStatus: string
+{
+    case Active = 'active';
+    case Inactive = 'inactive';
+    case Draft = 'draft';
+}
+
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tableEnumFilters(): array
+    {
+        return [
+            'status' => ProductStatus::class,
+        ];
+    }
+}
+```
+
+The column's filter options are automatically populated from the enum's cases, using the enum value as both `label` and `value`.
+
+### Async Filter Options
+
+Lazy-load filter options from the server (useful for large option sets):
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tableAsyncFilterColumns(): array
+    {
+        return ['category_id', 'vendor_id'];
+    }
+
+    public static function resolveAsyncFilterOptions(string $column, ?string $search = null): array
+    {
+        return match ($column) {
+            'category_id' => Category::query()
+                ->when($search, fn ($q) => $q->where('name', 'like', "%{$search}%"))
+                ->pluck('name', 'id')
+                ->map(fn ($name, $id) => ['label' => $name, 'value' => (string) $id])
+                ->values()
+                ->toArray(),
+            default => [],
+        };
+    }
+}
+```
+
+Register the controller:
+
+```php
+DataTableAsyncFilterController::register('products', ProductDataTable::class);
+```
+
+### Cascading / Interdependent Filters
+
+Filter options that depend on parent filter values (e.g., Country → City):
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tableCascadingFilters(): array
+    {
+        return [
+            'city' => 'country',  // city depends on country
+        ];
+    }
+
+    public static function resolveCascadingFilterOptions(string $column, array $parentValues): array
+    {
+        return match ($column) {
+            'city' => City::query()
+                ->whereIn('country_id', $parentValues)
+                ->pluck('name', 'id')
+                ->map(fn ($name, $id) => ['label' => $name, 'value' => (string) $id])
+                ->values()
+                ->toArray(),
+            default => [],
+        };
+    }
+}
+```
+
+Register the controller:
+
+```php
+DataTableCascadingFilterController::register('products', ProductDataTable::class);
+```
+
+### Auto-Refresh Polling
+
+Automatically refresh table data at a configurable interval:
+
+```php
+public static function tablePollingInterval(): int
+{
+    return 30; // Refresh every 30 seconds (0 = disabled)
+}
+```
+
+The frontend uses `setInterval` with `router.reload()` for seamless partial reloads.
+
+### Persist State
+
+Save filters, sort, and per-page settings to localStorage so they persist across page reloads:
+
+```php
+public static function tablePersistState(): bool
+{
+    return true;
+}
+```
+
+### Deferred / Lazy Loading
+
+Render the table shell immediately and load data asynchronously:
+
+```php
+public static function tableDeferLoading(): bool
+{
+    return true;
+}
+```
+
+The frontend shows a skeleton loading state, then triggers `router.reload()` on mount to fetch the actual data.
+
+### Responsive Column Collapse
+
+Auto-hide columns on small screens based on priority levels:
+
+```php
+public static function tableColumns(): array
+{
+    return [
+        new Column(id: 'name', label: 'Name'),                              // Always visible
+        new Column(id: 'email', label: 'Email', responsivePriority: 1),     // Hidden below 640px
+        new Column(id: 'phone', label: 'Phone', responsivePriority: 2),     // Hidden below 768px
+        new Column(id: 'created_at', label: 'Created', responsivePriority: 3), // Hidden below 896px
+    ];
+}
+```
+
+Columns with `responsivePriority: null` (default) are always visible. Lower priority numbers are hidden first. The threshold formula is `640 + (priority - 1) * 128` pixels.
+
+### Radio Button Selection
+
+Single-select mode using radio buttons instead of checkboxes:
+
+```tsx
+<DataTable<Row>
+    tableData={tableData}
+    tableName="products"
+    selectionMode="radio"
+    bulkActions={[
+        {
+            id: "view",
+            label: "View Details",
+            onClick: (rows) => router.visit(`/products/${rows[0].id}`),
+        },
+    ]}
+/>
+```
+
 ## Frontend API
 
 ### `<DataTable>` Props
@@ -643,6 +972,8 @@ interface DataTableProps<TData extends object> {
     onInlineEdit?: (row: TData, columnId: string, value: unknown) => Promise<void> | void;
     realtimeChannel?: string;
     realtimeEvent?: string;       // default: '.updated'
+    renderDetailRow?: (row: TData) => ReactNode;
+    selectionMode?: "checkbox" | "radio";  // default: "checkbox"
     slots?: {
         toolbar?: ReactNode;
         beforeTable?: ReactNode;
@@ -869,6 +1200,10 @@ The service provider registers these routes automatically:
 | GET | `/data-table/export/{table}` | Export data (XLSX/CSV/PDF) |
 | GET | `/data-table/select-all/{table}` | Get all IDs matching filters |
 | PATCH | `/data-table/inline-edit/{table}/{id}` | Inline edit a cell value |
+| PATCH | `/data-table/toggle/{table}/{id}` | Toggle boolean column value |
+| GET | `/data-table/detail/{table}/{id}` | Fetch detail/expandable row data |
+| GET | `/data-table/filter-options/{table}/{column}` | Async filter options |
+| GET | `/data-table/cascading-options/{table}/{column}` | Cascading filter options |
 | GET | `/data-table/saved-views/{tableName}` | List saved views |
 | POST | `/data-table/saved-views/{tableName}` | Create saved view |
 | PUT | `/data-table/saved-views/{tableName}/{id}` | Update saved view |
@@ -898,6 +1233,7 @@ With prefix: `products_filter[price]=gte:100&products_sort=-price&products_page=
 | `dt-column-order-{tableName}` | Column display order |
 | `dt-quickviews-{tableName}` | Custom saved quick views |
 | `dt-resize-{tableName}` | Column resize widths |
+| `dt-state-{tableName}` | Persisted filters, sorts, and per-page (when `persistState` is enabled) |
 
 ## Testing
 

@@ -95,6 +95,28 @@ export interface DataTableTranslations {
 
     // Print
     print: string;
+
+    // Detail row
+    expand: string;
+    collapse: string;
+
+    // Soft deletes
+    showTrashed: string;
+    hideTrashed: string;
+
+    // Summary
+    summarySum: string;
+    summaryAvg: string;
+    summaryMin: string;
+    summaryMax: string;
+    summaryCount: string;
+
+    // Polling
+    autoRefresh: string;
+
+    // Toggle
+    toggleOn: string;
+    toggleOff: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -194,6 +216,28 @@ export const defaultTranslations: DataTableTranslations = {
 
     // Print
     print: "Print",
+
+    // Detail row
+    expand: "Expand",
+    collapse: "Collapse",
+
+    // Soft deletes
+    showTrashed: "Show deleted",
+    hideTrashed: "Hide deleted",
+
+    // Summary
+    summarySum: "Sum",
+    summaryAvg: "Average",
+    summaryMin: "Min",
+    summaryMax: "Max",
+    summaryCount: "Count",
+
+    // Polling
+    autoRefresh: "Auto-refresh",
+
+    // Toggle
+    toggleOn: "On",
+    toggleOff: "Off",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -264,4 +308,26 @@ export const frTranslations: DataTableTranslations = {
     loading: "Chargement...",
 
     print: "Imprimer",
+
+    // Detail row
+    expand: "Développer",
+    collapse: "Réduire",
+
+    // Soft deletes
+    showTrashed: "Afficher les supprimés",
+    hideTrashed: "Masquer les supprimés",
+
+    // Summary
+    summarySum: "Somme",
+    summaryAvg: "Moyenne",
+    summaryMin: "Min",
+    summaryMax: "Max",
+    summaryCount: "Nombre",
+
+    // Polling
+    autoRefresh: "Rafraîchissement auto",
+
+    // Toggle
+    toggleOn: "Activé",
+    toggleOff: "Désactivé",
 };

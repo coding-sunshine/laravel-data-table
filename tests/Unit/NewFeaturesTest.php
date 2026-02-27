@@ -46,6 +46,50 @@ test('column new properties serialize to array', function () {
         ->toHaveKey('locale', 'en-US');
 });
 
+// ── Column summary property ────────────────────────────
+
+test('column supports summary property', function () {
+    foreach (['sum', 'avg', 'min', 'max', 'count'] as $summary) {
+        $col = new Column(id: 'amount', label: 'Amount', summary: $summary);
+        expect($col->summary)->toBe($summary);
+    }
+});
+
+test('column summary defaults to null', function () {
+    $col = new Column(id: 'test', label: 'Test');
+    expect($col->summary)->toBeNull();
+});
+
+test('column summary serializes to array', function () {
+    $col = new Column(id: 'amount', label: 'Amount', type: 'number', summary: 'sum');
+    $arr = $col->toArray();
+    expect($arr)->toHaveKey('summary', 'sum');
+});
+
+// ── Column toggleable property ────────────────────────────
+
+test('column supports toggleable property', function () {
+    $col = new Column(id: 'active', label: 'Active', type: 'boolean', toggleable: true);
+    expect($col->toggleable)->toBeTrue();
+});
+
+test('column toggleable defaults to false', function () {
+    $col = new Column(id: 'test', label: 'Test');
+    expect($col->toggleable)->toBeFalse();
+});
+
+// ── Column responsivePriority property ────────────────────────────
+
+test('column supports responsivePriority property', function () {
+    $col = new Column(id: 'notes', label: 'Notes', responsivePriority: 3);
+    expect($col->responsivePriority)->toBe(3);
+});
+
+test('column responsivePriority defaults to null', function () {
+    $col = new Column(id: 'test', label: 'Test');
+    expect($col->responsivePriority)->toBeNull();
+});
+
 // ── DataTableMeta ────────────────────────────
 
 test('datatable meta supports paginationType', function () {
@@ -89,12 +133,7 @@ test('datatable response supports selectAllUrl', function () {
         columns: [],
         quickViews: [],
         meta: new DataTableMeta(
-            currentPage: 1,
-            lastPage: 1,
-            perPage: 25,
-            total: 0,
-            sorts: [],
-            filters: [],
+            currentPage: 1, lastPage: 1, perPage: 25, total: 0, sorts: [], filters: [],
         ),
         selectAllUrl: '/data-table/select-all/products',
     );
@@ -108,16 +147,97 @@ test('datatable response selectAllUrl defaults to null', function () {
         columns: [],
         quickViews: [],
         meta: new DataTableMeta(
-            currentPage: 1,
-            lastPage: 1,
-            perPage: 25,
-            total: 0,
-            sorts: [],
-            filters: [],
+            currentPage: 1, lastPage: 1, perPage: 25, total: 0, sorts: [], filters: [],
         ),
     );
 
     expect($response->selectAllUrl)->toBeNull();
+});
+
+test('datatable response supports summary', function () {
+    $response = new DataTableResponse(
+        data: [],
+        columns: [],
+        quickViews: [],
+        meta: new DataTableMeta(
+            currentPage: 1, lastPage: 1, perPage: 25, total: 0, sorts: [], filters: [],
+        ),
+        summary: ['amount' => 12345.67, 'count' => 42],
+    );
+
+    expect($response->summary)->toBe(['amount' => 12345.67, 'count' => 42]);
+});
+
+test('datatable response supports config', function () {
+    $config = [
+        'detailRowEnabled' => true,
+        'softDeletesEnabled' => false,
+        'pollingInterval' => 30,
+        'persistState' => true,
+        'deferLoading' => false,
+        'asyncFilterColumns' => ['city'],
+        'cascadingFilters' => ['city' => 'country'],
+        'rules' => [],
+    ];
+
+    $response = new DataTableResponse(
+        data: [],
+        columns: [],
+        quickViews: [],
+        meta: new DataTableMeta(
+            currentPage: 1, lastPage: 1, perPage: 25, total: 0, sorts: [], filters: [],
+        ),
+        config: $config,
+    );
+
+    expect($response->config)->toBe($config);
+    expect($response->config['detailRowEnabled'])->toBeTrue();
+    expect($response->config['pollingInterval'])->toBe(30);
+});
+
+test('datatable response supports toggleUrl', function () {
+    $response = new DataTableResponse(
+        data: [],
+        columns: [],
+        quickViews: [],
+        meta: new DataTableMeta(
+            currentPage: 1, lastPage: 1, perPage: 25, total: 0, sorts: [], filters: [],
+        ),
+        toggleUrl: '/data-table/toggle/products',
+    );
+
+    expect($response->toggleUrl)->toBe('/data-table/toggle/products');
+});
+
+test('datatable response supports enumOptions', function () {
+    $response = new DataTableResponse(
+        data: [],
+        columns: [],
+        quickViews: [],
+        meta: new DataTableMeta(
+            currentPage: 1, lastPage: 1, perPage: 25, total: 0, sorts: [], filters: [],
+        ),
+        enumOptions: ['status' => [['label' => 'Active', 'value' => 'active'], ['label' => 'Inactive', 'value' => 'inactive']]],
+    );
+
+    expect($response->enumOptions)->toHaveKey('status');
+    expect($response->enumOptions['status'])->toHaveCount(2);
+});
+
+test('datatable response new fields default to null', function () {
+    $response = new DataTableResponse(
+        data: [],
+        columns: [],
+        quickViews: [],
+        meta: new DataTableMeta(
+            currentPage: 1, lastPage: 1, perPage: 25, total: 0, sorts: [], filters: [],
+        ),
+    );
+
+    expect($response->summary)->toBeNull();
+    expect($response->config)->toBeNull();
+    expect($response->toggleUrl)->toBeNull();
+    expect($response->enumOptions)->toBeNull();
 });
 
 // ── AbstractDataTable defaults ────────────────────────────
@@ -132,6 +252,58 @@ test('tableSearchableColumns returns empty array by default', function () {
 
 test('tableResource returns null by default', function () {
     expect(StubDataTable::tableResource())->toBeNull();
+});
+
+test('tableDetailRowEnabled defaults to false', function () {
+    expect(StubDataTable::tableDetailRowEnabled())->toBeFalse();
+});
+
+test('tableDetailRow defaults to null', function () {
+    expect(StubDataTable::tableDetailRow(null))->toBeNull();
+});
+
+test('tableSoftDeletesEnabled defaults to false', function () {
+    expect(StubDataTable::tableSoftDeletesEnabled())->toBeFalse();
+});
+
+test('tableWithTrashedDefault defaults to false', function () {
+    expect(StubDataTable::tableWithTrashedDefault())->toBeFalse();
+});
+
+test('tableRules defaults to empty array', function () {
+    expect(StubDataTable::tableRules())->toBe([]);
+});
+
+test('tablePollingInterval defaults to 0', function () {
+    expect(StubDataTable::tablePollingInterval())->toBe(0);
+});
+
+test('tablePersistState defaults to false', function () {
+    expect(StubDataTable::tablePersistState())->toBeFalse();
+});
+
+test('tableDeferLoading defaults to false', function () {
+    expect(StubDataTable::tableDeferLoading())->toBeFalse();
+});
+
+test('tableAsyncFilterColumns defaults to empty array', function () {
+    expect(StubDataTable::tableAsyncFilterColumns())->toBe([]);
+});
+
+test('resolveAsyncFilterOptions defaults to empty array', function () {
+    expect(StubDataTable::resolveAsyncFilterOptions('test'))->toBe([]);
+});
+
+test('tableEnumFilters defaults to empty array', function () {
+    expect(StubDataTable::tableEnumFilters())->toBe([]);
+});
+
+test('tableCascadingFilters defaults to empty array', function () {
+    expect(StubDataTable::tableCascadingFilters())->toBe([]);
+});
+
+test('resolveCascadingFilterOptions defaults to empty array', function () {
+    expect(StubDataTable::resolveCascadingFilterOptions('test', null))->toBe([]);
 });
 
 // ── parseSorts helper ────────────────────────────

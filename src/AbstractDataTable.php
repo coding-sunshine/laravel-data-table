@@ -4,8 +4,10 @@ namespace Machour\DataTable;
 
 use Machour\DataTable\Columns\Column;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\DB;
 use Spatie\LaravelData\Data;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\AllowedSort;
@@ -77,6 +79,173 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Whether detail/expandable rows are enabled.
+     */
+    public static function tableDetailRowEnabled(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Return the detail data for a given model row.
+     *
+     * @param  mixed  $model
+     * @return array<string, mixed>|null
+     */
+    public static function tableDetailRow(mixed $model): ?array
+    {
+        return null;
+    }
+
+    /**
+     * Whether soft deletes toggle is enabled.
+     */
+    public static function tableSoftDeletesEnabled(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Whether to include trashed records by default.
+     */
+    public static function tableWithTrashedDefault(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Conditional row/cell rules for styling.
+     * Each rule: ['column' => 'id', 'operator' => 'gt', 'value' => 5, 'row' => ['class' => '...'], 'cell' => ['class' => '...']]
+     *
+     * @return array<int, array{column: string, operator: string, value: mixed, row?: array, cell?: array}>
+     */
+    public static function tableRules(): array
+    {
+        return [];
+    }
+
+    /**
+     * Compute full-dataset summary aggregations from column 'summary' properties.
+     *
+     * @return array<string, mixed>  Column ID => aggregated value
+     */
+    public static function tableSummary(QueryBuilder $query): array
+    {
+        $columns = collect(static::tableColumns())->filter(fn (Column $col) => $col->summary !== null);
+
+        if ($columns->isEmpty()) {
+            return [];
+        }
+
+        $selects = [];
+        foreach ($columns as $col) {
+            $fn = match ($col->summary) {
+                'sum' => "SUM({$col->id})",
+                'avg' => "AVG({$col->id})",
+                'min' => "MIN({$col->id})",
+                'max' => "MAX({$col->id})",
+                'count' => "COUNT({$col->id})",
+                default => null,
+            };
+            if ($fn) {
+                $selects[] = DB::raw("{$fn} as summary_{$col->id}");
+            }
+        }
+
+        if (empty($selects)) {
+            return [];
+        }
+
+        $result = (clone $query)->getEloquentBuilder()->select($selects)->first();
+
+        if (! $result) {
+            return [];
+        }
+
+        $summary = [];
+        foreach ($columns as $col) {
+            $summary[$col->id] = $result->{"summary_{$col->id}"};
+        }
+
+        return $summary;
+    }
+
+    /**
+     * Auto-refresh polling interval in seconds (0 = disabled).
+     */
+    public static function tablePollingInterval(): int
+    {
+        return 0;
+    }
+
+    /**
+     * Whether state should be persisted server-side.
+     */
+    public static function tablePersistState(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Whether deferred/lazy loading is enabled.
+     */
+    public static function tableDeferLoading(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Return columns whose filter options should be loaded asynchronously.
+     *
+     * @return array<string>  Column IDs
+     */
+    public static function tableAsyncFilterColumns(): array
+    {
+        return [];
+    }
+
+    /**
+     * Resolve async filter options for a given column.
+     *
+     * @return array<int, array{label: string, value: string}>
+     */
+    public static function resolveAsyncFilterOptions(string $columnId, ?string $search = null): array
+    {
+        return [];
+    }
+
+    /**
+     * Map of column IDs to PHP enum classes for enum-based filters.
+     *
+     * @return array<string, class-string<\BackedEnum>>
+     */
+    public static function tableEnumFilters(): array
+    {
+        return [];
+    }
+
+    /**
+     * Cascading/interdependent filter relationships.
+     * Example: ['city' => 'country'] means city options depend on selected country.
+     *
+     * @return array<string, string>  dependent column => parent column
+     */
+    public static function tableCascadingFilters(): array
+    {
+        return [];
+    }
+
+    /**
+     * Resolve cascading filter options for a dependent column.
+     *
+     * @return array<int, array{label: string, value: string}>
+     */
+    public static function resolveCascadingFilterOptions(string $columnId, mixed $parentValue): array
+    {
+        return [];
+    }
+
+    /**
      * @return array<int, AllowedFilter|string>
      */
     public static function tableAllowedFilters(): array
@@ -118,7 +287,17 @@ abstract class AbstractDataTable extends Data
         $filterKey = "{$p}filter";
         $searchKey = "{$p}search";
 
-        $query = QueryBuilder::for(static::tableBaseQuery(), $request)
+        $baseQuery = static::tableBaseQuery();
+
+        // Soft deletes toggle
+        if (static::tableSoftDeletesEnabled()) {
+            $withTrashed = filter_var($request->get("{$p}with_trashed", static::tableWithTrashedDefault()), FILTER_VALIDATE_BOOLEAN);
+            if ($withTrashed) {
+                $baseQuery = $baseQuery->withTrashed();
+            }
+        }
+
+        $query = QueryBuilder::for($baseQuery, $request)
             ->allowedFilters(static::tableAllowedFilters())
             ->allowedSorts(static::tableAllowedSorts())
             ->defaultSort(static::tableDefaultSort());
@@ -224,6 +403,37 @@ abstract class AbstractDataTable extends Data
             $selectAllUrl = static::resolveSelectAllUrl();
         }
 
+        // Full-dataset summary aggregations
+        $summary = static::tableSummary($query);
+
+        // Resolve enum filter options
+        $enumFilters = static::tableEnumFilters();
+        $enumOptions = [];
+        foreach ($enumFilters as $columnId => $enumClass) {
+            $enumOptions[$columnId] = collect($enumClass::cases())->map(fn ($case) => [
+                'label' => method_exists($case, 'label') ? $case->label() : $case->name,
+                'value' => (string) $case->value,
+            ])->all();
+        }
+
+        // Build table config for frontend
+        $tableConfig = [
+            'detailRowEnabled' => static::tableDetailRowEnabled(),
+            'softDeletesEnabled' => static::tableSoftDeletesEnabled(),
+            'pollingInterval' => static::tablePollingInterval(),
+            'persistState' => static::tablePersistState(),
+            'deferLoading' => static::tableDeferLoading(),
+            'asyncFilterColumns' => static::tableAsyncFilterColumns(),
+            'cascadingFilters' => static::tableCascadingFilters(),
+            'rules' => static::tableRules(),
+        ];
+
+        // Toggle URL
+        $toggleUrl = null;
+        if (collect(static::tableColumns())->contains(fn (Column $col) => $col->toggleable)) {
+            $toggleUrl = static::resolveToggleUrl();
+        }
+
         return new DataTableResponse(
             data: $dataCollection->all(),
             columns: static::tableColumns(),
@@ -232,6 +442,10 @@ abstract class AbstractDataTable extends Data
             exportUrl: $exportUrl,
             footer: ! empty($footer) ? $footer : null,
             selectAllUrl: $selectAllUrl,
+            summary: ! empty($summary) ? $summary : null,
+            config: $tableConfig,
+            toggleUrl: $toggleUrl,
+            enumOptions: ! empty($enumOptions) ? $enumOptions : null,
         );
     }
 

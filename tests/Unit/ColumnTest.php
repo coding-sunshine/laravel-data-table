@@ -20,7 +20,10 @@ test('column has sensible defaults', function () {
         ->group->toBeNull()
         ->editable->toBeFalse()
         ->currency->toBeNull()
-        ->locale->toBeNull();
+        ->locale->toBeNull()
+        ->summary->toBeNull()
+        ->toggleable->toBeFalse()
+        ->responsivePriority->toBeNull();
 });
 
 test('column accepts all parameters', function () {

@@ -16,6 +16,12 @@ export interface DataTableColumnDef {
     editable?: boolean;
     currency?: string | null;
     locale?: string | null;
+    /** Summary aggregation type: 'sum' | 'count' | 'avg' | 'min' | 'max' */
+    summary?: string | null;
+    /** Whether this column supports boolean toggle switch */
+    toggleable?: boolean;
+    /** Responsive priority (lower = hidden first on small screens). null = always visible */
+    responsivePriority?: number | null;
 }
 
 export interface DataTableQuickView {
@@ -44,6 +50,27 @@ export interface DataTableMeta {
     prevCursor?: string | null;
 }
 
+/** Server-side table configuration passed from backend */
+export interface DataTableConfig {
+    detailRowEnabled?: boolean;
+    softDeletesEnabled?: boolean;
+    pollingInterval?: number;
+    persistState?: boolean;
+    deferLoading?: boolean;
+    asyncFilterColumns?: string[];
+    cascadingFilters?: Record<string, string>;
+    rules?: DataTableRule[];
+}
+
+/** Conditional row/cell styling rule */
+export interface DataTableRule {
+    column: string;
+    operator: string;
+    value: unknown;
+    row?: { class?: string };
+    cell?: { class?: string };
+}
+
 export interface DataTableOptions {
     quickViews: boolean;
     customQuickViews: boolean;
@@ -68,6 +95,14 @@ export interface DataTableResponse<TData = object> {
     footer?: Record<string, unknown> | null;
     /** URL for fetching all row IDs matching current filters (server-side selection) */
     selectAllUrl?: string | null;
+    /** Full-dataset summary aggregations */
+    summary?: Record<string, unknown> | null;
+    /** Server-side table configuration */
+    config?: DataTableConfig | null;
+    /** URL for boolean toggle updates */
+    toggleUrl?: string | null;
+    /** Enum filter options resolved from PHP enums */
+    enumOptions?: Record<string, { label: string; value: string }[]> | null;
 }
 
 export interface DataTableConfirmOptions {
@@ -132,6 +167,10 @@ export interface DataTableProps<TData extends object> {
     realtimeChannel?: string;
     /** Laravel Echo event name to listen for (default: '.updated') */
     realtimeEvent?: string;
+    /** Render function for detail/expandable row content */
+    renderDetailRow?: (row: TData) => React.ReactNode;
+    /** Selection mode: 'checkbox' (default) or 'radio' (single select) */
+    selectionMode?: "checkbox" | "radio";
     /** Slot overrides for composability */
     slots?: {
         toolbar?: React.ReactNode;
