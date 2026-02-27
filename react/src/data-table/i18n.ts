@@ -80,6 +80,21 @@ export interface DataTableTranslations {
     confirmDescription: string;
     confirmAction: string;
     confirmCancel: string;
+
+    // Server-side selection
+    selectAllMatching: (count: number) => string;
+    clearSelection: string;
+
+    // Inline editing
+    editSave: string;
+    editCancel: string;
+    editSaving: string;
+
+    // Loading
+    loading: string;
+
+    // Print
+    print: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -164,6 +179,21 @@ export const defaultTranslations: DataTableTranslations = {
     confirmDescription: "This action cannot be undone.",
     confirmAction: "Confirm",
     confirmCancel: "Cancel",
+
+    // Server-side selection
+    selectAllMatching: (count) => `Select all ${count} matching items`,
+    clearSelection: "Clear selection",
+
+    // Inline editing
+    editSave: "Save",
+    editCancel: "Cancel",
+    editSaving: "Saving...",
+
+    // Loading
+    loading: "Loading...",
+
+    // Print
+    print: "Print",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -223,4 +253,15 @@ export const frTranslations: DataTableTranslations = {
     confirmDescription: "Cette action est irréversible.",
     confirmAction: "Confirmer",
     confirmCancel: "Annuler",
+
+    selectAllMatching: (count) => `Sélectionner les ${count} éléments correspondants`,
+    clearSelection: "Effacer la sélection",
+
+    editSave: "Enregistrer",
+    editCancel: "Annuler",
+    editSaving: "Enregistrement...",
+
+    loading: "Chargement...",
+
+    print: "Imprimer",
 };

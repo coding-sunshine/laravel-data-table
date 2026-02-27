@@ -3,6 +3,7 @@ import {
     type ColumnDef,
     type ColumnFiltersState,
     type ColumnOrderState,
+    type ColumnSizingState,
     type RowSelectionState,
     type SortingState,
     type VisibilityState,
@@ -58,6 +59,9 @@ interface UseDataTableOptions<TData> {
     prefix?: string;
     debounceMs?: number;
     partialReloadKey?: string;
+    columnResizing?: boolean;
+    columnSizing?: Record<string, number>;
+    onColumnSizingChange?: (sizing: Record<string, number>) => void;
 }
 
 export function useDataTable<TData>({
@@ -67,6 +71,9 @@ export function useDataTable<TData>({
     prefix,
     debounceMs = 0,
     partialReloadKey,
+    columnResizing = false,
+    columnSizing: externalColumnSizing,
+    onColumnSizingChange,
 }: UseDataTableOptions<TData>) {
     const { meta } = tableData;
 
@@ -92,6 +99,20 @@ export function useDataTable<TData>({
 
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+    const [internalColumnSizing, setInternalColumnSizing] = useState<ColumnSizingState>({});
+
+    const columnSizingState = externalColumnSizing ?? internalColumnSizing;
+    const handleColumnSizingChange = useCallback(
+        (updater: ColumnSizingState | ((prev: ColumnSizingState) => ColumnSizingState)) => {
+            const next = typeof updater === "function" ? updater(columnSizingState) : updater;
+            if (onColumnSizingChange) {
+                onColumnSizingChange(next);
+            } else {
+                setInternalColumnSizing(next);
+            }
+        },
+        [columnSizingState, onColumnSizingChange],
+    );
 
     const navigate = useCallback(
         (params: Record<string, unknown>) => {
@@ -251,6 +272,9 @@ export function useDataTable<TData>({
         onColumnOrderChange: setColumnOrder,
         onRowSelectionChange: setRowSelection,
         enableRowSelection: true,
+        enableColumnResizing: columnResizing,
+        columnResizeMode: "onChange",
+        onColumnSizingChange: handleColumnSizingChange,
         getCoreRowModel: getCoreRowModel(),
         initialState: {
             columnPinning: {
@@ -264,6 +288,7 @@ export function useDataTable<TData>({
             columnVisibility,
             columnOrder,
             rowSelection,
+            columnSizing: columnSizingState,
             pagination: {
                 pageIndex: meta.currentPage - 1,
                 pageSize: meta.perPage,

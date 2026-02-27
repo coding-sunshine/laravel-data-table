@@ -19,6 +19,7 @@ interface FiltersProps {
     prefix?: string;
     debounceMs?: number;
     partialReloadKey?: string;
+    renderFilter?: Record<string, (value: unknown, onChange: (value: unknown) => void) => React.ReactNode>;
 }
 
 function formatNumericValue(v: string): string {
@@ -177,7 +178,7 @@ function FilterPill({
     );
 }
 
-export function Filters({ columns, serverFilters, t, prefix, debounceMs, partialReloadKey }: FiltersProps) {
+export function Filters({ columns, serverFilters, t, prefix, debounceMs, partialReloadKey, renderFilter }: FiltersProps) {
     const { activeFilters, setFilter, clearFilter, clearAllFilters } = useFilters(serverFilters, { prefix, debounceMs, partialReloadKey });
 
     const [selectorOpen, setSelectorOpen] = useState(false);
@@ -276,14 +277,26 @@ export function Filters({ columns, serverFilters, t, prefix, debounceMs, partial
                                 )}
                                 <span>{selectedColumn.label}</span>
                             </button>
-                            <FilterControl
-                                column={selectedColumn}
-                                value={activeFilters[selectedColumn.id]}
-                                onSubmit={(op, vals) =>
-                                    handleFilterSubmit(selectedColumn.id, op, vals)
-                                }
-                                t={t}
-                            />
+                            {renderFilter?.[selectedColumn.id] ? (
+                                <div className="p-2">
+                                    {renderFilter[selectedColumn.id](
+                                        activeFilters[selectedColumn.id]?.values,
+                                        (val) => {
+                                            const values = Array.isArray(val) ? val.map(String) : [String(val)];
+                                            handleFilterSubmit(selectedColumn.id, activeFilters[selectedColumn.id]?.operator || "eq", values);
+                                        },
+                                    )}
+                                </div>
+                            ) : (
+                                <FilterControl
+                                    column={selectedColumn}
+                                    value={activeFilters[selectedColumn.id]}
+                                    onSubmit={(op, vals) =>
+                                        handleFilterSubmit(selectedColumn.id, op, vals)
+                                    }
+                                    t={t}
+                                />
+                            )}
                         </div>
                     ) : (
                         <Command

@@ -17,7 +17,10 @@ test('column has sensible defaults', function () {
         ->max->toBeNull()
         ->icon->toBeNull()
         ->searchThreshold->toBeNull()
-        ->group->toBeNull();
+        ->group->toBeNull()
+        ->editable->toBeFalse()
+        ->currency->toBeNull()
+        ->locale->toBeNull();
 });
 
 test('column accepts all parameters', function () {

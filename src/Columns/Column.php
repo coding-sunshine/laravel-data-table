@@ -21,5 +21,11 @@ class Column extends Data
         public ?string $icon = null,
         public ?int $searchThreshold = null,
         public ?string $group = null,
+        /** Inline editable — allows the cell to be edited inline */
+        public bool $editable = false,
+        /** Currency code for type=currency (e.g., 'USD', 'EUR') */
+        public ?string $currency = null,
+        /** Locale for number/currency formatting (e.g., 'en-US') */
+        public ?string $locale = null,
     ) {}
 }

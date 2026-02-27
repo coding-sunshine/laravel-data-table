@@ -30,6 +30,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Filters } from "../filters/filters";
 import type { FilterColumn } from "../filters/types";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,15 +40,23 @@ import {
     Calendar,
     Check,
     CircleDot,
+    DollarSign,
     Download,
     EllipsisVertical,
+    ExternalLink,
     FileDown,
     FileSpreadsheet,
     FileText,
     GripVertical,
     Hash,
     Image as ImageIcon,
+    Link as LinkIcon,
     List,
+    Loader2,
+    Mail,
+    Percent,
+    Phone,
+    Printer,
     Search,
     SlidersHorizontal,
     Tag,
@@ -60,7 +69,8 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { router } from "@inertiajs/react";
 import { DataTableColumnHeader } from "./data-table-column-header";
 import { defaultTranslations, type DataTableTranslations } from "./i18n";
 import { DataTablePagination } from "./data-table-pagination";
@@ -116,6 +126,78 @@ const BADGE_VARIANTS: Record<string, string> = {
     info: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
     secondary: "bg-muted text-muted-foreground",
 };
+
+/** Inline editable cell component */
+function InlineEditCell({
+    value: initialValue,
+    columnId,
+    columnType,
+    onSave,
+    t,
+}: {
+    value: unknown;
+    columnId: string;
+    columnType: string;
+    onSave: (value: unknown) => Promise<void> | void;
+    t: DataTableTranslations;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [editValue, setEditValue] = useState(String(initialValue ?? ""));
+    const [saving, setSaving] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (editing) inputRef.current?.focus();
+    }, [editing]);
+
+    async function handleSave() {
+        setSaving(true);
+        try {
+            const parsed = columnType === "number" || columnType === "currency" || columnType === "percentage"
+                ? Number(editValue)
+                : editValue;
+            await onSave(parsed);
+            setEditing(false);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    if (!editing) {
+        return (
+            <span
+                className="cursor-pointer rounded px-1 -mx-1 hover:bg-muted/80 transition-colors"
+                onDoubleClick={() => {
+                    setEditValue(String(initialValue ?? ""));
+                    setEditing(true);
+                }}
+                title="Double-click to edit"
+            >
+                {initialValue === null || initialValue === undefined
+                    ? <span className="text-muted-foreground">—</span>
+                    : String(initialValue)}
+            </span>
+        );
+    }
+
+    return (
+        <div className="flex items-center gap-1">
+            <Input
+                ref={inputRef}
+                type={columnType === "number" || columnType === "currency" || columnType === "percentage" ? "number" : "text"}
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSave();
+                    if (e.key === "Escape") setEditing(false);
+                }}
+                className="h-7 w-auto min-w-[80px] text-sm"
+                disabled={saving}
+            />
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+        </div>
+    );
+}
 
 function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t }: {
     tableData: { quickViews: import("./types").DataTableQuickView[]; exportUrl?: string | null; columns: DataTableColumnDef[] };
@@ -196,6 +278,12 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
+            )}
+            {resolvedOptions.printable && (
+                <Button variant="outline" size="sm" className="h-8" onClick={() => window.print()}>
+                    <Printer className="h-4 w-4" />
+                    {t.print}
+                </Button>
             )}
             {(resolvedOptions.columnVisibility || resolvedOptions.columnOrdering) && (
                 <ColumnsDropdown
@@ -366,13 +454,21 @@ const TYPE_ICON_MAP: Record<string, FilterColumn["icon"]> = {
     boolean: ToggleLeft,
     image: ImageIcon,
     badge: Tag,
+    currency: DollarSign,
+    percentage: Percent,
+    link: LinkIcon,
+    email: Mail,
+    phone: Phone,
 };
 
 function buildFilterColumns(columns: DataTableColumnDef[]): FilterColumn[] {
     return columns
         .filter((col) => col.filterable)
         .map((col) => {
-            const type = col.type === "multiOption" ? "option" as const : col.type as FilterColumn["type"];
+            const type = col.type === "multiOption" ? "option" as const
+                : (col.type === "currency" || col.type === "percentage") ? "number" as const
+                : (col.type === "link" || col.type === "email" || col.type === "phone") ? "text" as const
+                : col.type as FilterColumn["type"];
             return {
                 id: col.id,
                 label: col.label,
@@ -382,6 +478,23 @@ function buildFilterColumns(columns: DataTableColumnDef[]): FilterColumn[] {
                 ...(col.searchThreshold != null ? { searchThreshold: col.searchThreshold } : {}),
             };
         });
+}
+
+/** Skeleton loading rows */
+function SkeletonRows({ count, colCount }: { count: number; colCount: number }) {
+    return (
+        <>
+            {Array.from({ length: count }).map((_, i) => (
+                <TableRow key={`skeleton-${i}`}>
+                    {Array.from({ length: colCount }).map((_, j) => (
+                        <TableCell key={`skeleton-${i}-${j}`} className="py-3">
+                            <Skeleton className="h-4 w-full" />
+                        </TableCell>
+                    ))}
+                </TableRow>
+            ))}
+        </>
+    );
 }
 
 export function DataTable<TData extends object>({
@@ -394,6 +507,7 @@ export function DataTable<TData extends object>({
     renderCell,
     renderHeader,
     renderFooterCell,
+    renderFilter,
     rowClassName,
     rowDataAttributes,
     groupClassName,
@@ -404,6 +518,9 @@ export function DataTable<TData extends object>({
     emptyState,
     debounceMs,
     partialReloadKey,
+    onInlineEdit,
+    realtimeChannel,
+    realtimeEvent = ".updated",
     slots,
 }: DataTableProps<TData>) {
     const t = useMemo<DataTableTranslations>(
@@ -418,16 +535,78 @@ export function DataTable<TData extends object>({
         filters: true,
         columnVisibility: true,
         columnOrdering: true,
+        columnResizing: false,
         stickyHeader: false,
         globalSearch: false,
+        loading: true,
+        keyboardNavigation: false,
+        printable: false,
         ...optionsOverride,
     }), [optionsOverride]);
 
     const hasBulkActions = bulkActions && bulkActions.length > 0;
     const isClickable = !!onRowClick || !!rowLink;
 
+    // Inertia loading state
+    const [isNavigating, setIsNavigating] = useState(false);
+    useEffect(() => {
+        if (!resolvedOptions.loading) return;
+        const startHandler = () => setIsNavigating(true);
+        const finishHandler = () => setIsNavigating(false);
+        router.on("start", startHandler);
+        router.on("finish", finishHandler);
+        return () => {
+            // Router events don't have an off method in Inertia, handled by component unmount
+        };
+    }, [resolvedOptions.loading]);
+
+    // Real-time updates via Laravel Echo
+    useEffect(() => {
+        if (!realtimeChannel) return;
+        const Echo = (window as unknown as { Echo?: { channel: (name: string) => { listen: (event: string, cb: () => void) => { stopListening: (event: string) => void } } } }).Echo;
+        if (!Echo) return;
+
+        const channel = Echo.channel(realtimeChannel);
+        const handler = () => {
+            router.reload({ only: partialReloadKey ? [partialReloadKey] : undefined });
+        };
+        channel.listen(realtimeEvent, handler);
+        return () => {
+            channel.stopListening(realtimeEvent);
+        };
+    }, [realtimeChannel, realtimeEvent, partialReloadKey]);
+
     // Bulk action confirmation dialog state
     const [bulkConfirm, setBulkConfirm] = useState<{ action: (typeof bulkActions extends (infer U)[] ? U : never); opts: DataTableConfirmOptions; rows: TData[] } | null>(null);
+
+    // Server-side select all state
+    const [serverSelectAll, setServerSelectAll] = useState(false);
+    const [serverSelectedIds, setServerSelectedIds] = useState<unknown[]>([]);
+
+    // Shift+click range selection
+    const lastSelectedIndex = useRef<number | null>(null);
+
+    // Keyboard navigation
+    const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
+    const tableBodyRef = useRef<HTMLTableSectionElement>(null);
+
+    // Column resize widths from localStorage
+    const RESIZE_KEY = `dt-resize-${tableName}`;
+    const [columnSizing, setColumnSizing] = useState<Record<string, number>>(() => {
+        if (!resolvedOptions.columnResizing) return {};
+        try {
+            const stored = localStorage.getItem(RESIZE_KEY);
+            return stored ? JSON.parse(stored) : {};
+        } catch {
+            return {};
+        }
+    });
+
+    useEffect(() => {
+        if (resolvedOptions.columnResizing && Object.keys(columnSizing).length > 0) {
+            localStorage.setItem(RESIZE_KEY, JSON.stringify(columnSizing));
+        }
+    }, [columnSizing, resolvedOptions.columnResizing, RESIZE_KEY]);
 
     const columnDefs = useMemo<ColumnDef<TData>[]>(() => {
         function makeLeafCol(col: DataTableColumnDef): ColumnDef<TData> {
@@ -436,9 +615,25 @@ export function DataTable<TData extends object>({
                 accessorKey: col.id,
                 header: col.label,
                 enableHiding: true,
-                meta: { type: col.type, group: col.group ?? null },
+                enableResizing: resolvedOptions.columnResizing,
+                size: columnSizing[col.id] || undefined,
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale },
                 cell: ({ row }) => {
                     const value = row.getValue(col.id);
+
+                    // Inline editing
+                    if (col.editable && onInlineEdit) {
+                        return (
+                            <InlineEditCell
+                                value={value}
+                                columnId={col.id}
+                                columnType={col.type}
+                                onSave={(newVal) => onInlineEdit(row.original, col.id, newVal)}
+                                t={t}
+                            />
+                        );
+                    }
+
                     if (renderCell) {
                         const custom = renderCell(col.id, value, row.original);
                         if (custom !== undefined) return custom;
@@ -469,6 +664,78 @@ export function DataTable<TData extends object>({
                             )}>
                                 {badgeLabel}
                             </span>
+                        );
+                    }
+                    // Currency column type
+                    if (col.type === "currency" && (typeof value === "number" || typeof value === "string")) {
+                        const numValue = typeof value === "string" ? parseFloat(value) : value;
+                        if (!isNaN(numValue)) {
+                            try {
+                                return (
+                                    <span className="tabular-nums">
+                                        {numValue.toLocaleString(col.locale ?? undefined, {
+                                            style: "currency",
+                                            currency: col.currency ?? "USD",
+                                        })}
+                                    </span>
+                                );
+                            } catch {
+                                return <span className="tabular-nums">{numValue.toLocaleString()}</span>;
+                            }
+                        }
+                    }
+                    // Percentage column type
+                    if (col.type === "percentage" && (typeof value === "number" || typeof value === "string")) {
+                        const numValue = typeof value === "string" ? parseFloat(value) : value;
+                        if (!isNaN(numValue)) {
+                            return (
+                                <span className="tabular-nums">
+                                    {numValue.toLocaleString(col.locale ?? undefined, {
+                                        style: "percent",
+                                        minimumFractionDigits: 0,
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </span>
+                            );
+                        }
+                    }
+                    // Link column type
+                    if (col.type === "link" && typeof value === "string") {
+                        return (
+                            <a
+                                href={value}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <span className="max-w-[200px] truncate">{value.replace(/^https?:\/\//, "")}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0" />
+                            </a>
+                        );
+                    }
+                    // Email column type
+                    if (col.type === "email" && typeof value === "string") {
+                        return (
+                            <a
+                                href={`mailto:${value}`}
+                                className="text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {value}
+                            </a>
+                        );
+                    }
+                    // Phone column type
+                    if (col.type === "phone" && typeof value === "string") {
+                        return (
+                            <a
+                                href={`tel:${value}`}
+                                className="text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {value}
+                            </a>
                         );
                     }
                     if (typeof value === "boolean") {
@@ -510,6 +777,7 @@ export function DataTable<TData extends object>({
                     />
                 ),
                 enableHiding: false,
+                enableResizing: false,
             });
         }
 
@@ -534,6 +802,7 @@ export function DataTable<TData extends object>({
                 id: "_actions",
                 header: "",
                 enableHiding: false,
+                enableResizing: false,
                 cell: ({ row }) => (
                     <DataTableRowActions row={row.original} actions={actions} t={t} />
                 ),
@@ -541,7 +810,7 @@ export function DataTable<TData extends object>({
         }
 
         return result;
-    }, [tableData.columns, actions, hasBulkActions, renderCell, t]);
+    }, [tableData.columns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, columnSizing]);
 
     const {
         table,
@@ -566,6 +835,9 @@ export function DataTable<TData extends object>({
         prefix,
         debounceMs,
         partialReloadKey,
+        columnResizing: resolvedOptions.columnResizing,
+        columnSizing,
+        onColumnSizingChange: setColumnSizing,
     });
 
     const filterColumns = useMemo(
@@ -594,9 +866,9 @@ export function DataTable<TData extends object>({
     function handleBulkClick(action: NonNullable<typeof bulkActions>[number]) {
         if (action.confirm) {
             const opts: DataTableConfirmOptions = typeof action.confirm === "object" ? action.confirm : {};
-            setBulkConfirm({ action, opts, rows: selectedRows });
+            setBulkConfirm({ action, opts, rows: serverSelectAll ? serverSelectedIds as TData[] : selectedRows });
         } else {
-            action.onClick(selectedRows);
+            action.onClick(serverSelectAll ? serverSelectedIds as TData[] : selectedRows);
         }
     }
 
@@ -613,6 +885,87 @@ export function DataTable<TData extends object>({
         }
     }
 
+    // Shift+click range selection handler
+    function handleRowCheckboxClick(rowIndex: number, e: React.MouseEvent) {
+        if (e.shiftKey && lastSelectedIndex.current !== null && lastSelectedIndex.current !== rowIndex) {
+            const start = Math.min(lastSelectedIndex.current, rowIndex);
+            const end = Math.max(lastSelectedIndex.current, rowIndex);
+            const newSelection: Record<string, boolean> = { ...rowSelection };
+            for (let i = start; i <= end; i++) {
+                newSelection[String(i)] = true;
+            }
+            setRowSelection(newSelection);
+        }
+        lastSelectedIndex.current = rowIndex;
+    }
+
+    // Server-side select all
+    async function handleSelectAllMatching() {
+        if (!tableData.selectAllUrl) return;
+        try {
+            const currentParams = new URL(window.location.href).searchParams;
+            const url = new URL(tableData.selectAllUrl, window.location.origin);
+            for (const [key, value] of currentParams.entries()) {
+                url.searchParams.set(key, value);
+            }
+            const response = await fetch(url.toString());
+            const data = await response.json();
+            setServerSelectAll(true);
+            setServerSelectedIds(data.ids ?? []);
+            // Select all visible rows too
+            const allSelection: Record<string, boolean> = {};
+            table.getRowModel().rows.forEach((_, i) => { allSelection[String(i)] = true; });
+            setRowSelection(allSelection);
+        } catch {
+            // Silently fail
+        }
+    }
+
+    function clearServerSelectAll() {
+        setServerSelectAll(false);
+        setServerSelectedIds([]);
+        setRowSelection({});
+    }
+
+    // Keyboard navigation handler
+    function handleTableKeyDown(e: React.KeyboardEvent) {
+        if (!resolvedOptions.keyboardNavigation) return;
+        const rows = table.getRowModel().rows;
+        if (rows.length === 0) return;
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setFocusedRowIndex((prev) => {
+                const next = prev === null ? 0 : Math.min(prev + 1, rows.length - 1);
+                return next;
+            });
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setFocusedRowIndex((prev) => {
+                const next = prev === null ? 0 : Math.max(prev - 1, 0);
+                return next;
+            });
+        } else if (e.key === "Enter" && focusedRowIndex !== null) {
+            e.preventDefault();
+            const row = rows[focusedRowIndex];
+            if (row) handleRowInteraction(row.original, e as unknown as React.MouseEvent);
+        } else if (e.key === "Escape") {
+            setFocusedRowIndex(null);
+            setRowSelection({});
+        } else if (e.key === " " && focusedRowIndex !== null && hasBulkActions) {
+            e.preventDefault();
+            const row = rows[focusedRowIndex];
+            if (row) row.toggleSelected(!row.getIsSelected());
+        }
+    }
+
+    // Scroll focused row into view
+    useEffect(() => {
+        if (focusedRowIndex === null || !tableBodyRef.current) return;
+        const rows = tableBodyRef.current.querySelectorAll("tr");
+        rows[focusedRowIndex]?.scrollIntoView({ block: "nearest" });
+    }, [focusedRowIndex]);
+
     const toolbarProps = {
         tableData,
         table,
@@ -627,10 +980,14 @@ export function DataTable<TData extends object>({
         t,
     };
 
+    const activeFilterColumnIds = useMemo(() => {
+        return new Set(Object.keys(meta.filters as Record<string, unknown>));
+    }, [meta.filters]);
+
     return (
-        <div className="space-y-2">
+        <div className="space-y-2 dt-root">
             {slots?.beforeTable}
-            <div className="flex items-center justify-between gap-2 py-1">
+            <div className="flex items-center justify-between gap-2 py-1 print:hidden">
                 <div className="flex flex-1 items-center gap-2 pl-6">
                     {resolvedOptions.globalSearch && (
                         <div className="relative w-64">
@@ -651,6 +1008,7 @@ export function DataTable<TData extends object>({
                             prefix={prefix}
                             debounceMs={debounceMs}
                             partialReloadKey={partialReloadKey}
+                            renderFilter={renderFilter}
                         />
                     )}
                 </div>
@@ -673,10 +1031,33 @@ export function DataTable<TData extends object>({
                 )}
             </div>
             {hasBulkActions && selectedRows.length > 0 && (
-                <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2">
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 print:hidden">
                     <span className="text-sm font-medium tabular-nums">
-                        {t.selected(selectedRows.length)}
+                        {serverSelectAll
+                            ? t.selected(serverSelectedIds.length)
+                            : t.selected(selectedRows.length)}
                     </span>
+                    {/* Server-side select all banner */}
+                    {!serverSelectAll && tableData.selectAllUrl && meta.total > tableData.data.length && table.getIsAllPageRowsSelected() && (
+                        <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs"
+                            onClick={handleSelectAllMatching}
+                        >
+                            {t.selectAllMatching(meta.total)}
+                        </Button>
+                    )}
+                    {serverSelectAll && (
+                        <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs"
+                            onClick={clearServerSelectAll}
+                        >
+                            {t.clearSelection}
+                        </Button>
+                    )}
                     <div className="flex items-center gap-1">
                         {bulkActions.map((action) => {
                             const Icon = action.icon;
@@ -700,14 +1081,25 @@ export function DataTable<TData extends object>({
                         variant="ghost"
                         size="icon"
                         className="ml-auto h-7 w-7"
-                        onClick={() => setRowSelection({})}
+                        onClick={clearServerSelectAll}
                     >
                         <X className="h-3.5 w-3.5" />
                     </Button>
                 </div>
             )}
-            <div className={cn("rounded-md border border-x-0 overflow-x-auto", className)}>
-                <Table>
+            {/* Loading indicator */}
+            {resolvedOptions.loading && isNavigating && (
+                <div className="flex items-center justify-center gap-2 py-1 text-sm text-muted-foreground print:hidden">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t.loading}
+                </div>
+            )}
+            <div
+                className={cn("rounded-md border border-x-0 overflow-x-auto", className)}
+                tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
+                onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}
+            >
+                <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}>
                     <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
                         {table.getHeaderGroups().map((headerGroup, groupIdx) => {
                             const isGroupRow = groupIdx < table.getHeaderGroups().length - 1;
@@ -743,37 +1135,63 @@ export function DataTable<TData extends object>({
                                         const colDef = tableData.columns.find(
                                             (c) => c.id === header.column.id,
                                         );
-                                        const isNumber = colDef?.type === "number";
+                                        const isNumber = colDef?.type === "number" || colDef?.type === "currency" || colDef?.type === "percentage";
                                         const leafGroup = colDef?.group;
                                         const pin = getColumnPinningProps(header.column);
+                                        const hasActiveFilter = colDef ? activeFilterColumnIds.has(colDef.id) : false;
                                         return (
                                             <TableHead
                                                 key={header.id}
                                                 colSpan={header.colSpan}
-                                                style={pin.style}
+                                                style={{
+                                                    ...pin.style,
+                                                    ...(resolvedOptions.columnResizing ? { width: header.getSize() } : {}),
+                                                }}
                                                 className={cn(
                                                     isNumber && "text-right",
                                                     leafGroup && groupClassName?.[leafGroup],
                                                     pin.className,
+                                                    "relative",
                                                 )}
                                             >
                                                 {header.isPlaceholder ? null : colDef?.sortable ? (
-                                                    <DataTableColumnHeader
-                                                        label={colDef.label}
-                                                        sortable={colDef.sortable}
-                                                        sorts={meta.sorts}
-                                                        columnId={colDef.id}
-                                                        onSort={handleSort}
-                                                        align={isNumber ? "right" : "left"}
-                                                    >
-                                                        {renderHeader?.[colDef.id]}
-                                                    </DataTableColumnHeader>
+                                                    <div className="flex items-center gap-1">
+                                                        <DataTableColumnHeader
+                                                            label={colDef.label}
+                                                            sortable={colDef.sortable}
+                                                            sorts={meta.sorts}
+                                                            columnId={colDef.id}
+                                                            onSort={handleSort}
+                                                            align={isNumber ? "right" : "left"}
+                                                        >
+                                                            {renderHeader?.[colDef.id]}
+                                                        </DataTableColumnHeader>
+                                                        {hasActiveFilter && (
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                                                        )}
+                                                    </div>
                                                 ) : (
-                                                    renderHeader?.[header.column.id] ??
-                                                    flexRender(
-                                                        header.column.columnDef.header,
-                                                        header.getContext(),
-                                                    )
+                                                    <div className="flex items-center gap-1">
+                                                        {renderHeader?.[header.column.id] ??
+                                                        flexRender(
+                                                            header.column.columnDef.header,
+                                                            header.getContext(),
+                                                        )}
+                                                        {hasActiveFilter && (
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {/* Column resize handle */}
+                                                {resolvedOptions.columnResizing && header.column.getCanResize() && (
+                                                    <div
+                                                        onMouseDown={header.getResizeHandler()}
+                                                        onTouchStart={header.getResizeHandler()}
+                                                        className={cn(
+                                                            "absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
+                                                            header.column.getIsResizing() ? "bg-primary" : "hover:bg-border",
+                                                        )}
+                                                    />
                                                 )}
                                             </TableHead>
                                         );
@@ -782,8 +1200,10 @@ export function DataTable<TData extends object>({
                             );
                         })}
                     </TableHeader>
-                    <TableBody>
-                        {table.getRowModel().rows.length > 0 ? (
+                    <TableBody ref={tableBodyRef}>
+                        {resolvedOptions.loading && isNavigating ? (
+                            <SkeletonRows count={meta.perPage > 10 ? 10 : meta.perPage} colCount={table.getVisibleLeafColumns().length} />
+                        ) : table.getRowModel().rows.length > 0 ? (
                             table.getRowModel().rows.map((row, index) => {
                                 const dataAttrs = rowDataAttributes?.(row.original) ?? {};
                                 return (
@@ -795,13 +1215,21 @@ export function DataTable<TData extends object>({
                                             index % 2 === 1 && "bg-muted/40",
                                             row.getIsSelected() && "bg-primary/5",
                                             isClickable && "cursor-pointer hover:bg-muted/60",
+                                            focusedRowIndex === index && "ring-2 ring-inset ring-primary",
                                             rowClassName?.(row.original),
                                         )}
-                                        onClick={isClickable ? (e) => {
-                                            const target = e.target as HTMLElement;
-                                            if (target.closest("button, a, input, [role='checkbox'], [data-slot='clear']")) return;
-                                            handleRowInteraction(row.original, e);
-                                        } : undefined}
+                                        onClick={(e) => {
+                                            // Shift+click range selection
+                                            if (hasBulkActions && e.shiftKey) {
+                                                handleRowCheckboxClick(index, e);
+                                                return;
+                                            }
+                                            if (isClickable) {
+                                                const target = e.target as HTMLElement;
+                                                if (target.closest("button, a, input, [role='checkbox'], [data-slot='clear']")) return;
+                                                handleRowInteraction(row.original, e);
+                                            }
+                                        }}
                                     >
                                         {row.getVisibleCells().map((cell) => {
                                             const pin = getColumnPinningProps(cell.column);
@@ -809,11 +1237,17 @@ export function DataTable<TData extends object>({
                                             return (
                                                 <TableCell
                                                     key={cell.id}
-                                                    style={{ ...pin.style, ...pinnedBg }}
+                                                    style={{
+                                                        ...pin.style,
+                                                        ...pinnedBg,
+                                                        ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}),
+                                                    }}
                                                     className={cn(
                                                         index % 2 === 1 && "bg-muted/40",
                                                         "whitespace-nowrap py-2",
                                                         (cell.column.columnDef.meta as { type?: string })?.type === "number" && "text-right",
+                                                        (cell.column.columnDef.meta as { type?: string })?.type === "currency" && "text-right",
+                                                        (cell.column.columnDef.meta as { type?: string })?.type === "percentage" && "text-right",
                                                         (cell.column.columnDef.meta as { group?: string | null })?.group &&
                                                             groupClassName?.[(cell.column.columnDef.meta as { group: string }).group],
                                                         pin.className,
@@ -846,7 +1280,7 @@ export function DataTable<TData extends object>({
                                 {[...table.getLeftVisibleLeafColumns(), ...table.getCenterVisibleLeafColumns(), ...table.getRightVisibleLeafColumns()].map((col) => {
                                     const footerValue = tableData.footer?.[col.id];
                                     const colMeta = col.columnDef.meta as { type?: string; group?: string | null } | undefined;
-                                    const isNumber = colMeta?.type === "number";
+                                    const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
                                     const group = colMeta?.group;
                                     const pin = getColumnPinningProps(col);
                                     let content: React.ReactNode = null;
@@ -888,13 +1322,15 @@ export function DataTable<TData extends object>({
                 </Table>
             </div>
             {slots?.pagination ?? (
-                <DataTablePagination
-                    meta={meta}
-                    onPageChange={handlePageChange}
-                    onPerPageChange={handlePerPageChange}
-                    onCursorChange={handleCursorChange}
-                    t={t}
-                />
+                <div className="print:hidden">
+                    <DataTablePagination
+                        meta={meta}
+                        onPageChange={handlePageChange}
+                        onPerPageChange={handlePerPageChange}
+                        onCursorChange={handleCursorChange}
+                        t={t}
+                    />
+                </div>
             )}
             {slots?.afterTable}
 
@@ -927,6 +1363,21 @@ export function DataTable<TData extends object>({
                     </DialogFoot>
                 </DialogContent>
             </Dialog>
+
+            {/* Print-friendly styles */}
+            {resolvedOptions.printable && (
+                <style>{`
+                    @media print {
+                        body * { visibility: hidden; }
+                        .dt-root, .dt-root * { visibility: visible; }
+                        .dt-root { position: absolute; left: 0; top: 0; width: 100%; }
+                        .print\\:hidden { display: none !important; }
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f5f5f5; font-weight: bold; }
+                    }
+                `}</style>
+            )}
         </div>
     );
 }

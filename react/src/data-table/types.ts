@@ -3,7 +3,7 @@ import type { DataTableTranslations } from "./i18n";
 export interface DataTableColumnDef {
     id: string;
     label: string;
-    type: "text" | "number" | "date" | "option" | "multiOption" | "boolean" | "image" | "badge";
+    type: "text" | "number" | "date" | "option" | "multiOption" | "boolean" | "image" | "badge" | "currency" | "percentage" | "link" | "email" | "phone";
     sortable: boolean;
     filterable: boolean;
     visible: boolean;
@@ -13,6 +13,9 @@ export interface DataTableColumnDef {
     icon?: string | null;
     searchThreshold?: number | null;
     group?: string | null;
+    editable?: boolean;
+    currency?: string | null;
+    locale?: string | null;
 }
 
 export interface DataTableQuickView {
@@ -48,8 +51,12 @@ export interface DataTableOptions {
     filters: boolean;
     columnVisibility: boolean;
     columnOrdering: boolean;
+    columnResizing: boolean;
     stickyHeader: boolean;
     globalSearch: boolean;
+    loading: boolean;
+    keyboardNavigation: boolean;
+    printable: boolean;
 }
 
 export interface DataTableResponse<TData = object> {
@@ -59,6 +66,8 @@ export interface DataTableResponse<TData = object> {
     meta: DataTableMeta;
     exportUrl?: string | null;
     footer?: Record<string, unknown> | null;
+    /** URL for fetching all row IDs matching current filters (server-side selection) */
+    selectAllUrl?: string | null;
 }
 
 export interface DataTableConfirmOptions {
@@ -99,6 +108,8 @@ export interface DataTableProps<TData extends object> {
     renderCell?: (columnId: string, value: unknown, row: TData) => React.ReactNode | undefined;
     renderHeader?: Record<string, React.ReactNode>;
     renderFooterCell?: (columnId: string, value: unknown) => React.ReactNode | undefined;
+    /** Custom filter component per column */
+    renderFilter?: Record<string, (value: unknown, onChange: (value: unknown) => void) => React.ReactNode>;
     rowClassName?: (row: TData) => string;
     /** Add custom data-* attributes to each row */
     rowDataAttributes?: (row: TData) => Record<string, string>;
@@ -115,6 +126,12 @@ export interface DataTableProps<TData extends object> {
     debounceMs?: number;
     /** Inertia partial reload key for optimized data fetching */
     partialReloadKey?: string;
+    /** Called when a cell is edited inline — return a promise to save */
+    onInlineEdit?: (row: TData, columnId: string, value: unknown) => Promise<void> | void;
+    /** Laravel Echo channel name for real-time updates */
+    realtimeChannel?: string;
+    /** Laravel Echo event name to listen for (default: '.updated') */
+    realtimeEvent?: string;
     /** Slot overrides for composability */
     slots?: {
         toolbar?: React.ReactNode;

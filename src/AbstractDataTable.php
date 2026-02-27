@@ -127,9 +127,11 @@ abstract class AbstractDataTable extends Data
         $searchTerm = $request->get($searchKey, '');
         $searchableColumns = static::tableSearchableColumns();
         if ($searchTerm && ! empty($searchableColumns)) {
-            $query->where(function (Builder $q) use ($searchTerm, $searchableColumns) {
+            // Escape LIKE wildcards to prevent wildcard injection
+            $escaped = str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $searchTerm);
+            $query->where(function (Builder $q) use ($escaped, $searchableColumns) {
                 foreach ($searchableColumns as $column) {
-                    $q->orWhere($column, 'LIKE', '%' . $searchTerm . '%');
+                    $q->orWhere($column, 'LIKE', '%' . $escaped . '%');
                 }
             });
         }
@@ -217,6 +219,11 @@ abstract class AbstractDataTable extends Data
         $dataCollection = $data instanceof \Illuminate\Support\Collection ? $data : collect($data);
         $footer = static::tableFooter($dataCollection);
 
+        $selectAllUrl = null;
+        if (method_exists(static::class, 'resolveSelectAllUrl')) {
+            $selectAllUrl = static::resolveSelectAllUrl();
+        }
+
         return new DataTableResponse(
             data: $dataCollection->all(),
             columns: static::tableColumns(),
@@ -224,6 +231,7 @@ abstract class AbstractDataTable extends Data
             meta: $meta,
             exportUrl: $exportUrl,
             footer: ! empty($footer) ? $footer : null,
+            selectAllUrl: $selectAllUrl,
         );
     }
 

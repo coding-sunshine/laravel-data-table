@@ -11,6 +11,11 @@ class MakeDataTable extends Command
     protected $signature = 'make:data-table
         {model : The model class name (e.g. Product)}
         {--export : Include the HasExport trait with export methods}
+        {--inline-edit : Include the HasInlineEdit trait for inline editing}
+        {--select-all : Include the HasSelectAll trait for server-side selection}
+        {--searchable=* : Columns searchable via global search (e.g. --searchable=name --searchable=email)}
+        {--pagination=standard : Pagination type: standard, simple, or cursor}
+        {--resource : Generate an API Resource class for row transformation}
         {--route : Append a route entry to a routes file}
         {--route-file=routes/web.php : The route file to append to (used with --route)}
         {--page-path=resources/js/pages : Base path for the generated React page}';
@@ -27,9 +32,18 @@ class MakeDataTable extends Command
         $model = Str::studly($this->argument('model'));
         $kebab = Str::kebab($model);
         $withExport = (bool) $this->option('export');
+        $withInlineEdit = (bool) $this->option('inline-edit');
+        $withSelectAll = (bool) $this->option('select-all');
+        $searchable = $this->option('searchable') ?: [];
+        $pagination = $this->option('pagination') ?? 'standard';
+        $withResource = (bool) $this->option('resource');
 
-        $this->generateDataTableClass($model, $kebab, $withExport);
+        $this->generateDataTableClass($model, $kebab, $withExport, $withInlineEdit, $withSelectAll, $searchable, $pagination, $withResource);
         $this->generatePageStub($model, $kebab);
+
+        if ($withResource) {
+            $this->generateResourceClass($model);
+        }
 
         $pagePath = $this->option('page-path');
         $generated = [
@@ -37,8 +51,12 @@ class MakeDataTable extends Command
             "Page: {$pagePath}/{$kebab}-table.tsx",
         ];
 
+        if ($withResource) {
+            $generated[] = "Resource: app/Http/Resources/{$model}Resource.php";
+        }
+
         if ($this->option('route')) {
-            $this->appendRoute($model, $kebab, $withExport);
+            $this->appendRoute($model, $kebab, $withExport, $withSelectAll, $withInlineEdit);
             $routeFile = $this->option('route-file');
             $generated[] = "Route appended to {$routeFile}";
         }
@@ -58,14 +76,26 @@ class MakeDataTable extends Command
             $reminders[] = "Add a route passing {$model}DataTable::makeTable()";
         }
 
+        if ($withSelectAll || $withInlineEdit) {
+            $reminders[] = "Register table controllers in route file (see generated route)";
+        }
+
         $this->components->warn("Don't forget to:");
         $this->components->bulletList($reminders);
 
         return self::SUCCESS;
     }
 
-    private function generateDataTableClass(string $model, string $kebab, bool $withExport): void
-    {
+    private function generateDataTableClass(
+        string $model,
+        string $kebab,
+        bool $withExport,
+        bool $withInlineEdit,
+        bool $withSelectAll,
+        array $searchable,
+        string $pagination,
+        bool $withResource,
+    ): void {
         $path = app_path("DataTables/{$model}DataTable.php");
 
         if ($this->files->exists($path)) {
@@ -74,9 +104,44 @@ class MakeDataTable extends Command
             return;
         }
 
-        $exportUse = $withExport ? "\nuse Machour\\DataTable\\Concerns\\HasExport;" : '';
-        $exportTrait = $withExport ? "\n    use HasExport;\n" : '';
-        $exportMethods = $withExport ? <<<'PHP'
+        // Build use statements
+        $uses = [
+            'use Machour\DataTable\AbstractDataTable;',
+            'use Machour\DataTable\Columns\Column;',
+            'use Machour\DataTable\QuickView;',
+        ];
+
+        $traits = [];
+
+        if ($withExport) {
+            $uses[] = 'use Machour\DataTable\Concerns\HasExport;';
+            $traits[] = 'HasExport';
+        }
+
+        if ($withInlineEdit) {
+            $uses[] = 'use Machour\DataTable\Concerns\HasInlineEdit;';
+            $traits[] = 'HasInlineEdit';
+        }
+
+        if ($withSelectAll) {
+            $uses[] = 'use Machour\DataTable\Concerns\HasSelectAll;';
+            $traits[] = 'HasSelectAll';
+        }
+
+        $uses[] = "use App\\Models\\{$model};";
+        $uses[] = 'use Illuminate\Database\Eloquent\Builder;';
+        $uses[] = 'use Spatie\TypeScriptTransformer\Attributes\TypeScript;';
+
+        sort($uses);
+        $useBlock = implode("\n", $uses);
+
+        $traitBlock = '';
+        if (! empty($traits)) {
+            $traitBlock = "\n    use " . implode(', ', $traits) . ";\n";
+        }
+
+        // Export methods
+        $exportMethods = $withExport ? <<<PHP
 
 
     public static function tableExportEnabled(): bool
@@ -86,32 +151,85 @@ class MakeDataTable extends Command
 
     public static function tableExportName(): string
     {
-        return '___KEBAB___s';
+        return '{$kebab}s';
     }
 
     public static function tableExportFilename(): string|\Closure
     {
-        return '___KEBAB___s';
+        return '{$kebab}s';
     }
 PHP : '';
 
-        $exportMethods = str_replace('___KEBAB___', $kebab, $exportMethods);
+        // Inline edit method
+        $inlineEditMethods = $withInlineEdit ? <<<PHP
+
+
+    public static function tableInlineEditModel(): string
+    {
+        return {$model}::class;
+    }
+PHP : '';
+
+        // Select all method
+        $selectAllMethods = $withSelectAll ? <<<PHP
+
+
+    public static function tableSelectAllName(): string
+    {
+        return '{$kebab}s';
+    }
+PHP : '';
+
+        // Searchable columns
+        $searchableMethods = '';
+        if (! empty($searchable)) {
+            $searchableList = implode("', '", $searchable);
+            $searchableMethods = <<<PHP
+
+
+    public static function tableSearchableColumns(): array
+    {
+        return ['{$searchableList}'];
+    }
+PHP;
+        }
+
+        // Pagination type
+        $paginationMethod = '';
+        if ($pagination !== 'standard') {
+            $paginationMethod = <<<PHP
+
+
+    public static function tablePaginationType(): string
+    {
+        return '{$pagination}';
+    }
+PHP;
+        }
+
+        // Resource method
+        $resourceMethod = '';
+        if ($withResource) {
+            $resourceMethod = <<<PHP
+
+
+    public static function tableResource(): ?string
+    {
+        return \App\Http\Resources\\{$model}Resource::class;
+    }
+PHP;
+        }
 
         $stub = <<<PHP
 <?php
 
 namespace App\DataTables;
 
-use Machour\DataTable\AbstractDataTable;
-use Machour\DataTable\Columns\Column;
-use Machour\DataTable\QuickView;{$exportUse}
-use App\Models\\{$model};
-use Illuminate\Database\Eloquent\Builder;
-use Spatie\TypeScriptTransformer\Attributes\TypeScript;
+{$useBlock}
 
 #[TypeScript]
 class {$model}DataTable extends AbstractDataTable
-{{$exportTrait}
+{{$traitBlock}
     public function __construct(
         public int \$id,
         // TODO: Add DTO properties matching your model
@@ -155,7 +273,7 @@ class {$model}DataTable extends AbstractDataTable
     public static function tableDefaultSort(): string
     {
         return '-id';
-    }{$exportMethods}
+    }{$exportMethods}{$inlineEditMethods}{$selectAllMethods}{$searchableMethods}{$paginationMethod}{$resourceMethod}
 }
 PHP;
 
@@ -213,7 +331,43 @@ TSX;
         $this->components->info("Created: {$path}");
     }
 
-    private function appendRoute(string $model, string $kebab, bool $withExport): void
+    private function generateResourceClass(string $model): void
+    {
+        $path = app_path("Http/Resources/{$model}Resource.php");
+
+        if ($this->files->exists($path)) {
+            $this->components->warn("Resource already exists: {$path}");
+
+            return;
+        }
+
+        $stub = <<<PHP
+<?php
+
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class {$model}Resource extends JsonResource
+{
+    public function toArray(Request \$request): array
+    {
+        return [
+            'id' => \$this->id,
+            // TODO: Add fields matching your DataTable DTO
+            'created_at' => \$this->created_at?->format('Y-m-d H:i'),
+        ];
+    }
+}
+PHP;
+
+        $this->files->ensureDirectoryExists(dirname($path));
+        $this->files->put($path, $stub);
+        $this->components->info("Created: {$path}");
+    }
+
+    private function appendRoute(string $model, string $kebab, bool $withExport, bool $withSelectAll, bool $withInlineEdit): void
     {
         $routeFile = $this->option('route-file');
         $routesPath = base_path($routeFile);
@@ -238,8 +392,18 @@ TSX;
             $lines[] = "\\Machour\\DataTable\\Http\\Controllers\\DataTableExportController::register('{$kebab}s', \\App\\DataTables\\{$model}DataTable::class);";
         }
 
+        if ($withSelectAll) {
+            $lines[] = '';
+            $lines[] = "\\Machour\\DataTable\\Http\\Controllers\\DataTableSelectAllController::register('{$kebab}s', \\App\\DataTables\\{$model}DataTable::class);";
+        }
+
+        if ($withInlineEdit) {
+            $lines[] = '';
+            $lines[] = "\\Machour\\DataTable\\Http\\Controllers\\DataTableInlineEditController::register('{$kebab}s', \\App\\DataTables\\{$model}DataTable::class);";
+        }
+
         $content = $this->files->get($routesPath);
-        $content .= implode("\n", $lines)."\n";
+        $content .= implode("\n", $lines) . "\n";
         $this->files->put($routesPath, $content);
 
         $this->components->info("Route appended to: {$routesPath}");
