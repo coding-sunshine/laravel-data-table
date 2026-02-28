@@ -95,6 +95,7 @@ import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
 import type { DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableOptions, DataTableProps, DataTableRule } from "./types";
 import { useDataTable } from "./use-data-table";
+import { DataTableColumn, extractColumnConfigs } from "./data-table-column";
 import {
     Select,
     SelectContent,
@@ -394,34 +395,25 @@ function ImportDialog({ open, onOpenChange, importUrl, t }: {
     const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
     const fileRef = useRef<HTMLInputElement>(null);
 
-    const handleUpload = useCallback(async () => {
+    const handleUpload = useCallback(() => {
         const file = fileRef.current?.files?.[0];
         if (!file) return;
         setUploading(true);
         setResult(null);
-        try {
-            const formData = new FormData();
-            formData.append("file", file);
-            const response = await fetch(importUrl, {
-                method: "POST",
-                headers: {
-                    "X-Requested-With": "XMLHttpRequest",
-                    "X-CSRF-TOKEN": document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? "",
-                },
-                body: formData,
-            });
-            if (response.ok) {
+        router.post(importUrl, { file } as Record<string, unknown>, {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: () => {
                 setResult({ success: true, message: t.importSuccess });
                 setTimeout(() => { onOpenChange(false); router.reload(); }, 1000);
-            } else {
-                const data = await response.json().catch(() => ({}));
-                setResult({ success: false, message: data.message ?? t.importError });
-            }
-        } catch {
-            setResult({ success: false, message: t.importError });
-        } finally {
-            setUploading(false);
-        }
+            },
+            onError: (errors) => {
+                const msg = typeof errors === "object" && errors !== null
+                    ? Object.values(errors).flat().join(", ") : t.importError;
+                setResult({ success: false, message: msg || t.importError });
+            },
+            onFinish: () => setUploading(false),
+        });
     }, [importUrl, t, onOpenChange]);
 
     return (
@@ -774,27 +766,24 @@ function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }
     );
 }
 
-/** Boolean toggle switch cell */
+/** Boolean toggle switch cell — uses Inertia router.patch for proper session/CSRF handling */
 function ToggleCell({ value, row, columnId, toggleUrl }: {
     value: boolean; row: Record<string, unknown>; columnId: string; toggleUrl: string;
 }) {
     const [checked, setChecked] = useState(!!value);
     const [saving, setSaving] = useState(false);
 
-    const handleToggle = useCallback(async (newValue: boolean) => {
+    const handleToggle = useCallback((newValue: boolean) => {
         setSaving(true);
         setChecked(newValue);
-        try {
-            const rowId = row.id ?? "";
-            const url = `${toggleUrl}/${rowId}`;
-            await fetch(url, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest",
-                    "X-CSRF-TOKEN": document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? "" },
-                body: JSON.stringify({ column: columnId, value: newValue }),
-            });
-        } catch { setChecked(!newValue); }
-        finally { setSaving(false); }
+        const rowId = row.id ?? "";
+        const url = `${toggleUrl}/${rowId}`;
+        router.patch(url, { column: columnId, value: newValue } as Record<string, unknown>, {
+            preserveScroll: true,
+            preserveState: true,
+            onError: () => setChecked(!newValue),
+            onFinish: () => setSaving(false),
+        });
     }, [row.id, toggleUrl, columnId]);
 
     return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving} className="data-[state=checked]:bg-emerald-600" />;
@@ -1052,18 +1041,208 @@ function useResponsiveColumns(columns: DataTableColumnDef[]): Set<string> {
     return hiddenCols;
 }
 
+// ─── Mobile card layout ──────────────────────────────────────────────────────
+
+function useMobileBreakpoint(breakpoint: number): boolean {
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        if (breakpoint <= 0) return;
+        function check() { setIsMobile(window.innerWidth < breakpoint); }
+        check();
+        window.addEventListener("resize", check);
+        return () => window.removeEventListener("resize", check);
+    }, [breakpoint]);
+    return isMobile;
+}
+
+function MobileCardLayout<TData>({ rows, columns, renderCell, actions, onRowClick, rowLink, t, density }: {
+    rows: TData[]; columns: DataTableColumnDef[];
+    renderCell?: (columnId: string, value: unknown, row: TData) => React.ReactNode | undefined;
+    actions?: import("./types").DataTableAction<TData>[];
+    onRowClick?: (row: TData) => void;
+    rowLink?: (row: TData) => string;
+    t: DataTableTranslations;
+    density: DataTableDensity;
+}) {
+    const visibleCols = columns.filter((c) => c.visible !== false);
+    return (
+        <div className="grid gap-3 md:hidden">
+            {rows.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">{t.noData}</div>
+            ) : rows.map((row, idx) => {
+                const rowData = row as Record<string, unknown>;
+                const handleClick = () => {
+                    if (rowLink) window.location.href = rowLink(row);
+                    else if (onRowClick) onRowClick(row);
+                };
+                const isClickable = !!onRowClick || !!rowLink;
+                return (
+                    <div key={rowData.id != null ? String(rowData.id) : idx}
+                        className={cn("rounded-lg border bg-card p-4 space-y-2",
+                            isClickable && "cursor-pointer hover:bg-accent/50 transition-colors",
+                            density === "compact" && "p-2.5 space-y-1",
+                            density === "spacious" && "p-5 space-y-3")}
+                        onClick={isClickable ? handleClick : undefined}>
+                        {visibleCols.map((col) => {
+                            const value = rowData[col.id];
+                            const custom = renderCell?.(col.id, value, row);
+                            return (
+                                <div key={col.id} className="flex items-start justify-between gap-2">
+                                    <span className="text-xs font-medium text-muted-foreground shrink-0">{col.label}</span>
+                                    <span className="text-sm text-right">
+                                        {custom !== undefined ? custom : value === null || value === undefined ? "—" : String(value)}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                        {actions && actions.length > 0 && (
+                            <div className="flex justify-end gap-1 pt-1 border-t">
+                                <DataTableRowActions row={row} actions={actions} t={t} />
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Active filter chips ─────────────────────────────────────────────────────
+
+function FilterChips({ filters, columns, onClear, onClearAll, t }: {
+    filters: Record<string, unknown>;
+    columns: DataTableColumnDef[];
+    onClear: (columnId: string) => void;
+    onClearAll: () => void;
+    t: DataTableTranslations;
+}) {
+    const colMap = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
+    const entries = Object.entries(filters).filter(([, v]) => v !== null && v !== undefined && v !== "");
+    if (entries.length === 0) return null;
+
+    return (
+        <div className="flex flex-wrap items-center gap-1.5 print:hidden">
+            {entries.map(([key, value]) => {
+                const col = colMap.get(key);
+                const label = col?.label ?? key;
+                const displayValue = String(value).replace(/^[a-z_]+:/i, "").replace(/,/g, ", ");
+                return (
+                    <span key={key} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                        <span className="text-primary/60">{label}:</span> {displayValue}
+                        <button type="button" onClick={() => onClear(key)}
+                            className="ml-0.5 rounded-full p-0.5 hover:bg-primary/20 transition-colors">
+                            <X className="h-3 w-3" />
+                        </button>
+                    </span>
+                );
+            })}
+            {entries.length > 1 && (
+                <button type="button" onClick={onClearAll}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline">
+                    {t.clearAllFilters}
+                </button>
+            )}
+        </div>
+    );
+}
+
+// ─── Inline row creation ─────────────────────────────────────────────────────
+
+function InlineRowCreator({ columns, onRowCreate, t }: {
+    columns: DataTableColumnDef[];
+    onRowCreate: (data: Record<string, unknown>) => Promise<void> | void;
+    t: DataTableTranslations;
+}) {
+    const [isCreating, setIsCreating] = useState(false);
+    const [values, setValues] = useState<Record<string, string>>({});
+    const [saving, setSaving] = useState(false);
+
+    const editableCols = useMemo(
+        () => columns.filter((c) => c.editable && c.type !== "image"),
+        [columns],
+    );
+
+    const handleSave = useCallback(async () => {
+        setSaving(true);
+        try {
+            const parsed: Record<string, unknown> = {};
+            for (const col of editableCols) {
+                const raw = values[col.id] ?? "";
+                if (col.type === "number" || col.type === "currency" || col.type === "percentage") {
+                    parsed[col.id] = raw ? Number(raw) : null;
+                } else if (col.type === "boolean") {
+                    parsed[col.id] = raw === "true" || raw === "1";
+                } else {
+                    parsed[col.id] = raw || null;
+                }
+            }
+            await onRowCreate(parsed);
+            setValues({});
+            setIsCreating(false);
+        } finally { setSaving(false); }
+    }, [editableCols, values, onRowCreate]);
+
+    if (!isCreating) {
+        return (
+            <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => setIsCreating(true)}>
+                <span className="text-lg leading-none">+</span>
+                <span>{t.addRow ?? "Add row"}</span>
+            </Button>
+        );
+    }
+
+    return (
+        <div className="flex items-end gap-2 rounded-lg border bg-muted/20 p-3 print:hidden">
+            {editableCols.map((col) => (
+                <div key={col.id} className="grid gap-1">
+                    <Label className="text-xs">{col.label}</Label>
+                    <Input
+                        type={col.type === "number" || col.type === "currency" || col.type === "percentage" ? "number" : "text"}
+                        value={values[col.id] ?? ""}
+                        onChange={(e) => setValues((prev) => ({ ...prev, [col.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setIsCreating(false); }}
+                        className="h-8 w-32 text-sm"
+                        placeholder={col.label}
+                    />
+                </div>
+            ))}
+            <div className="flex items-center gap-1">
+                <Button size="sm" className="h-8" onClick={handleSave} disabled={saving}>
+                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t.save}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8" onClick={() => { setIsCreating(false); setValues({}); }}>
+                    {t.cancel}
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 // ─── Main DataTable component ───────────────────────────────────────────────
 
 function DataTableInner<TData extends object>({
     className, tableData, tableName, prefix, actions, bulkActions,
-    renderCell, renderHeader, renderFooterCell, renderFilter,
+    renderCell: renderCellProp, renderHeader: renderHeaderProp,
+    renderFooterCell: renderFooterCellProp, renderFilter: renderFilterProp,
     rowClassName, rowDataAttributes, groupClassName,
     options: optionsOverride, translations: translationsOverride,
     onRowClick, rowLink, emptyState, debounceMs, partialReloadKey,
     onInlineEdit, realtimeChannel, realtimeEvent = ".updated",
     renderDetailRow, selectionMode = "checkbox", slots,
     onReorder, onBatchEdit, emptyStateIllustration,
+    onStateChange, onRowCreate, mobileBreakpoint = 0, children,
 }: DataTableProps<TData>) {
+    // Extract column configs from JSX children (<DataTable.Column>)
+    const jsxColumnConfigs = useMemo(
+        () => children ? extractColumnConfigs<TData>(children) : null,
+        [children],
+    );
+
+    // Merge JSX column overrides with prop-based overrides (props take priority)
+    const renderCell = renderCellProp ?? jsxColumnConfigs?.renderCell;
+    const renderHeader = renderHeaderProp ?? jsxColumnConfigs?.renderHeader;
+    const renderFooterCell = renderFooterCellProp ?? jsxColumnConfigs?.renderFooterCell;
+    const renderFilter = renderFilterProp ?? jsxColumnConfigs?.renderFilter;
     const t = useMemo<DataTableTranslations>(() => ({ ...defaultTranslations, ...translationsOverride }), [translationsOverride]);
 
     const resolvedOptions = useMemo<DataTableOptions>(() => ({
@@ -1367,7 +1546,7 @@ function DataTableInner<TData extends object>({
         applyColumns, handleSort, handlePageChange, handlePerPageChange, handleCursorChange,
         handleGlobalSearch, handleApplyQuickView, handleApplyCustomSearch,
     } = useDataTable<TData>({ tableData, tableName, columnDefs, prefix, debounceMs, partialReloadKey,
-        columnResizing: resolvedOptions.columnResizing, columnSizing, onColumnSizingChange: setColumnSizing });
+        columnResizing: resolvedOptions.columnResizing, columnSizing, onColumnSizingChange: setColumnSizing, onStateChange });
 
     const filterColumns = useMemo(() => buildFilterColumns(mergedColumns), [mergedColumns]);
     const selectedRows = useMemo(() => table.getFilteredSelectedRowModel().rows.map((r) => r.original),
@@ -1527,6 +1706,32 @@ function DataTableInner<TData extends object>({
         density, onDensityChange: handleDensityChange, onImportClick: tableData.importUrl ? () => setImportDialogOpen(true) : undefined,
         onShowShortcuts: () => setShortcutsOpen(true), canUndo, canRedo, onUndo: handleUndo, onRedo: handleRedo };
 
+    // Mobile breakpoint detection
+    const isMobile = useMobileBreakpoint(mobileBreakpoint);
+
+    // Filter chip clear handlers
+    const filterKeyForChips = prefix ? `${prefix}_filter` : "filter";
+    const pageKeyForChips = prefix ? `${prefix}_page` : "page";
+    const handleClearFilterChip = useCallback((columnId: string) => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete(`${filterKeyForChips}[${columnId}]`);
+        url.searchParams.delete(pageKeyForChips);
+        const options: Record<string, unknown> = { preserveScroll: true };
+        if (partialReloadKey) options.only = [partialReloadKey];
+        router.get(url.pathname + "?" + url.searchParams.toString(), {}, options);
+    }, [filterKeyForChips, pageKeyForChips, partialReloadKey]);
+
+    const handleClearAllFilterChips = useCallback(() => {
+        const url = new URL(window.location.href);
+        for (const key of [...url.searchParams.keys()]) {
+            if (key.startsWith(`${filterKeyForChips}[`)) url.searchParams.delete(key);
+        }
+        url.searchParams.delete(pageKeyForChips);
+        const options: Record<string, unknown> = { preserveScroll: true };
+        if (partialReloadKey) options.only = [partialReloadKey];
+        router.get(url.pathname + "?" + url.searchParams.toString(), {}, options);
+    }, [filterKeyForChips, pageKeyForChips, partialReloadKey]);
+
     const activeFilterColumnIds = useMemo(() => new Set(Object.keys(meta.filters as Record<string, unknown>)), [meta.filters]);
 
     const summaryLabels: Record<string, string> = useMemo(() => ({
@@ -1601,6 +1806,15 @@ function DataTableInner<TData extends object>({
                 )}
             </div>
 
+            {/* ── Active filter chips ── */}
+            <FilterChips filters={meta.filters as Record<string, unknown>} columns={mergedColumns}
+                onClear={handleClearFilterChip} onClearAll={handleClearAllFilterChips} t={t} />
+
+            {/* ── Inline row creation ── */}
+            {onRowCreate && (
+                <InlineRowCreator columns={mergedColumns} onRowCreate={onRowCreate} t={t} />
+            )}
+
             {/* ── Bulk actions bar ── */}
             {hasBulkActions && selectedRows.length > 0 && (
                 <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm print:hidden">
@@ -1646,8 +1860,15 @@ function DataTableInner<TData extends object>({
                 </div>
             )}
 
+            {/* ── Mobile card layout ── */}
+            {isMobile && (!config?.deferLoading || deferLoaded) && (
+                <MobileCardLayout rows={tableData.data} columns={mergedColumns}
+                    renderCell={renderCell} actions={actions} onRowClick={onRowClick}
+                    rowLink={rowLink} t={t} density={density} />
+            )}
+
             {/* ── Table ── */}
-            {(!config?.deferLoading || deferLoaded) && (
+            {!isMobile && (!config?.deferLoading || deferLoaded) && (
                 <div className={cn("rounded-lg border overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
@@ -1912,7 +2133,7 @@ function DataTableInner<TData extends object>({
                 </div>
                 <div className="flex-1">
                     {slots?.pagination ?? (
-                        <DataTablePagination meta={meta} onPageChange={handlePageChange} onPerPageChange={handlePerPageChange} onCursorChange={handleCursorChange} t={t} />
+                        <DataTablePagination meta={meta} onPageChange={handlePageChange} onPerPageChange={handlePerPageChange} onCursorChange={handleCursorChange} t={t} prefix={prefix} partialReloadKey={partialReloadKey} />
                     )}
                 </div>
             </div>
@@ -1973,10 +2194,32 @@ function DataTableInner<TData extends object>({
 
 // ─── Exported component with Error Boundary ─────────────────────────────────
 
-export function DataTable<TData extends object>(props: DataTableProps<TData>) {
+function DataTableWithBoundary<TData extends object>(props: DataTableProps<TData>) {
     return (
         <DataTableErrorBoundary>
             <DataTableInner {...props} />
         </DataTableErrorBoundary>
     );
 }
+
+/**
+ * DataTable compound component.
+ *
+ * Supports both prop-based and JSX-based column configuration:
+ *
+ * @example Prop-based (traditional)
+ * ```tsx
+ * <DataTable tableData={data} tableName="products" renderCell={(col, val) => ...} />
+ * ```
+ *
+ * @example JSX-based (declarative)
+ * ```tsx
+ * <DataTable tableData={data} tableName="products">
+ *   <DataTable.Column id="name" renderCell={(val, row) => <strong>{val}</strong>} />
+ *   <DataTable.Column id="status" renderHeader={<span>Status</span>} />
+ * </DataTable>
+ * ```
+ */
+export const DataTable = Object.assign(DataTableWithBoundary, {
+    Column: DataTableColumn,
+});

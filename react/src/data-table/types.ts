@@ -206,4 +206,12 @@ export interface DataTableProps<TData extends object> {
         afterTable?: React.ReactNode;
         pagination?: React.ReactNode;
     };
+    /** Called whenever table state changes (sorting, filtering, pagination, visibility, etc.) */
+    onStateChange?: (state: import("./use-data-table").DataTableState) => void;
+    /** Called when a new row is created inline */
+    onRowCreate?: (data: Record<string, unknown>) => Promise<void> | void;
+    /** Breakpoint in px below which the mobile card layout is shown (0 = disabled) */
+    mobileBreakpoint?: number;
+    /** JSX children — use <DataTable.Column> for declarative column configuration */
+    children?: React.ReactNode;
 }

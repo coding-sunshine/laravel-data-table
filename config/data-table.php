@@ -105,4 +105,29 @@ return [
         'allowed_extensions' => ['csv', 'xlsx', 'xls'],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Rate Limiting
+    |--------------------------------------------------------------------------
+    |
+    | Maximum number of requests per minute for mutation endpoints.
+    | Set to 0 to disable rate limiting for a specific endpoint.
+    |
+    */
+    'rate_limit' => [
+        'inline_edit' => 60,
+        'toggle' => 60,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Audit Log Table
+    |--------------------------------------------------------------------------
+    |
+    | The database table name used for storing audit log entries.
+    | Used by the HasAuditLog trait and the data-table:audit-report command.
+    |
+    */
+    'audit_table' => 'data_table_audit_log',
+
 ];

@@ -57,12 +57,19 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Radio button selection** — Single-select mode via `selectionMode="radio"`
 - **Row selection persistence** — Selections persist across page navigation via localStorage
 
+### Filter UX
+
+- **Filter chips** — Removable badge chips above the table showing active filters with one-click clear
+- **Active filter indicators** — Dot indicators on column headers when filters are active
+
 ### Editing
 
 - **Inline editing** — Double-click to edit cells with server-side PATCH save
 - **Batch inline editing** — Edit a column value across multiple selected rows at once
 - **Undo/redo** — Stack-based undo/redo for inline edits with Ctrl+Z / Ctrl+Y
-- **Boolean toggle switch** — One-click switch to toggle boolean columns inline
+- **Boolean toggle switch** — One-click switch to toggle boolean columns inline (uses Inertia `router.patch`)
+- **Inline row creation** — "Add row" button with inline form for creating new records
+- **Rate limiting** — Configurable per-minute limits on inline edits and toggles (default: 60/min)
 
 ### Data Import/Export
 
@@ -90,6 +97,11 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **ARIA attributes** — `role="grid"`, `aria-sort`, `aria-rowindex`, `aria-selected` on table elements
 - **Print-friendly** — `@media print` stylesheet with print button
 
+### Responsive
+
+- **Mobile card layout** — Automatic card-based layout on small screens via `mobileBreakpoint` prop
+- **Responsive column collapse** — Auto-hide columns on small screens based on priority levels
+
 ### Real-time & Performance
 
 - **Real-time updates** — Laravel Echo integration for auto-refreshing on server events
@@ -98,7 +110,9 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Virtual scrolling** — Option for virtualized rendering of large datasets
 - **Persist state** — Save filters/sort/pagination to localStorage across page reloads
 - **Partial reloads** — Inertia.js partial reload support for optimized data fetching
+- **Inertia v2 prefetching** — Pagination buttons prefetch the next/prev page on hover for instant navigation
 - **Loading state** — Skeleton rows and spinner during Inertia navigation
+- **Inertia router for mutations** — Toggle and import use `router.patch`/`router.post` instead of raw `fetch()`
 
 ### Internationalization
 
@@ -111,10 +125,15 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Artisan generator** — `php artisan make:data-table Product --export --inline-edit --all`
 - **TypeScript generation** — `php artisan data-table:types` generates `.d.ts` from PHP classes
 - **Translation generation** — `php artisan data-table:translations --lang=es` generates i18n files
+- **Audit report** — `php artisan data-table:audit-report --days=7 --format=table` CLI report
 - **Testing helpers** — `DataTableTestHelper::for(Table::class)->assertColumnExists('x')->assertSortable('x')`
 - **Publishable config** — `php artisan vendor:publish --tag=data-table-config`
 - **Audit log** — `HasAuditLog` trait records inline edits, toggles, reorders, and bulk actions
 - **Layout slots** — Composable slot overrides for toolbar, pagination, and surrounding content
+- **Barrel exports** — First-class `index.ts` barrel with all hooks, components, and types
+- **Composable hooks** — `useDataTable` and `useDataTableFilters` for headless usage without `<DataTable>`
+- **JSX column API** — `<DataTable.Column id="name" renderCell={...} />` declarative column configuration
+- **State change callback** — `onStateChange` event callback for reacting to any table state change
 
 ## Requirements
 
@@ -1243,6 +1262,260 @@ Supported languages: English, French, Spanish, German, Portuguese, Arabic, Chine
 
 ---
 
+## Composable Hooks (Headless API)
+
+The package exports first-class composable hooks that can be used independently of the `<DataTable>` component. This is ideal for building custom table UIs or integrating with other component libraries.
+
+### Barrel Imports
+
+```tsx
+import {
+    // Hooks
+    useDataTable,
+    useDataTableFilters,
+    // Component
+    DataTable,
+    DataTableColumn,
+    // Sub-components
+    DataTablePagination,
+    DataTableColumnHeader,
+    DataTableRowActions,
+    DataTableQuickViews,
+    // Types
+    type DataTableProps,
+    type DataTableState,
+    type UseDataTableOptions,
+    type UseDataTableReturn,
+    type UseDataTableFiltersOptions,
+    type UseDataTableFiltersReturn,
+    // i18n
+    defaultTranslations,
+    frTranslations,
+    type DataTableTranslations,
+} from "@/data-table";
+```
+
+### `useDataTable` Hook
+
+Use this hook to get full table control with TanStack Table integration, without rendering the `<DataTable>` component:
+
+```tsx
+function CustomProductTable({ tableData }: { tableData: DataTableResponse<Product> }) {
+    const {
+        table,
+        meta,
+        columnVisibility,
+        columnOrder,
+        handleSort,
+        handlePageChange,
+        handlePerPageChange,
+        handleGlobalSearch,
+    } = useDataTable({
+        tableData,
+        tableName: "products",
+        columnDefs: buildColumnDefs(tableData.columns),
+        partialReloadKey: "tableData",
+        onStateChange: (state) => {
+            console.log("Table state changed:", state);
+            // state.sorting, state.columnVisibility, state.page, etc.
+        },
+    });
+
+    return (
+        <div>
+            {/* Build your own UI using the table instance */}
+            {table.getRowModel().rows.map((row) => (
+                <div key={row.id}>{/* custom row rendering */}</div>
+            ))}
+            <DataTablePagination meta={meta} onPageChange={handlePageChange}
+                onPerPageChange={handlePerPageChange} t={defaultTranslations} />
+        </div>
+    );
+}
+```
+
+### `useDataTableFilters` Hook
+
+Use this hook to manage filters programmatically without the built-in filter UI:
+
+```tsx
+function CustomFilterBar({ tableData }: { tableData: DataTableResponse<Product> }) {
+    const { activeFilters, setFilter, clearFilter, clearAllFilters, hasActiveFilters, activeFilterCount } =
+        useDataTableFilters({
+            serverFilters: tableData.meta.filters,
+            prefix: "products",
+            debounceMs: 300,
+            partialReloadKey: "tableData",
+        });
+
+    return (
+        <div>
+            <button onClick={() => setFilter("status", "in", ["active"])}>Active only</button>
+            <button onClick={() => setFilter("price", "gte", ["100"])}>Price ≥ 100</button>
+            {hasActiveFilters && (
+                <button onClick={clearAllFilters}>Clear all ({activeFilterCount})</button>
+            )}
+        </div>
+    );
+}
+```
+
+### `onStateChange` Callback
+
+React to any table state change (sorting, filtering, pagination, visibility, etc.):
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    onStateChange={(state) => {
+        // state: { sorting, columnFilters, columnVisibility, columnOrder, rowSelection, globalSearch, page, perPage }
+        analytics.track("table_state_change", { page: state.page, sorting: state.sorting });
+    }}
+/>
+```
+
+---
+
+## Declarative Column API (JSX)
+
+Define column overrides using JSX instead of render props:
+
+```tsx
+<DataTable tableData={tableData} tableName="products">
+    <DataTable.Column
+        id="name"
+        renderCell={(value, row) => <strong>{value as string}</strong>}
+    />
+    <DataTable.Column
+        id="price"
+        renderCell={(value) => <span className="text-emerald-600">${value}</span>}
+    />
+    <DataTable.Column
+        id="status"
+        renderHeader={<span className="text-blue-500">Status</span>}
+    />
+</DataTable>
+```
+
+Both the prop-based (`renderCell`, `renderHeader`) and JSX-based (`<DataTable.Column>`) APIs work. Props take priority when both are specified.
+
+---
+
+## Mobile Card Layout
+
+On small screens, the table automatically switches to a card-based layout. Set the breakpoint in pixels:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    mobileBreakpoint={768}  // Switch to cards below 768px
+/>
+```
+
+Each row becomes a card showing label-value pairs with optional action buttons. The layout automatically respects the current density setting.
+
+---
+
+## Filter Chips
+
+Active filters are automatically displayed as removable badge chips above the table. Users can:
+
+- Click the × on any chip to clear that specific filter
+- Click "Clear all filters" to remove all filters at once
+
+Filter chips show the column label and the current filter value, stripping the operator prefix for readability.
+
+---
+
+## Inline Row Creation
+
+Enable inline row creation with the `onRowCreate` callback:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    onRowCreate={async (data) => {
+        await router.post("/products", data);
+    }}
+/>
+```
+
+This adds an "Add row" button that expands to an inline form with inputs for all editable columns. Users can:
+
+- Press **Enter** to save the new row
+- Press **Escape** to cancel
+- Click **Save** / **Cancel** buttons
+
+---
+
+## Inertia v2 Integration
+
+### Prefetching Pagination
+
+Pagination buttons automatically prefetch the next/prev page on hover using Inertia v2's `router.prefetch()`. This makes page navigation feel instant. Works with partial reloads:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    partialReloadKey="tableData"  // Only reload the table data prop
+/>
+```
+
+### Inertia Router for Mutations
+
+Toggle switches and file imports use `router.patch()` / `router.post()` instead of raw `fetch()`. This means:
+
+- Automatic CSRF handling (no manual token management)
+- Proper Inertia session management
+- `preserveScroll` and `preserveState` are automatic
+- Error handling via Inertia's `onError` callback
+
+---
+
+## Rate Limiting
+
+Inline edit and toggle endpoints include configurable rate limiting:
+
+```php
+// config/data-table.php
+'rate_limit' => [
+    'inline_edit' => 60,  // 60 requests per minute per user
+    'toggle' => 60,       // 60 requests per minute per user
+],
+```
+
+Set to `0` to disable rate limiting for a specific endpoint. Rate limiting is keyed per user (or per IP for unauthenticated requests) per table.
+
+---
+
+## Audit Report Command
+
+Generate audit reports from the command line:
+
+```bash
+# Default: last 7 days in table format
+php artisan data-table:audit-report
+
+# Filter by table, action, or user
+php artisan data-table:audit-report --table=products --action=inline_edit --user=1
+
+# Last 30 days in JSON format
+php artisan data-table:audit-report --days=30 --format=json
+
+# Export as CSV
+php artisan data-table:audit-report --format=csv > audit.csv
+```
+
+The report includes:
+- Summary statistics: actions breakdown, tables breakdown, users breakdown
+- Detailed entries with table, action, row ID, column, old/new values, user, IP, timestamp
+
+---
+
 ## Configuration
 
 After publishing the config (`php artisan vendor:publish --tag=data-table-config`), you can customize:
@@ -1266,6 +1539,11 @@ return [
         'max_file_size' => 10240,          // Max file size in KB
         'allowed_extensions' => ['csv', 'xlsx', 'xls'],
     ],
+    'rate_limit' => [
+        'inline_edit' => 60,               // Max inline edits per minute per user (0 = disabled)
+        'toggle' => 60,                    // Max toggle requests per minute per user (0 = disabled)
+    ],
+    'audit_table' => 'data_table_audit_log', // Database table for audit log storage
 ];
 ```
 
