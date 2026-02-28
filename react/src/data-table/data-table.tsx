@@ -36,11 +36,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { type Column, type ColumnDef, type ColumnOrderState, type Table as TanStackTable, type VisibilityState, flexRender } from "@tanstack/react-table";
 import {
+    AlignJustify,
+    ArrowDown,
+    ArrowUp,
     Calendar,
     Check,
     ChevronDown,
     ChevronRight,
     CircleDot,
+    Clipboard,
     DollarSign,
     Download,
     EllipsisVertical,
@@ -56,16 +60,20 @@ import {
     List,
     Loader2,
     Mail,
+    Pencil,
     Percent,
     Phone,
+    PinOff,
     Printer,
     RefreshCw,
+    Rows3,
     Search,
     SlidersHorizontal,
     Tag,
     ToggleLeft,
     Trash2,
     Type,
+    Upload,
     X,
 } from "lucide-react";
 import {
@@ -80,8 +88,16 @@ import { defaultTranslations, type DataTableTranslations } from "./i18n";
 import { DataTablePagination } from "./data-table-pagination";
 import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
-import type { DataTableColumnDef, DataTableConfirmOptions, DataTableOptions, DataTableProps, DataTableRule } from "./types";
+import type { DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableOptions, DataTableProps, DataTableRule } from "./types";
 import { useDataTable } from "./use-data-table";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 // ─── Safe localStorage helpers ──────────────────────────────────────────────
 
@@ -186,6 +202,241 @@ const BADGE_VARIANTS: Record<string, string> = {
     secondary: "bg-muted text-muted-foreground",
 };
 
+// ─── Density configuration ──────────────────────────────────────────────────
+
+const DENSITY_CLASSES: Record<DataTableDensity, { cell: string; row: string }> = {
+    compact: { cell: "py-1 text-xs", row: "h-8" },
+    comfortable: { cell: "py-2", row: "" },
+    spacious: { cell: "py-3", row: "h-14" },
+};
+
+function loadDensity(tableName: string): DataTableDensity {
+    const stored = safeGetItem(`dt-density-${tableName}`);
+    if (stored === "compact" || stored === "comfortable" || stored === "spacious") return stored;
+    return "comfortable";
+}
+
+function saveDensity(tableName: string, density: DataTableDensity) {
+    safeSetItem(`dt-density-${tableName}`, density);
+}
+
+// ─── Search highlighting ────────────────────────────────────────────────────
+
+function highlightText(text: string, query: string): React.ReactNode {
+    if (!query || !text) return text;
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+    if (parts.length === 1) return text;
+    return parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase()
+            ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 rounded-sm px-0.5">{part}</mark>
+            : part
+    );
+}
+
+// ─── Cell copy to clipboard ─────────────────────────────────────────────────
+
+function CopyableCell({ value, children, enabled, t }: { value: unknown; children: React.ReactNode; enabled: boolean; t: DataTableTranslations }) {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = useCallback(async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(String(value ?? ""));
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch { /* clipboard API may not be available */ }
+    }, [value]);
+
+    if (!enabled) return <>{children}</>;
+
+    return (
+        <div className="group/copy relative inline-flex items-center gap-1">
+            {children}
+            <button type="button" onClick={handleCopy}
+                className="opacity-0 group-hover/copy:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted"
+                title={t.copyToClipboard}>
+                {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Clipboard className="h-3 w-3 text-muted-foreground" />}
+            </button>
+        </div>
+    );
+}
+
+// ─── Column header context menu ─────────────────────────────────────────────
+
+function ColumnContextMenu({ columnId, sortable, onSort, onHide, t, children }: {
+    columnId: string; sortable: boolean;
+    onSort: (columnId: string, multi: boolean) => void;
+    onHide: (columnId: string) => void;
+    t: DataTableTranslations; children: React.ReactNode;
+}) {
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState({ x: 0, y: 0 });
+
+    const handleContextMenu = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        setPos({ x: e.clientX, y: e.clientY });
+        setOpen(true);
+    }, []);
+
+    return (
+        <div onContextMenu={handleContextMenu}>
+            {children}
+            {open && (
+                <>
+                    <div className="fixed inset-0 z-50" onClick={() => setOpen(false)} />
+                    <div className="fixed z-50 min-w-[160px] rounded-md border bg-popover p-1 shadow-md"
+                        style={{ left: pos.x, top: pos.y }}>
+                        {sortable && (
+                            <>
+                                <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                                    onClick={() => { onSort(columnId, false); setOpen(false); }}>
+                                    <ArrowUp className="h-3.5 w-3.5" />{t.sortAscending}
+                                </button>
+                                <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                                    onClick={() => { onSort(columnId, false); onSort(columnId, false); setOpen(false); }}>
+                                    <ArrowDown className="h-3.5 w-3.5" />{t.sortDescending}
+                                </button>
+                                <div className="my-1 h-px bg-border" />
+                            </>
+                        )}
+                        <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                            onClick={() => { onHide(columnId); setOpen(false); }}>
+                            <EyeOff className="h-3.5 w-3.5" />{t.hideColumn}
+                        </button>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+// ─── Batch edit dialog ──────────────────────────────────────────────────────
+
+function BatchEditDialog<TData>({ open, onOpenChange, selectedRows, editableColumns, onApply, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void;
+    selectedRows: TData[]; editableColumns: DataTableColumnDef[];
+    onApply: (columnId: string, value: unknown) => void; t: DataTableTranslations;
+}) {
+    const [selectedColumn, setSelectedColumn] = useState(editableColumns[0]?.id ?? "");
+    const [editValue, setEditValue] = useState("");
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>{t.batchEdit}</DialogTitle>
+                    <DialogDescription>{t.selected(selectedRows.length)}</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-3 py-2">
+                    <div className="grid gap-2">
+                        <Label>{t.batchEditColumn}</Label>
+                        <Select value={selectedColumn} onValueChange={setSelectedColumn}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                {editableColumns.map((col) => (
+                                    <SelectItem key={col.id} value={col.id}>{col.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label>{t.batchEditValue}</Label>
+                        <Input value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") { onApply(selectedColumn, editValue); onOpenChange(false); } }} />
+                    </div>
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+                    <Button onClick={() => { onApply(selectedColumn, editValue); onOpenChange(false); }}>{t.batchEditApply}</Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── Row drag handle for reorder ────────────────────────────────────────────
+
+function DragHandleCell({ rowIndex, onDragStart, onDragOver, onDragEnd }: {
+    rowIndex: number;
+    onDragStart: (index: number) => void;
+    onDragOver: (e: React.DragEvent, index: number) => void;
+    onDragEnd: () => void;
+}) {
+    return (
+        <div className="cursor-grab active:cursor-grabbing"
+            draggable
+            onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; onDragStart(rowIndex); }}
+            onDragOver={(e) => { e.preventDefault(); onDragOver(e, rowIndex); }}
+            onDragEnd={onDragEnd}>
+            <GripVertical className="h-4 w-4 text-muted-foreground/50" />
+        </div>
+    );
+}
+
+// ─── Import dialog ──────────────────────────────────────────────────────────
+
+function ImportDialog({ open, onOpenChange, importUrl, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void;
+    importUrl: string; t: DataTableTranslations;
+}) {
+    const [uploading, setUploading] = useState(false);
+    const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+    const fileRef = useRef<HTMLInputElement>(null);
+
+    const handleUpload = useCallback(async () => {
+        const file = fileRef.current?.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        setResult(null);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            const response = await fetch(importUrl, {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRF-TOKEN": document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? "",
+                },
+                body: formData,
+            });
+            if (response.ok) {
+                setResult({ success: true, message: t.importSuccess });
+                setTimeout(() => { onOpenChange(false); router.reload(); }, 1000);
+            } else {
+                const data = await response.json().catch(() => ({}));
+                setResult({ success: false, message: data.message ?? t.importError });
+            }
+        } catch {
+            setResult({ success: false, message: t.importError });
+        } finally {
+            setUploading(false);
+        }
+    }, [importUrl, t, onOpenChange]);
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>{t.importData}</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-3 py-2">
+                    <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="text-sm" />
+                    {result && (
+                        <p className={cn("text-sm", result.success ? "text-emerald-600" : "text-destructive")}>{result.message}</p>
+                    )}
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+                    <Button onClick={handleUpload} disabled={uploading}>
+                        {uploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t.importUploading}</> : t.importData}
+                    </Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 /** Evaluate a conditional rule against a row value */
 function evaluateRule(rule: DataTableRule, rowValue: unknown): boolean {
     const v = rowValue;
@@ -282,14 +533,44 @@ function ToggleCell({ value, row, columnId, toggleUrl }: {
     return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving} className="data-[state=checked]:bg-emerald-600" />;
 }
 
-function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t }: {
-    tableData: { quickViews: import("./types").DataTableQuickView[]; exportUrl?: string | null; columns: DataTableColumnDef[] };
+function DensityToggle({ density, onChange, t }: {
+    density: DataTableDensity; onChange: (density: DataTableDensity) => void; t: DataTableTranslations;
+}) {
+    const densities: { value: DataTableDensity; label: string }[] = [
+        { value: "compact", label: t.densityCompact },
+        { value: "comfortable", label: t.densityComfortable },
+        { value: "spacious", label: t.densitySpacious },
+    ];
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                    <Rows3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.density}</span>
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                {densities.map((d) => (
+                    <DropdownMenuItem key={d.value} onClick={() => onChange(d.value)}
+                        className={cn(density === d.value && "font-semibold")}>
+                        {density === d.value && <Check className="mr-2 h-3.5 w-3.5" />}
+                        <span className={density !== d.value ? "ml-6" : ""}>{d.label}</span>
+                    </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t, density, onDensityChange, onImportClick }: {
+    tableData: { quickViews: import("./types").DataTableQuickView[]; exportUrl?: string | null; importUrl?: string | null; columns: DataTableColumnDef[] };
     table: TanStackTable<TData>; tableName: string;
     columnVisibility: VisibilityState; columnOrder: ColumnOrderState;
     applyColumns: (columnIds: string[]) => void; onReorderColumns: (order: ColumnOrderState) => void;
     handleApplyQuickView: (params: Record<string, unknown>) => void;
     handleApplyCustomSearch: (search: string) => void;
     resolvedOptions: DataTableOptions; t: DataTableTranslations;
+    density: DataTableDensity; onDensityChange: (density: DataTableDensity) => void;
+    onImportClick?: () => void;
 }) {
     return (
         <div className="flex items-center gap-2">
@@ -323,10 +604,18 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                     </DropdownMenuContent>
                 </DropdownMenu>
             )}
+            {tableData.importUrl && onImportClick && (
+                <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onImportClick}>
+                    <Upload className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.importData}</span>
+                </Button>
+            )}
             {resolvedOptions.printable && (
                 <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => window.print()}>
                     <Printer className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.print}</span>
                 </Button>
+            )}
+            {resolvedOptions.density && (
+                <DensityToggle density={density} onChange={onDensityChange} t={t} />
             )}
             {(resolvedOptions.columnVisibility || resolvedOptions.columnOrdering) && (
                 <ColumnsDropdown table={table} tableColumns={tableData.columns} columnOrder={columnOrder}
@@ -486,6 +775,7 @@ function DataTableInner<TData extends object>({
     onRowClick, rowLink, emptyState, debounceMs, partialReloadKey,
     onInlineEdit, realtimeChannel, realtimeEvent = ".updated",
     renderDetailRow, selectionMode = "checkbox", slots,
+    onReorder, onBatchEdit,
 }: DataTableProps<TData>) {
     const t = useMemo<DataTableTranslations>(() => ({ ...defaultTranslations, ...translationsOverride }), [translationsOverride]);
 
@@ -493,7 +783,10 @@ function DataTableInner<TData extends object>({
         quickViews: true, customQuickViews: true, exports: true, filters: true,
         columnVisibility: true, columnOrdering: true, columnResizing: false,
         stickyHeader: false, globalSearch: false, loading: true,
-        keyboardNavigation: false, printable: false, ...optionsOverride,
+        keyboardNavigation: false, printable: false, density: false,
+        copyCell: false, contextMenu: false, virtualScrolling: false,
+        rowGrouping: false, rowReorder: false, batchEdit: false,
+        searchHighlight: false, ...optionsOverride,
     }), [optionsOverride]);
 
     const config = tableData.config;
@@ -556,6 +849,42 @@ function DataTableInner<TData extends object>({
     const tableBodyRef = useRef<HTMLTableSectionElement>(null);
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [showTrashed, setShowTrashed] = useState(false);
+
+    // Density toggle
+    const [density, setDensity] = useState<DataTableDensity>(() => loadDensity(tableName));
+    const handleDensityChange = useCallback((d: DataTableDensity) => { setDensity(d); saveDensity(tableName, d); }, [tableName]);
+    const densityClasses = DENSITY_CLASSES[density];
+
+    // Batch edit
+    const [batchEditOpen, setBatchEditOpen] = useState(false);
+
+    // Import dialog
+    const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+    // Row drag reorder
+    const [dragRowIndex, setDragRowIndex] = useState<number | null>(null);
+    const [dragOverRowIndex, setDragOverRowIndex] = useState<number | null>(null);
+    const handleRowDragStart = useCallback((index: number) => { setDragRowIndex(index); }, []);
+    const handleRowDragOver = useCallback((_e: React.DragEvent, index: number) => { setDragOverRowIndex(index); }, []);
+    const handleRowDragEnd = useCallback(() => {
+        if (dragRowIndex !== null && dragOverRowIndex !== null && dragRowIndex !== dragOverRowIndex && onReorder) {
+            const rows = tableData.data;
+            const ids = rows.map((r) => (r as Record<string, unknown>).id);
+            const reordered = [...ids];
+            const [moved] = reordered.splice(dragRowIndex, 1);
+            reordered.splice(dragOverRowIndex, 0, moved);
+            onReorder(reordered, reordered.map((_, i) => i));
+        }
+        setDragRowIndex(null);
+        setDragOverRowIndex(null);
+    }, [dragRowIndex, dragOverRowIndex, tableData.data, onReorder]);
+
+    // Collapsed row groups
+    const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+    // Search term for highlighting
+    const searchKeyForHighlight = prefix ? `${prefix}_search` : "search";
+    const currentSearchTerm = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get(searchKeyForHighlight) ?? "" : "";
 
     const RESIZE_KEY = `dt-resize-${tableName}`;
     const [columnSizing, setColumnSizing] = useState<Record<string, number>>(() => {
@@ -645,12 +974,28 @@ function DataTableInner<TData extends object>({
                             : <X className="h-4 w-4 text-muted-foreground/40" />;
                     }
                     if (col.type === "number" && typeof value === "number") return <span className="tabular-nums">{value.toLocaleString()}</span>;
-                    return String(value);
+                    // Search highlighting for text values
+                    const strValue = String(value);
+                    if (resolvedOptions.searchHighlight && currentSearchTerm && col.type === "text") {
+                        return highlightText(strValue, currentSearchTerm);
+                    }
+                    return strValue;
                 },
             };
         }
 
         const result: ColumnDef<TData>[] = [];
+
+        // Row reorder drag handle column
+        if (resolvedOptions.rowReorder && onReorder) {
+            result.push({
+                id: "_reorder", header: "", enableHiding: false, enableResizing: false, size: 36,
+                cell: ({ row }) => (
+                    <DragHandleCell rowIndex={row.index}
+                        onDragStart={handleRowDragStart} onDragOver={handleRowDragOver} onDragEnd={handleRowDragEnd} />
+                ),
+            });
+        }
 
         // Detail row expand column
         if (hasDetailRows) {
@@ -713,7 +1058,7 @@ function DataTableInner<TData extends object>({
         }
 
         return result;
-    }, [mergedColumns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, columnSizing, hasDetailRows, expandedRows, tableName, selectionMode, responsiveHiddenCols, tableData.toggleUrl]);
+    }, [mergedColumns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, resolvedOptions.rowReorder, resolvedOptions.searchHighlight, resolvedOptions.copyCell, columnSizing, hasDetailRows, expandedRows, tableName, selectionMode, responsiveHiddenCols, tableData.toggleUrl, onReorder, handleRowDragStart, handleRowDragOver, handleRowDragEnd, currentSearchTerm]);
 
     const { table, meta, columnVisibility, columnOrder, setColumnOrder, rowSelection, setRowSelection,
         applyColumns, handleSort, handlePageChange, handlePerPageChange, handleCursorChange,
@@ -821,8 +1166,11 @@ function DataTableInner<TData extends object>({
         }).map((r) => r.cell!.class!).join(" ");
     }, [rules]);
 
+    const editableColumns = useMemo(() => mergedColumns.filter((c) => c.editable), [mergedColumns]);
+
     const toolbarProps = { tableData, table, tableName, columnVisibility, columnOrder, applyColumns,
-        onReorderColumns: setColumnOrder, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t };
+        onReorderColumns: setColumnOrder, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t,
+        density, onDensityChange: handleDensityChange, onImportClick: tableData.importUrl ? () => setImportDialogOpen(true) : undefined };
 
     const activeFilterColumnIds = useMemo(() => new Set(Object.keys(meta.filters as Record<string, unknown>)), [meta.filters]);
 
@@ -835,6 +1183,31 @@ function DataTableInner<TData extends object>({
         ...table.getCenterVisibleLeafColumns(),
         ...table.getRightVisibleLeafColumns(),
     ], [table.getLeftVisibleLeafColumns(), table.getCenterVisibleLeafColumns(), table.getRightVisibleLeafColumns()]);
+
+    // Context menu: hide column handler
+    const handleHideColumn = useCallback((columnId: string) => {
+        const col = table.getColumn(columnId);
+        if (col) col.toggleVisibility(false);
+    }, [table]);
+
+    // Row grouping: group rows by column value
+    const groupByColumn = tableData.groupByColumn;
+    const groupedRows = useMemo(() => {
+        if (!groupByColumn || !resolvedOptions.rowGrouping) return null;
+        const rows = table.getRowModel().rows;
+        const groups = new Map<string, typeof rows>();
+        for (const row of rows) {
+            const val = String((row.original as Record<string, unknown>)[groupByColumn] ?? t.ungrouped);
+            if (!groups.has(val)) groups.set(val, []);
+            groups.get(val)!.push(row);
+        }
+        return groups;
+    }, [groupByColumn, resolvedOptions.rowGrouping, table, t.ungrouped]);
+
+    // Batch edit handler
+    const handleBatchEditApply = useCallback((columnId: string, value: unknown) => {
+        if (onBatchEdit) onBatchEdit(selectedRows, columnId, value);
+    }, [onBatchEdit, selectedRows]);
 
     return (
         <div className="space-y-3 dt-root">
@@ -884,6 +1257,11 @@ function DataTableInner<TData extends object>({
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={clearServerSelectAll}>{t.clearSelection}</Button>
                     )}
                     <div className="ml-auto flex items-center gap-1.5">
+                        {resolvedOptions.batchEdit && editableColumns.length > 0 && onBatchEdit && (
+                            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setBatchEditOpen(true)}>
+                                <Pencil className="mr-1 h-3.5 w-3.5" />{t.batchEdit}
+                            </Button>
+                        )}
                         {bulkActions.map((action) => {
                             const Icon = action.icon;
                             return (
@@ -918,8 +1296,9 @@ function DataTableInner<TData extends object>({
                 <div className={cn("rounded-lg border overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
-                    <div className="overflow-x-auto">
-                        <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}>
+                    <div className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}>
+                        <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
+                            role="grid" aria-rowcount={meta.total} aria-colcount={table.getVisibleLeafColumns().length}>
                             <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
                                 {table.getHeaderGroups().map((headerGroup, groupIdx) => {
                                     const isGroupRow = groupIdx < table.getHeaderGroups().length - 1;
@@ -944,12 +1323,10 @@ function DataTableInner<TData extends object>({
                                                 const leafGroup = colDef?.group;
                                                 const pin = getColumnPinningProps(header.column);
                                                 const hasActiveFilter = colDef ? activeFilterColumnIds.has(colDef.id) : false;
-                                                return (
-                                                    <TableHead key={header.id} colSpan={header.colSpan}
-                                                        style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: header.getSize() } : {}) }}
-                                                        className={cn("h-9", isNumber && "text-right",
-                                                            leafGroup && groupClassName?.[leafGroup],
-                                                            pin.className, "relative")}>
+                                                const sortState = colDef?.sortable ? meta.sorts.find((s) => s.id === colDef.id) : undefined;
+                                                const ariaSort = sortState ? (sortState.direction === "asc" ? "ascending" : "descending") as const : colDef?.sortable ? "none" as const : undefined;
+                                                const headerContent = (
+                                                    <>
                                                         {header.isPlaceholder ? null : colDef?.sortable ? (
                                                             <div className="flex items-center gap-1">
                                                                 <DataTableColumnHeader label={colDef.label} sortable={colDef.sortable} sorts={meta.sorts}
@@ -969,6 +1346,21 @@ function DataTableInner<TData extends object>({
                                                                 className={cn("absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
                                                                     header.column.getIsResizing() ? "bg-primary" : "hover:bg-border")} />
                                                         )}
+                                                    </>
+                                                );
+                                                return (
+                                                    <TableHead key={header.id} colSpan={header.colSpan}
+                                                        style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: header.getSize() } : {}) }}
+                                                        className={cn("h-9", isNumber && "text-right",
+                                                            leafGroup && groupClassName?.[leafGroup],
+                                                            pin.className, "relative")}
+                                                        aria-sort={ariaSort} role="columnheader">
+                                                        {resolvedOptions.contextMenu && colDef ? (
+                                                            <ColumnContextMenu columnId={colDef.id} sortable={colDef.sortable}
+                                                                onSort={handleSort} onHide={handleHideColumn} t={t}>
+                                                                {headerContent}
+                                                            </ColumnContextMenu>
+                                                        ) : headerContent}
                                                     </TableHead>
                                                 );
                                             })}
@@ -976,61 +1368,105 @@ function DataTableInner<TData extends object>({
                                     );
                                 })}
                             </TableHeader>
-                            <TableBody ref={tableBodyRef}>
+                            <TableBody ref={tableBodyRef} role="rowgroup">
                                 {resolvedOptions.loading && isNavigating ? (
                                     <SkeletonRows count={Math.min(meta.perPage, 10)} colCount={table.getVisibleLeafColumns().length} />
                                 ) : table.getRowModel().rows.length > 0 ? (
-                                    table.getRowModel().rows.map((row, index) => {
-                                        const dataAttrs = rowDataAttributes?.(row.original) ?? {};
-                                        const rowRuleClass = getRowRuleClass(row.original);
-                                        const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
-                                        const isExpanded = hasDetailRows && expandedRows.has(rowId);
-                                        return (
-                                            <>{/* keyed fragment */}
-                                                <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined} {...dataAttrs}
-                                                    className={cn(
-                                                        "transition-colors",
-                                                        row.getIsSelected() && "bg-primary/5",
-                                                        isClickable && "cursor-pointer",
-                                                        focusedRowIndex === index && "ring-2 ring-inset ring-primary",
-                                                        rowRuleClass, rowClassName?.(row.original))}
-                                                    onClick={(e) => {
-                                                        if (hasBulkActions && e.shiftKey) { handleRowCheckboxClick(index, e); return; }
-                                                        if (isClickable) {
-                                                            const target = e.target as HTMLElement;
-                                                            if (target.closest("button, a, input, [role='checkbox'], [role='switch'], [data-slot='clear']")) return;
-                                                            handleRowInteraction(row.original, e);
-                                                        }
-                                                    }}>
-                                                    {row.getVisibleCells().map((cell) => {
-                                                        const pin = getColumnPinningProps(cell.column);
-                                                        const cellMeta = cell.column.columnDef.meta as ColumnMeta | undefined;
-                                                        const cellRuleClass = getCellRuleClass(row.original, cell.column.id);
-                                                        return (
-                                                            <TableCell key={cell.id}
-                                                                style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
-                                                                className={cn(
-                                                                    "py-2 whitespace-nowrap",
-                                                                    cellMeta?.type === "number" && "text-right",
-                                                                    cellMeta?.type === "currency" && "text-right",
-                                                                    cellMeta?.type === "percentage" && "text-right",
-                                                                    cellMeta?.group && groupClassName?.[cellMeta.group],
-                                                                    pin.className, cellRuleClass)}>
-                                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                                            </TableCell>
-                                                        );
-                                                    })}
-                                                </TableRow>
-                                                {isExpanded && renderDetailRow && (
-                                                    <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30">
-                                                        <TableCell colSpan={table.getVisibleLeafColumns().length} className="p-4">
-                                                            {renderDetailRow(row.original)}
-                                                        </TableCell>
+                                    (() => {
+                                        const renderRow = (row: ReturnType<typeof table.getRowModel>["rows"][number], index: number) => {
+                                            const dataAttrs = rowDataAttributes?.(row.original) ?? {};
+                                            const rowRuleClass = getRowRuleClass(row.original);
+                                            const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
+                                            const isExpanded = hasDetailRows && expandedRows.has(rowId);
+                                            const isDragOver = dragOverRowIndex === index && dragRowIndex !== index;
+                                            return (
+                                                <>{/* keyed fragment */}
+                                                    <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined} {...dataAttrs}
+                                                        role="row" aria-rowindex={(meta.currentPage - 1) * meta.perPage + index + 1}
+                                                        aria-selected={row.getIsSelected() || undefined}
+                                                        className={cn(
+                                                            "transition-colors",
+                                                            densityClasses.row,
+                                                            row.getIsSelected() && "bg-primary/5",
+                                                            isClickable && "cursor-pointer",
+                                                            focusedRowIndex === index && "ring-2 ring-inset ring-primary",
+                                                            isDragOver && "border-t-2 border-t-primary",
+                                                            rowRuleClass, rowClassName?.(row.original))}
+                                                        onClick={(e) => {
+                                                            if (hasBulkActions && e.shiftKey) { handleRowCheckboxClick(index, e); return; }
+                                                            if (isClickable) {
+                                                                const target = e.target as HTMLElement;
+                                                                if (target.closest("button, a, input, [role='checkbox'], [role='switch'], [data-slot='clear']")) return;
+                                                                handleRowInteraction(row.original, e);
+                                                            }
+                                                        }}>
+                                                        {row.getVisibleCells().map((cell) => {
+                                                            const pin = getColumnPinningProps(cell.column);
+                                                            const cellMeta = cell.column.columnDef.meta as ColumnMeta | undefined;
+                                                            const cellRuleClass = getCellRuleClass(row.original, cell.column.id);
+                                                            const cellContent = flexRender(cell.column.columnDef.cell, cell.getContext());
+                                                            return (
+                                                                <TableCell key={cell.id} role="gridcell"
+                                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
+                                                                    className={cn(
+                                                                        "whitespace-nowrap",
+                                                                        densityClasses.cell,
+                                                                        cellMeta?.type === "number" && "text-right",
+                                                                        cellMeta?.type === "currency" && "text-right",
+                                                                        cellMeta?.type === "percentage" && "text-right",
+                                                                        cellMeta?.group && groupClassName?.[cellMeta.group],
+                                                                        pin.className, cellRuleClass)}>
+                                                                    {resolvedOptions.copyCell && cell.column.id !== "_select" && cell.column.id !== "_actions" && cell.column.id !== "_expand" && cell.column.id !== "_reorder" ? (
+                                                                        <CopyableCell value={cell.getValue()} enabled={true} t={t}>{cellContent}</CopyableCell>
+                                                                    ) : cellContent}
+                                                                </TableCell>
+                                                            );
+                                                        })}
                                                     </TableRow>
-                                                )}
-                                            </>
-                                        );
-                                    })
+                                                    {isExpanded && renderDetailRow && (
+                                                        <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30">
+                                                            <TableCell colSpan={table.getVisibleLeafColumns().length} className="p-4">
+                                                                {renderDetailRow(row.original)}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    )}
+                                                </>
+                                            );
+                                        };
+
+                                        // Row grouping mode
+                                        if (groupedRows) {
+                                            let rowIdx = 0;
+                                            return [...groupedRows.entries()].map(([groupName, rows]) => {
+                                                const isCollapsed = collapsedGroups.has(groupName);
+                                                const startIdx = rowIdx;
+                                                rowIdx += rows.length;
+                                                return (
+                                                    <>{/* group fragment */}
+                                                        <TableRow key={`group-${groupName}`}
+                                                            className="bg-muted/30 hover:bg-muted/40 cursor-pointer"
+                                                            onClick={() => setCollapsedGroups((prev) => {
+                                                                const next = new Set(prev);
+                                                                if (next.has(groupName)) next.delete(groupName); else next.add(groupName);
+                                                                return next;
+                                                            })}>
+                                                            <TableCell colSpan={table.getVisibleLeafColumns().length} className="py-2 font-medium">
+                                                                <div className="flex items-center gap-2">
+                                                                    {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                                                    <span>{groupName}</span>
+                                                                    <span className="text-muted-foreground text-xs">({rows.length})</span>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                        {!isCollapsed && rows.map((row, i) => renderRow(row, startIdx + i))}
+                                                    </>
+                                                );
+                                            });
+                                        }
+
+                                        // Normal (non-grouped) mode
+                                        return table.getRowModel().rows.map((row, index) => renderRow(row, index));
+                                    })()
                                 ) : (
                                     <TableRow>
                                         <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-32 text-center text-muted-foreground">
@@ -1140,6 +1576,19 @@ function DataTableInner<TData extends object>({
                     </DialogFoot>
                 </DialogContent>
             </Dialog>
+
+            {/* ── Batch edit dialog ── */}
+            {resolvedOptions.batchEdit && editableColumns.length > 0 && onBatchEdit && (
+                <BatchEditDialog open={batchEditOpen} onOpenChange={setBatchEditOpen}
+                    selectedRows={selectedRows} editableColumns={editableColumns}
+                    onApply={handleBatchEditApply} t={t} />
+            )}
+
+            {/* ── Import dialog ── */}
+            {tableData.importUrl && (
+                <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen}
+                    importUrl={tableData.importUrl} t={t} />
+            )}
 
             {resolvedOptions.printable && (
                 <style>{`@media print { body * { visibility: hidden; } .dt-root, .dt-root * { visibility: visible; } .dt-root { position: absolute; left: 0; top: 0; width: 100%; } .print\\:hidden { display: none !important; } table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ddd; padding: 8px; text-align: left; } th { background-color: #f5f5f5; font-weight: bold; } }`}</style>

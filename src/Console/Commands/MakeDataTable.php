@@ -13,12 +13,17 @@ class MakeDataTable extends Command
         {--export : Include the HasExport trait with export methods}
         {--inline-edit : Include the HasInlineEdit trait for inline editing}
         {--select-all : Include the HasSelectAll trait for server-side selection}
+        {--reorder : Include the HasReorder trait for drag-and-drop row reordering}
+        {--import : Include the HasImport trait for CSV/Excel import}
+        {--soft-deletes : Enable soft deletes toggle}
+        {--detail-rows : Enable expandable detail rows}
         {--searchable=* : Columns searchable via global search (e.g. --searchable=name --searchable=email)}
         {--pagination=standard : Pagination type: standard, simple, or cursor}
         {--resource : Generate an API Resource class for row transformation}
         {--route : Append a route entry to a routes file}
         {--route-file=routes/web.php : The route file to append to (used with --route)}
-        {--page-path=resources/js/pages : Base path for the generated React page}';
+        {--page-path=resources/js/pages : Base path for the generated React page}
+        {--all : Include all traits (export, inline-edit, select-all, reorder, import)}';
 
     protected $description = 'Generate a DataTable class and React page stub for a model';
 
@@ -31,14 +36,19 @@ class MakeDataTable extends Command
     {
         $model = Str::studly($this->argument('model'));
         $kebab = Str::kebab($model);
-        $withExport = (bool) $this->option('export');
-        $withInlineEdit = (bool) $this->option('inline-edit');
-        $withSelectAll = (bool) $this->option('select-all');
+        $all = (bool) $this->option('all');
+        $withExport = $all || (bool) $this->option('export');
+        $withInlineEdit = $all || (bool) $this->option('inline-edit');
+        $withSelectAll = $all || (bool) $this->option('select-all');
+        $withReorder = $all || (bool) $this->option('reorder');
+        $withImport = $all || (bool) $this->option('import');
+        $withSoftDeletes = (bool) $this->option('soft-deletes');
+        $withDetailRows = (bool) $this->option('detail-rows');
         $searchable = $this->option('searchable') ?: [];
         $pagination = $this->option('pagination') ?? 'standard';
         $withResource = (bool) $this->option('resource');
 
-        $this->generateDataTableClass($model, $kebab, $withExport, $withInlineEdit, $withSelectAll, $searchable, $pagination, $withResource);
+        $this->generateDataTableClass($model, $kebab, $withExport, $withInlineEdit, $withSelectAll, $withReorder, $withImport, $withSoftDeletes, $withDetailRows, $searchable, $pagination, $withResource);
         $this->generatePageStub($model, $kebab);
 
         if ($withResource) {
@@ -56,7 +66,7 @@ class MakeDataTable extends Command
         }
 
         if ($this->option('route')) {
-            $this->appendRoute($model, $kebab, $withExport, $withSelectAll, $withInlineEdit);
+            $this->appendRoute($model, $kebab, $withExport, $withSelectAll, $withInlineEdit, $withReorder, $withImport);
             $routeFile = $this->option('route-file');
             $generated[] = "Route appended to {$routeFile}";
         }
@@ -92,6 +102,10 @@ class MakeDataTable extends Command
         bool $withExport,
         bool $withInlineEdit,
         bool $withSelectAll,
+        bool $withReorder,
+        bool $withImport,
+        bool $withSoftDeletes,
+        bool $withDetailRows,
         array $searchable,
         string $pagination,
         bool $withResource,
@@ -126,6 +140,16 @@ class MakeDataTable extends Command
         if ($withSelectAll) {
             $uses[] = 'use Machour\DataTable\Concerns\HasSelectAll;';
             $traits[] = 'HasSelectAll';
+        }
+
+        if ($withReorder) {
+            $uses[] = 'use Machour\DataTable\Concerns\HasReorder;';
+            $traits[] = 'HasReorder';
+        }
+
+        if ($withImport) {
+            $uses[] = 'use Machour\DataTable\Concerns\HasImport;';
+            $traits[] = 'HasImport';
         }
 
         $uses[] = "use App\\Models\\{$model};";
@@ -177,6 +201,59 @@ PHP : '';
     public static function tableSelectAllName(): string
     {
         return '{$kebab}s';
+    }
+PHP : '';
+
+        // Reorder methods
+        $reorderMethods = $withReorder ? <<<PHP
+
+
+    public static function tableReorderModel(): string
+    {
+        return {$model}::class;
+    }
+
+    public static function tableReorderName(): string
+    {
+        return '{$kebab}s';
+    }
+PHP : '';
+
+        // Import methods
+        $importMethods = $withImport ? <<<PHP
+
+
+    public static function tableImportName(): string
+    {
+        return '{$kebab}s';
+    }
+
+    public static function processImport(string \$filePath, string \$extension): array
+    {
+        // TODO: Implement your import logic
+        return ['created' => 0, 'updated' => 0, 'errors' => []];
+    }
+PHP : '';
+
+        // Soft deletes
+        $softDeleteMethods = $withSoftDeletes ? <<<PHP
+
+
+    public static function tableSoftDeletesEnabled(): bool
+    {
+        return true;
+    }
+PHP : '';
+
+        // Detail rows
+        $detailRowMethods = $withDetailRows ? <<<PHP
+
+
+    public static function tableDetailRow(\$model): ?array
+    {
+        return [
+            'content' => 'Detail for: ' . (\$model->name ?? \$model->id),
+        ];
     }
 PHP : '';
 
@@ -273,7 +350,7 @@ class {$model}DataTable extends AbstractDataTable
     public static function tableDefaultSort(): string
     {
         return '-id';
-    }{$exportMethods}{$inlineEditMethods}{$selectAllMethods}{$searchableMethods}{$paginationMethod}{$resourceMethod}
+    }{$exportMethods}{$inlineEditMethods}{$selectAllMethods}{$reorderMethods}{$importMethods}{$softDeleteMethods}{$detailRowMethods}{$searchableMethods}{$paginationMethod}{$resourceMethod}
 }
 PHP;
 
@@ -367,7 +444,7 @@ PHP;
         $this->components->info("Created: {$path}");
     }
 
-    private function appendRoute(string $model, string $kebab, bool $withExport, bool $withSelectAll, bool $withInlineEdit): void
+    private function appendRoute(string $model, string $kebab, bool $withExport, bool $withSelectAll, bool $withInlineEdit, bool $withReorder = false, bool $withImport = false): void
     {
         $routeFile = $this->option('route-file');
         $routesPath = base_path($routeFile);
@@ -400,6 +477,16 @@ PHP;
         if ($withInlineEdit) {
             $lines[] = '';
             $lines[] = "\\Machour\\DataTable\\Http\\Controllers\\DataTableInlineEditController::register('{$kebab}s', \\App\\DataTables\\{$model}DataTable::class);";
+        }
+
+        if ($withReorder) {
+            $lines[] = '';
+            $lines[] = "\\Machour\\DataTable\\Http\\Controllers\\DataTableReorderController::register('{$kebab}s', \\App\\DataTables\\{$model}DataTable::class);";
+        }
+
+        if ($withImport) {
+            $lines[] = '';
+            $lines[] = "\\Machour\\DataTable\\Http\\Controllers\\DataTableImportController::register('{$kebab}s', \\App\\DataTables\\{$model}DataTable::class);";
         }
 
         $content = $this->files->get($routesPath);

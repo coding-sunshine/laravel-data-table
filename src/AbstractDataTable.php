@@ -17,8 +17,32 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 #[TypeScript]
 abstract class AbstractDataTable extends Data
 {
-    protected static int $defaultPerPage = 25;
-    protected static int $maxPerPage = 100;
+    protected static ?int $defaultPerPage = null;
+    protected static ?int $maxPerPage = null;
+
+    /**
+     * Get the default per page value from config or class property.
+     */
+    protected static function resolveDefaultPerPage(): int
+    {
+        return static::$defaultPerPage ?? (int) config('data-table.default_per_page', 25);
+    }
+
+    /**
+     * Get the max per page value from config or class property.
+     */
+    protected static function resolveMaxPerPage(): int
+    {
+        return static::$maxPerPage ?? (int) config('data-table.max_per_page', 100);
+    }
+
+    /**
+     * Column ID to group rows by on the frontend. null = no grouping.
+     */
+    public static function tableGroupByColumn(): ?string
+    {
+        return null;
+    }
 
     /**
      * @return array<int, Column>
@@ -329,7 +353,7 @@ abstract class AbstractDataTable extends Data
 
         $query = static::buildFilteredQuery($request, $prefix);
 
-        $perPage = max(1, min((int) $request->get($perPageKey, static::$defaultPerPage), static::$maxPerPage));
+        $perPage = max(1, min((int) $request->get($perPageKey, static::resolveDefaultPerPage()), static::resolveMaxPerPage()));
         $paginationType = static::tablePaginationType();
 
         $meta = null;
@@ -448,6 +472,18 @@ abstract class AbstractDataTable extends Data
             $toggleUrl = static::resolveToggleUrl();
         }
 
+        // Reorder URL
+        $reorderUrl = null;
+        if (method_exists(static::class, 'resolveReorderUrl')) {
+            $reorderUrl = static::resolveReorderUrl();
+        }
+
+        // Import URL
+        $importUrl = null;
+        if (method_exists(static::class, 'tableImportEnabled') && static::tableImportEnabled() && method_exists(static::class, 'resolveImportUrl')) {
+            $importUrl = static::resolveImportUrl();
+        }
+
         return new DataTableResponse(
             data: $dataCollection->all(),
             columns: static::tableColumns(),
@@ -460,6 +496,9 @@ abstract class AbstractDataTable extends Data
             config: $tableConfig,
             toggleUrl: $toggleUrl,
             enumOptions: ! empty($enumOptions) ? $enumOptions : null,
+            reorderUrl: $reorderUrl,
+            importUrl: $importUrl,
+            groupByColumn: static::tableGroupByColumn(),
         );
     }
 

@@ -117,6 +117,47 @@ export interface DataTableTranslations {
     // Toggle
     toggleOn: string;
     toggleOff: string;
+
+    // Density
+    density: string;
+    densityCompact: string;
+    densityComfortable: string;
+    densitySpacious: string;
+
+    // Copy
+    copied: string;
+    copyToClipboard: string;
+
+    // Context menu
+    sortAscending: string;
+    sortDescending: string;
+    hideColumn: string;
+    pinLeft: string;
+    pinRight: string;
+    unpin: string;
+
+    // Row grouping
+    groupBy: string;
+    ungrouped: string;
+
+    // Row reorder
+    reorderRows: string;
+
+    // Batch edit
+    batchEdit: string;
+    batchEditApply: string;
+    batchEditColumn: string;
+    batchEditValue: string;
+
+    // Search highlight
+    matches: (count: number) => string;
+
+    // Import
+    importData: string;
+    importFile: string;
+    importUploading: string;
+    importSuccess: string;
+    importError: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -238,6 +279,47 @@ export const defaultTranslations: DataTableTranslations = {
     // Toggle
     toggleOn: "On",
     toggleOff: "Off",
+
+    // Density
+    density: "Density",
+    densityCompact: "Compact",
+    densityComfortable: "Comfortable",
+    densitySpacious: "Spacious",
+
+    // Copy
+    copied: "Copied!",
+    copyToClipboard: "Copy to clipboard",
+
+    // Context menu
+    sortAscending: "Sort ascending",
+    sortDescending: "Sort descending",
+    hideColumn: "Hide column",
+    pinLeft: "Pin to left",
+    pinRight: "Pin to right",
+    unpin: "Unpin",
+
+    // Row grouping
+    groupBy: "Group",
+    ungrouped: "Ungrouped",
+
+    // Row reorder
+    reorderRows: "Reorder rows",
+
+    // Batch edit
+    batchEdit: "Batch edit",
+    batchEditApply: "Apply to selected",
+    batchEditColumn: "Column",
+    batchEditValue: "Value",
+
+    // Search highlight
+    matches: (count) => `${count} match${count !== 1 ? "es" : ""}`,
+
+    // Import
+    importData: "Import",
+    importFile: "Select file",
+    importUploading: "Uploading...",
+    importSuccess: "Import successful",
+    importError: "Import failed",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -330,4 +412,45 @@ export const frTranslations: DataTableTranslations = {
     // Toggle
     toggleOn: "Activé",
     toggleOff: "Désactivé",
+
+    // Density
+    density: "Densité",
+    densityCompact: "Compact",
+    densityComfortable: "Confortable",
+    densitySpacious: "Spacieux",
+
+    // Copy
+    copied: "Copié !",
+    copyToClipboard: "Copier dans le presse-papier",
+
+    // Context menu
+    sortAscending: "Tri croissant",
+    sortDescending: "Tri décroissant",
+    hideColumn: "Masquer la colonne",
+    pinLeft: "Épingler à gauche",
+    pinRight: "Épingler à droite",
+    unpin: "Désépingler",
+
+    // Row grouping
+    groupBy: "Grouper",
+    ungrouped: "Non groupé",
+
+    // Row reorder
+    reorderRows: "Réordonner les lignes",
+
+    // Batch edit
+    batchEdit: "Édition en lot",
+    batchEditApply: "Appliquer à la sélection",
+    batchEditColumn: "Colonne",
+    batchEditValue: "Valeur",
+
+    // Search highlight
+    matches: (count) => `${count} résultat${count !== 1 ? "s" : ""}`,
+
+    // Import
+    importData: "Importer",
+    importFile: "Sélectionner un fichier",
+    importUploading: "Envoi en cours...",
+    importSuccess: "Import réussi",
+    importError: "Échec de l'import",
 };

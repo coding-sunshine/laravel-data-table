@@ -409,7 +409,8 @@ test('maxPerPage property exists on AbstractDataTable', function () {
     $prop = $reflection->getProperty('maxPerPage');
     $prop->setAccessible(true);
 
-    expect($prop->getValue())->toBe(100);
+    // maxPerPage is now nullable; defaults via config
+    expect($prop->getValue())->toBeNull();
 });
 
 // ── Column combined properties ────────────────────────────
