@@ -71,6 +71,8 @@ export interface DataTableRule {
     cell?: { class?: string };
 }
 
+export type DataTableDensity = "compact" | "comfortable" | "spacious";
+
 export interface DataTableOptions {
     quickViews: boolean;
     customQuickViews: boolean;
@@ -84,6 +86,20 @@ export interface DataTableOptions {
     loading: boolean;
     keyboardNavigation: boolean;
     printable: boolean;
+    density: boolean;
+    copyCell: boolean;
+    contextMenu: boolean;
+    virtualScrolling: boolean;
+    rowGrouping: boolean;
+    rowReorder: boolean;
+    batchEdit: boolean;
+    searchHighlight: boolean;
+    undoRedo: boolean;
+    columnPinning: boolean;
+    persistSelection: boolean;
+    shortcutsOverlay: boolean;
+    exportProgress: boolean;
+    emptyStateIllustration: boolean;
 }
 
 export interface DataTableResponse<TData = object> {
@@ -103,6 +119,12 @@ export interface DataTableResponse<TData = object> {
     toggleUrl?: string | null;
     /** Enum filter options resolved from PHP enums */
     enumOptions?: Record<string, { label: string; value: string }[]> | null;
+    /** URL for row reorder PATCH requests */
+    reorderUrl?: string | null;
+    /** URL for data import POST requests */
+    importUrl?: string | null;
+    /** Column ID to group rows by */
+    groupByColumn?: string | null;
 }
 
 export interface DataTableConfirmOptions {
@@ -171,6 +193,12 @@ export interface DataTableProps<TData extends object> {
     renderDetailRow?: (row: TData) => React.ReactNode;
     /** Selection mode: 'checkbox' (default) or 'radio' (single select) */
     selectionMode?: "checkbox" | "radio";
+    /** Called when rows are reordered via drag and drop */
+    onReorder?: (ids: unknown[], newPositions: number[]) => Promise<void> | void;
+    /** Called when a batch edit is applied to multiple rows */
+    onBatchEdit?: (rows: TData[], columnId: string, value: unknown) => Promise<void> | void;
+    /** Custom SVG/component for the empty state illustration */
+    emptyStateIllustration?: React.ReactNode;
     /** Slot overrides for composability */
     slots?: {
         toolbar?: React.ReactNode;

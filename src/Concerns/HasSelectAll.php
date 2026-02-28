@@ -4,7 +4,6 @@ namespace Machour\DataTable\Concerns;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Spatie\QueryBuilder\QueryBuilder;
 
 trait HasSelectAll
 {
@@ -36,23 +35,7 @@ trait HasSelectAll
     {
         $request = $request ?? request();
 
-        $query = QueryBuilder::for(static::tableBaseQuery(), $request)
-            ->allowedFilters(static::tableAllowedFilters())
-            ->allowedSorts(static::tableAllowedSorts())
-            ->defaultSort(static::tableDefaultSort());
-
-        // Apply global search if applicable
-        $searchTerm = $request->get('search', '');
-        $searchableColumns = static::tableSearchableColumns();
-        if ($searchTerm && ! empty($searchableColumns)) {
-            $escaped = str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $searchTerm);
-            $query->where(function ($q) use ($escaped, $searchableColumns) {
-                foreach ($searchableColumns as $column) {
-                    $q->orWhere($column, 'LIKE', '%' . $escaped . '%');
-                }
-            });
-        }
-
+        $query = static::buildFilteredQuery($request);
         $key = static::tableSelectAllKey();
         $ids = $query->pluck($key)->all();
 

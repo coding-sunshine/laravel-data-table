@@ -30,7 +30,11 @@ class DataTableAsyncFilterController
             return response()->json(['error' => 'Column does not support async filters.'], 422);
         }
 
-        $search = $request->get('search');
+        $request->validate([
+            'search' => 'nullable|string|max:255',
+        ]);
+
+        $search = $request->input('search');
         $options = $class::resolveAsyncFilterOptions($column, $search);
 
         return response()->json(['options' => $options]);

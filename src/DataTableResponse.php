@@ -25,5 +25,11 @@ class DataTableResponse extends Data
         public ?string $toggleUrl = null,
         /** Enum filter options resolved from PHP enums */
         public ?array $enumOptions = null,
+        /** URL for row reorder PATCH requests */
+        public ?string $reorderUrl = null,
+        /** URL for data import POST requests */
+        public ?string $importUrl = null,
+        /** Column ID to group rows by on frontend */
+        public ?string $groupByColumn = null,
     ) {}
 }

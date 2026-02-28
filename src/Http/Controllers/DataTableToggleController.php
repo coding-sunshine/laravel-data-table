@@ -24,8 +24,13 @@ class DataTableToggleController
 
         abort_unless((bool) $class, 404, "Unknown table: {$table}");
 
+        $request->validate([
+            'column' => 'required|string|max:255',
+            'value' => 'required',
+        ]);
+
         $columnId = $request->input('column');
-        $value = filter_var($request->input('value'), FILTER_VALIDATE_BOOLEAN);
+        $value = $request->boolean('value');
 
         $editableColumns = collect($class::tableColumns())
             ->filter(fn ($col) => $col->toggleable)
@@ -37,7 +42,8 @@ class DataTableToggleController
             return response()->json(['error' => 'Column is not toggleable.'], 422);
         }
 
-        $class::handleToggle($id, $columnId, $value);
+        $model = $class::tableBaseQuery()->findOrFail($id);
+        $class::handleToggle($model, $columnId, $value);
 
         return response()->json(['success' => true, 'value' => $value]);
     }

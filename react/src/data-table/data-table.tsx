@@ -1,5 +1,3 @@
-"use no memo";
-
 import {
     Table,
     TableBody,
@@ -38,11 +36,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { type Column, type ColumnDef, type ColumnOrderState, type Table as TanStackTable, type VisibilityState, flexRender } from "@tanstack/react-table";
 import {
+    AlignJustify,
+    ArrowDown,
+    ArrowUp,
     Calendar,
     Check,
     ChevronDown,
     ChevronRight,
     CircleDot,
+    Clipboard,
     DollarSign,
     Download,
     EllipsisVertical,
@@ -53,21 +55,30 @@ import {
     FileText,
     GripVertical,
     Hash,
+    HelpCircle,
     Image as ImageIcon,
+    Keyboard,
     Link as LinkIcon,
     List,
     Loader2,
     Mail,
+    Pencil,
     Percent,
     Phone,
+    Pin,
+    PinOff,
     Printer,
+    Redo2,
     RefreshCw,
+    Rows3,
     Search,
     SlidersHorizontal,
     Tag,
     ToggleLeft,
     Trash2,
     Type,
+    Undo2,
+    Upload,
     X,
 } from "lucide-react";
 import {
@@ -75,15 +86,86 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { router } from "@inertiajs/react";
 import { DataTableColumnHeader } from "./data-table-column-header";
 import { defaultTranslations, type DataTableTranslations } from "./i18n";
 import { DataTablePagination } from "./data-table-pagination";
 import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
-import type { DataTableColumnDef, DataTableConfirmOptions, DataTableOptions, DataTableProps, DataTableRule } from "./types";
+import type { DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableOptions, DataTableProps, DataTableRule } from "./types";
 import { useDataTable } from "./use-data-table";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+
+// ─── Safe localStorage helpers ──────────────────────────────────────────────
+
+function safeGetItem(key: string): string | null {
+    try { return localStorage.getItem(key); }
+    catch { return null; }
+}
+
+function safeSetItem(key: string, value: string): void {
+    try { localStorage.setItem(key, value); }
+    catch { /* storage full or unavailable */ }
+}
+
+// ─── Column meta type ───────────────────────────────────────────────────────
+
+interface ColumnMeta {
+    type?: string;
+    group?: string | null;
+    editable?: boolean;
+    currency?: string;
+    locale?: string;
+    toggleable?: boolean;
+}
+
+// ─── Error Boundary ─────────────────────────────────────────────────────────
+
+interface ErrorBoundaryProps {
+    children: React.ReactNode;
+    fallback?: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+    hasError: boolean;
+    error?: Error;
+}
+
+class DataTableErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+    constructor(props: ErrorBoundaryProps) {
+        super(props);
+        this.state = { hasError: false };
+    }
+
+    static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+        return { hasError: true, error };
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return this.props.fallback ?? (
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 p-8 text-center">
+                    <p className="text-sm font-medium text-destructive">Something went wrong rendering the table.</p>
+                    <p className="text-xs text-muted-foreground">{this.state.error?.message}</p>
+                    <Button variant="outline" size="sm" onClick={() => this.setState({ hasError: false })}>
+                        Try again
+                    </Button>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+// ─── Utility functions ──────────────────────────────────────────────────────
 
 function buildExportUrl(baseUrl: string, format: string, visibleColumns?: string[]): string {
     const currentParams = new URL(window.location.href).searchParams;
@@ -109,27 +191,518 @@ function getColumnPinningProps<T>(column: Column<T, unknown>) {
             zIndex: 1,
         } as React.CSSProperties,
         className: cn(
-            isPinned === "left" && column.getIsLastColumn("left") && "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_4px_-2px_rgba(255,255,255,0.05)]",
-            isPinned === "right" && column.getIsFirstColumn("right") && "shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)] dark:shadow-[-2px_0_4px_-2px_rgba(255,255,255,0.05)]",
+            "bg-background",
+            isPinned === "left" && column.getIsLastColumn("left") && "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]",
+            isPinned === "right" && column.getIsFirstColumn("right") && "shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.06)]",
         ),
     };
 }
 
-function getPinnedCellBg(isPinned: string | false, _isEvenRow: boolean, isSelected: boolean): React.CSSProperties {
-    if (!isPinned) return {};
-    const base: React.CSSProperties = {};
-    if (isSelected) return { ...base, backgroundImage: "linear-gradient(oklch(from var(--color-primary) l c h / 0.05), oklch(from var(--color-primary) l c h / 0.05))" };
-    return base;
-}
-
 const BADGE_VARIANTS: Record<string, string> = {
     default: "bg-primary/10 text-primary dark:bg-primary/20",
-    success: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    warning: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    danger: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-    info: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    warning: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    danger: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+    info: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
     secondary: "bg-muted text-muted-foreground",
 };
+
+// ─── Density configuration ──────────────────────────────────────────────────
+
+const DENSITY_CLASSES: Record<DataTableDensity, { cell: string; row: string }> = {
+    compact: { cell: "py-1 text-xs", row: "h-8" },
+    comfortable: { cell: "py-2", row: "" },
+    spacious: { cell: "py-3", row: "h-14" },
+};
+
+function loadDensity(tableName: string): DataTableDensity {
+    const stored = safeGetItem(`dt-density-${tableName}`);
+    if (stored === "compact" || stored === "comfortable" || stored === "spacious") return stored;
+    return "comfortable";
+}
+
+function saveDensity(tableName: string, density: DataTableDensity) {
+    safeSetItem(`dt-density-${tableName}`, density);
+}
+
+// ─── Search highlighting ────────────────────────────────────────────────────
+
+function highlightText(text: string, query: string): React.ReactNode {
+    if (!query || !text) return text;
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+    if (parts.length === 1) return text;
+    return parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase()
+            ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 rounded-sm px-0.5">{part}</mark>
+            : part
+    );
+}
+
+// ─── Cell copy to clipboard ─────────────────────────────────────────────────
+
+function CopyableCell({ value, children, enabled, t }: { value: unknown; children: React.ReactNode; enabled: boolean; t: DataTableTranslations }) {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = useCallback(async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(String(value ?? ""));
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch { /* clipboard API may not be available */ }
+    }, [value]);
+
+    if (!enabled) return <>{children}</>;
+
+    return (
+        <div className="group/copy relative inline-flex items-center gap-1">
+            {children}
+            <button type="button" onClick={handleCopy}
+                className="opacity-0 group-hover/copy:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted"
+                title={t.copyToClipboard}>
+                {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Clipboard className="h-3 w-3 text-muted-foreground" />}
+            </button>
+        </div>
+    );
+}
+
+// ─── Column header context menu ─────────────────────────────────────────────
+
+function ColumnContextMenu({ columnId, sortable, isPinned, showPinning, onSort, onHide, onPin, t, children }: {
+    columnId: string; sortable: boolean; isPinned: false | "left" | "right"; showPinning: boolean;
+    onSort: (columnId: string, multi: boolean) => void;
+    onHide: (columnId: string) => void;
+    onPin: (columnId: string, direction: false | "left" | "right") => void;
+    t: DataTableTranslations; children: React.ReactNode;
+}) {
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState({ x: 0, y: 0 });
+
+    const handleContextMenu = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        setPos({ x: e.clientX, y: e.clientY });
+        setOpen(true);
+    }, []);
+
+    return (
+        <div onContextMenu={handleContextMenu}>
+            {children}
+            {open && (
+                <>
+                    <div className="fixed inset-0 z-50" onClick={() => setOpen(false)} />
+                    <div className="fixed z-50 min-w-[160px] rounded-md border bg-popover p-1 shadow-md"
+                        style={{ left: pos.x, top: pos.y }}>
+                        {sortable && (
+                            <>
+                                <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                                    onClick={() => { onSort(columnId, false); setOpen(false); }}>
+                                    <ArrowUp className="h-3.5 w-3.5" />{t.sortAscending}
+                                </button>
+                                <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                                    onClick={() => { onSort(columnId, false); onSort(columnId, false); setOpen(false); }}>
+                                    <ArrowDown className="h-3.5 w-3.5" />{t.sortDescending}
+                                </button>
+                                <div className="my-1 h-px bg-border" />
+                            </>
+                        )}
+                        <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                            onClick={() => { onHide(columnId); setOpen(false); }}>
+                            <EyeOff className="h-3.5 w-3.5" />{t.hideColumn}
+                        </button>
+                        {showPinning && (
+                            <ColumnPinMenu columnId={columnId} isPinned={isPinned}
+                                onPin={(id, dir) => { onPin(id, dir); setOpen(false); }} t={t} />
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+// ─── Batch edit dialog ──────────────────────────────────────────────────────
+
+function BatchEditDialog<TData>({ open, onOpenChange, selectedRows, editableColumns, onApply, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void;
+    selectedRows: TData[]; editableColumns: DataTableColumnDef[];
+    onApply: (columnId: string, value: unknown) => void; t: DataTableTranslations;
+}) {
+    const [selectedColumn, setSelectedColumn] = useState(editableColumns[0]?.id ?? "");
+    const [editValue, setEditValue] = useState("");
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>{t.batchEdit}</DialogTitle>
+                    <DialogDescription>{t.selected(selectedRows.length)}</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-3 py-2">
+                    <div className="grid gap-2">
+                        <Label>{t.batchEditColumn}</Label>
+                        <Select value={selectedColumn} onValueChange={setSelectedColumn}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                {editableColumns.map((col) => (
+                                    <SelectItem key={col.id} value={col.id}>{col.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label>{t.batchEditValue}</Label>
+                        <Input value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") { onApply(selectedColumn, editValue); onOpenChange(false); } }} />
+                    </div>
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+                    <Button onClick={() => { onApply(selectedColumn, editValue); onOpenChange(false); }}>{t.batchEditApply}</Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── Row drag handle for reorder ────────────────────────────────────────────
+
+function DragHandleCell({ rowIndex, onDragStart, onDragOver, onDragEnd }: {
+    rowIndex: number;
+    onDragStart: (index: number) => void;
+    onDragOver: (e: React.DragEvent, index: number) => void;
+    onDragEnd: () => void;
+}) {
+    return (
+        <div className="cursor-grab active:cursor-grabbing"
+            draggable
+            onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; onDragStart(rowIndex); }}
+            onDragOver={(e) => { e.preventDefault(); onDragOver(e, rowIndex); }}
+            onDragEnd={onDragEnd}>
+            <GripVertical className="h-4 w-4 text-muted-foreground/50" />
+        </div>
+    );
+}
+
+// ─── Import dialog ──────────────────────────────────────────────────────────
+
+function ImportDialog({ open, onOpenChange, importUrl, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void;
+    importUrl: string; t: DataTableTranslations;
+}) {
+    const [uploading, setUploading] = useState(false);
+    const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+    const fileRef = useRef<HTMLInputElement>(null);
+
+    const handleUpload = useCallback(async () => {
+        const file = fileRef.current?.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        setResult(null);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            const response = await fetch(importUrl, {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRF-TOKEN": document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? "",
+                },
+                body: formData,
+            });
+            if (response.ok) {
+                setResult({ success: true, message: t.importSuccess });
+                setTimeout(() => { onOpenChange(false); router.reload(); }, 1000);
+            } else {
+                const data = await response.json().catch(() => ({}));
+                setResult({ success: false, message: data.message ?? t.importError });
+            }
+        } catch {
+            setResult({ success: false, message: t.importError });
+        } finally {
+            setUploading(false);
+        }
+    }, [importUrl, t, onOpenChange]);
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>{t.importData}</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-3 py-2">
+                    <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="text-sm" />
+                    {result && (
+                        <p className={cn("text-sm", result.success ? "text-emerald-600" : "text-destructive")}>{result.message}</p>
+                    )}
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+                    <Button onClick={handleUpload} disabled={uploading}>
+                        {uploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t.importUploading}</> : t.importData}
+                    </Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── Undo/Redo stack for inline edits ───────────────────────────────────────
+
+interface EditAction {
+    rowId: unknown;
+    columnId: string;
+    oldValue: unknown;
+    newValue: unknown;
+    timestamp: number;
+}
+
+function useUndoRedo(enabled: boolean) {
+    const [undoStack, setUndoStack] = useState<EditAction[]>([]);
+    const [redoStack, setRedoStack] = useState<EditAction[]>([]);
+
+    const pushEdit = useCallback((action: Omit<EditAction, "timestamp">) => {
+        if (!enabled) return;
+        setUndoStack((prev) => [...prev.slice(-49), { ...action, timestamp: Date.now() }]);
+        setRedoStack([]);
+    }, [enabled]);
+
+    const undo = useCallback((): EditAction | null => {
+        if (undoStack.length === 0) return null;
+        const action = undoStack[undoStack.length - 1];
+        setUndoStack((prev) => prev.slice(0, -1));
+        setRedoStack((prev) => [...prev, action]);
+        return action;
+    }, [undoStack]);
+
+    const redo = useCallback((): EditAction | null => {
+        if (redoStack.length === 0) return null;
+        const action = redoStack[redoStack.length - 1];
+        setRedoStack((prev) => prev.slice(0, -1));
+        setUndoStack((prev) => [...prev, action]);
+        return action;
+    }, [redoStack]);
+
+    return { pushEdit, undo, redo, canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 };
+}
+
+// ─── Keyboard shortcuts overlay ─────────────────────────────────────────────
+
+function KeyboardShortcutsDialog({ open, onOpenChange, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void; t: DataTableTranslations;
+}) {
+    const shortcuts = [
+        { keys: ["↑", "↓"], description: t.shortcutNavigation },
+        { keys: ["Space"], description: t.shortcutSelect },
+        { keys: ["Enter"], description: t.shortcutExpand },
+        { keys: ["Escape"], description: t.shortcutEscape },
+        { keys: ["/"], description: t.shortcutSearch },
+        { keys: ["?"], description: t.shortcutHelp },
+    ];
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Keyboard className="h-5 w-5" />{t.keyboardShortcuts}
+                    </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-2 py-2">
+                    {shortcuts.map(({ keys, description }) => (
+                        <div key={description} className="flex items-center justify-between py-1.5">
+                            <span className="text-sm text-muted-foreground">{description}</span>
+                            <div className="flex items-center gap-1">
+                                {keys.map((key) => (
+                                    <kbd key={key} className="inline-flex h-6 min-w-[24px] items-center justify-center rounded border bg-muted px-1.5 font-mono text-xs font-medium">
+                                        {key}
+                                    </kbd>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>{t.close}</Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── Export with progress ────────────────────────────────────────────────────
+
+function ExportWithProgress({ exportUrl, table, t }: {
+    exportUrl: string; table: TanStackTable<unknown>; t: DataTableTranslations;
+}) {
+    const [exporting, setExporting] = useState<string | null>(null);
+    const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+
+    const handleExport = useCallback(async (format: string) => {
+        setExporting(format);
+        setDownloadUrl(null);
+        const url = buildExportUrl(exportUrl, format, table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id));
+        try {
+            const response = await fetch(url, {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+            });
+            if (response.ok) {
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                setDownloadUrl(blobUrl);
+                // Auto-download
+                const a = document.createElement("a");
+                a.href = blobUrl;
+                a.download = `export.${format}`;
+                a.click();
+            }
+        } catch { /* fallback to direct download */ }
+        finally { setExporting(null); }
+    }, [exportUrl, table]);
+
+    const formats = [
+        { id: "xlsx", label: "Excel (.xlsx)", icon: FileSpreadsheet },
+        { id: "csv", label: "CSV (.csv)", icon: FileText },
+        { id: "pdf", label: "PDF (.pdf)", icon: FileDown },
+    ];
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                    {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    <span className="hidden sm:inline">{exporting ? t.exporting : t.export}</span>
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuLabel>{t.exportFormat}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {formats.map(({ id, label, icon: Icon }) => (
+                    <DropdownMenuItem key={id} onClick={() => handleExport(id)} disabled={!!exporting}>
+                        <Icon className="mr-2 h-4 w-4" />{label}
+                        {exporting === id && <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin" />}
+                    </DropdownMenuItem>
+                ))}
+                {downloadUrl && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                            <a href={downloadUrl} download>
+                                <Check className="mr-2 h-4 w-4 text-emerald-600" />{t.exportDownload}
+                            </a>
+                        </DropdownMenuItem>
+                    </>
+                )}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+// ─── Empty state illustration ───────────────────────────────────────────────
+
+function DefaultEmptyStateIllustration() {
+    return (
+        <svg className="h-24 w-24 text-muted-foreground/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M3 9h18" />
+            <path d="M3 15h18" />
+            <path d="M9 3v18" />
+            <path d="M15 3v18" />
+        </svg>
+    );
+}
+
+function EmptyState({ customEmpty, illustration, showIllustration, t }: {
+    customEmpty?: React.ReactNode; illustration?: React.ReactNode;
+    showIllustration: boolean; t: DataTableTranslations;
+}) {
+    if (customEmpty) return <>{customEmpty}</>;
+    if (showIllustration) {
+        return (
+            <div className="flex flex-col items-center gap-3">
+                {illustration ?? <DefaultEmptyStateIllustration />}
+                <div className="text-center">
+                    <p className="font-medium text-muted-foreground">{t.emptyTitle}</p>
+                    <p className="text-xs text-muted-foreground/70 max-w-xs">{t.emptyDescription}</p>
+                </div>
+            </div>
+        );
+    }
+    return <span className="text-muted-foreground">{t.noData}</span>;
+}
+
+// ─── Selection persistence across pages ─────────────────────────────────────
+
+function usePersistedSelection<TData>(tableName: string, enabled: boolean) {
+    const storageKey = `dt-selection-${tableName}`;
+
+    const [persistedIds, setPersistedIds] = useState<Set<unknown>>(() => {
+        if (!enabled) return new Set();
+        try {
+            const raw = safeGetItem(storageKey);
+            return raw ? new Set(JSON.parse(raw) as unknown[]) : new Set();
+        } catch { return new Set(); }
+    });
+
+    const addIds = useCallback((ids: unknown[]) => {
+        setPersistedIds((prev) => {
+            const next = new Set(prev);
+            for (const id of ids) next.add(id);
+            return next;
+        });
+    }, []);
+
+    const removeIds = useCallback((ids: unknown[]) => {
+        setPersistedIds((prev) => {
+            const next = new Set(prev);
+            for (const id of ids) next.delete(id);
+            return next;
+        });
+    }, []);
+
+    const clearAll = useCallback(() => setPersistedIds(new Set()), []);
+
+    const isSelected = useCallback((id: unknown) => persistedIds.has(id), [persistedIds]);
+
+    // Persist to localStorage
+    useEffect(() => {
+        if (!enabled) return;
+        safeSetItem(storageKey, JSON.stringify([...persistedIds]));
+    }, [enabled, storageKey, persistedIds]);
+
+    return { persistedIds, addIds, removeIds, clearAll, isSelected, count: persistedIds.size };
+}
+
+// ─── Column pinning UI in context menu ──────────────────────────────────────
+
+function ColumnPinMenu({ columnId, isPinned, onPin, t }: {
+    columnId: string; isPinned: false | "left" | "right";
+    onPin: (columnId: string, direction: false | "left" | "right") => void;
+    t: DataTableTranslations;
+}) {
+    return (
+        <>
+            <div className="my-1 h-px bg-border" />
+            {!isPinned ? (
+                <>
+                    <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                        onClick={() => onPin(columnId, "left")}>
+                        <Pin className="h-3.5 w-3.5" />{t.pinLeft}
+                    </button>
+                    <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                        onClick={() => onPin(columnId, "right")}>
+                        <Pin className="h-3.5 w-3.5 rotate-90" />{t.pinRight}
+                    </button>
+                </>
+            ) : (
+                <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                    onClick={() => onPin(columnId, false)}>
+                    <PinOff className="h-3.5 w-3.5" />{t.unpin}
+                </button>
+            )}
+        </>
+    );
+}
 
 /** Evaluate a conditional rule against a row value */
 function evaluateRule(rule: DataTableRule, rowValue: unknown): boolean {
@@ -154,6 +727,8 @@ function evaluateRule(rule: DataTableRule, rowValue: unknown): boolean {
     }
 }
 
+// ─── Sub-components ─────────────────────────────────────────────────────────
+
 /** Inline editable cell component */
 function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }: {
     value: unknown; columnId: string; columnType: string;
@@ -166,7 +741,7 @@ function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }
 
     useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
-    async function handleSave() {
+    const handleSave = useCallback(async () => {
         setSaving(true);
         try {
             const parsed = columnType === "number" || columnType === "currency" || columnType === "percentage"
@@ -174,7 +749,7 @@ function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }
             await onSave(parsed);
             setEditing(false);
         } finally { setSaving(false); }
-    }
+    }, [editValue, columnType, onSave]);
 
     if (!editing) {
         return (
@@ -182,7 +757,7 @@ function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }
                 onDoubleClick={() => { setEditValue(String(initialValue ?? "")); setEditing(true); }}
                 title="Double-click to edit">
                 {initialValue === null || initialValue === undefined
-                    ? <span className="text-muted-foreground">—</span> : String(initialValue)}
+                    ? <span className="text-muted-foreground italic text-xs">empty</span> : String(initialValue)}
             </span>
         );
     }
@@ -206,7 +781,7 @@ function ToggleCell({ value, row, columnId, toggleUrl }: {
     const [checked, setChecked] = useState(!!value);
     const [saving, setSaving] = useState(false);
 
-    async function handleToggle(newValue: boolean) {
+    const handleToggle = useCallback(async (newValue: boolean) => {
         setSaving(true);
         setChecked(newValue);
         try {
@@ -220,22 +795,53 @@ function ToggleCell({ value, row, columnId, toggleUrl }: {
             });
         } catch { setChecked(!newValue); }
         finally { setSaving(false); }
-    }
+    }, [row.id, toggleUrl, columnId]);
 
-    return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving} className="data-[state=checked]:bg-green-600" />;
+    return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving} className="data-[state=checked]:bg-emerald-600" />;
 }
 
-function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t }: {
-    tableData: { quickViews: import("./types").DataTableQuickView[]; exportUrl?: string | null; columns: DataTableColumnDef[] };
+function DensityToggle({ density, onChange, t }: {
+    density: DataTableDensity; onChange: (density: DataTableDensity) => void; t: DataTableTranslations;
+}) {
+    const densities: { value: DataTableDensity; label: string }[] = [
+        { value: "compact", label: t.densityCompact },
+        { value: "comfortable", label: t.densityComfortable },
+        { value: "spacious", label: t.densitySpacious },
+    ];
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                    <Rows3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.density}</span>
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                {densities.map((d) => (
+                    <DropdownMenuItem key={d.value} onClick={() => onChange(d.value)}
+                        className={cn(density === d.value && "font-semibold")}>
+                        {density === d.value && <Check className="mr-2 h-3.5 w-3.5" />}
+                        <span className={density !== d.value ? "ml-6" : ""}>{d.label}</span>
+                    </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t, density, onDensityChange, onImportClick, onShowShortcuts, canUndo, canRedo, onUndo, onRedo }: {
+    tableData: { quickViews: import("./types").DataTableQuickView[]; exportUrl?: string | null; importUrl?: string | null; columns: DataTableColumnDef[] };
     table: TanStackTable<TData>; tableName: string;
     columnVisibility: VisibilityState; columnOrder: ColumnOrderState;
     applyColumns: (columnIds: string[]) => void; onReorderColumns: (order: ColumnOrderState) => void;
     handleApplyQuickView: (params: Record<string, unknown>) => void;
     handleApplyCustomSearch: (search: string) => void;
     resolvedOptions: DataTableOptions; t: DataTableTranslations;
+    density: DataTableDensity; onDensityChange: (density: DataTableDensity) => void;
+    onImportClick?: () => void; onShowShortcuts?: () => void;
+    canUndo?: boolean; canRedo?: boolean; onUndo?: () => void; onRedo?: () => void;
 }) {
     return (
-        <div className="flex gap-3 px-4">
+        <div className="flex items-center gap-2">
             {(resolvedOptions.quickViews || resolvedOptions.customQuickViews) && (
                 <DataTableQuickViews quickViews={resolvedOptions.quickViews ? tableData.quickViews : []}
                     tableName={tableName} columnVisibility={columnVisibility} columnOrder={columnOrder}
@@ -244,37 +850,64 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                     onApplyColumnOrder={onReorderColumns} enableCustom={resolvedOptions.customQuickViews} t={t} />
             )}
             {resolvedOptions.exports && tableData.exportUrl && (
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-8"><Download className="h-4 w-4" />{t.export}</Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>{t.exportFormat}</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                            <a href={buildExportUrl(tableData.exportUrl, "xlsx", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
-                                <FileSpreadsheet className="mr-2 h-4 w-4" />Excel (.xlsx)</a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <a href={buildExportUrl(tableData.exportUrl, "csv", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
-                                <FileText className="mr-2 h-4 w-4" />CSV (.csv)</a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <a href={buildExportUrl(tableData.exportUrl, "pdf", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
-                                <FileDown className="mr-2 h-4 w-4" />PDF (.pdf)</a>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                resolvedOptions.exportProgress ? (
+                    <ExportWithProgress exportUrl={tableData.exportUrl} table={table as TanStackTable<unknown>} t={t} />
+                ) : (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-8 gap-1.5"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.export}</span></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>{t.exportFormat}</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem asChild>
+                                <a href={buildExportUrl(tableData.exportUrl, "xlsx", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
+                                    <FileSpreadsheet className="mr-2 h-4 w-4" />Excel (.xlsx)</a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <a href={buildExportUrl(tableData.exportUrl, "csv", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
+                                    <FileText className="mr-2 h-4 w-4" />CSV (.csv)</a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <a href={buildExportUrl(tableData.exportUrl, "pdf", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
+                                    <FileDown className="mr-2 h-4 w-4" />PDF (.pdf)</a>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )
+            )}
+            {tableData.importUrl && onImportClick && (
+                <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onImportClick}>
+                    <Upload className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.importData}</span>
+                </Button>
+            )}
+            {resolvedOptions.undoRedo && (canUndo || canRedo) && (
+                <div className="flex items-center">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canUndo} onClick={onUndo} title={t.undo}>
+                        <Undo2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canRedo} onClick={onRedo} title={t.redo}>
+                        <Redo2 className="h-3.5 w-3.5" />
+                    </Button>
+                </div>
             )}
             {resolvedOptions.printable && (
-                <Button variant="outline" size="sm" className="h-8" onClick={() => window.print()}>
-                    <Printer className="h-4 w-4" />{t.print}
+                <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => window.print()}>
+                    <Printer className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.print}</span>
                 </Button>
+            )}
+            {resolvedOptions.density && (
+                <DensityToggle density={density} onChange={onDensityChange} t={t} />
             )}
             {(resolvedOptions.columnVisibility || resolvedOptions.columnOrdering) && (
                 <ColumnsDropdown table={table} tableColumns={tableData.columns} columnOrder={columnOrder}
                     onReorder={onReorderColumns} showVisibility={resolvedOptions.columnVisibility}
                     showOrdering={resolvedOptions.columnOrdering} t={t} />
+            )}
+            {resolvedOptions.shortcutsOverlay && onShowShortcuts && (
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onShowShortcuts} title={t.keyboardShortcuts}>
+                    <HelpCircle className="h-3.5 w-3.5" />
+                </Button>
             )}
         </div>
     );
@@ -343,7 +976,7 @@ function ColumnsDropdown<TData>({ table, tableColumns, columnOrder, onReorder, s
     return (
         <DropdownMenu onOpenChange={(open) => { if (!open) { setReordering(false); setDragging(null); setDragOverId(null); } }}>
             <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8"><SlidersHorizontal className="h-4 w-4" />{t.columns}</Button>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5"><SlidersHorizontal className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.columns}</span></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-h-[400px] w-60 overflow-y-auto">
                 <div className="flex items-center justify-between px-2 py-1.5">
@@ -392,7 +1025,7 @@ function buildFilterColumns(columns: DataTableColumnDef[]): FilterColumn[] {
 function SkeletonRows({ count, colCount }: { count: number; colCount: number }) {
     return (<>{Array.from({ length: count }).map((_, i) => (
         <TableRow key={`skeleton-${i}`}>{Array.from({ length: colCount }).map((_, j) => (
-            <TableCell key={`skeleton-${i}-${j}`} className="py-3"><Skeleton className="h-4 w-full" /></TableCell>
+            <TableCell key={`skeleton-${i}-${j}`} className="py-2.5"><Skeleton className="h-4 w-full rounded" /></TableCell>
         ))}</TableRow>
     ))}</>);
 }
@@ -419,7 +1052,9 @@ function useResponsiveColumns(columns: DataTableColumnDef[]): Set<string> {
     return hiddenCols;
 }
 
-export function DataTable<TData extends object>({
+// ─── Main DataTable component ───────────────────────────────────────────────
+
+function DataTableInner<TData extends object>({
     className, tableData, tableName, prefix, actions, bulkActions,
     renderCell, renderHeader, renderFooterCell, renderFilter,
     rowClassName, rowDataAttributes, groupClassName,
@@ -427,6 +1062,7 @@ export function DataTable<TData extends object>({
     onRowClick, rowLink, emptyState, debounceMs, partialReloadKey,
     onInlineEdit, realtimeChannel, realtimeEvent = ".updated",
     renderDetailRow, selectionMode = "checkbox", slots,
+    onReorder, onBatchEdit, emptyStateIllustration,
 }: DataTableProps<TData>) {
     const t = useMemo<DataTableTranslations>(() => ({ ...defaultTranslations, ...translationsOverride }), [translationsOverride]);
 
@@ -434,7 +1070,13 @@ export function DataTable<TData extends object>({
         quickViews: true, customQuickViews: true, exports: true, filters: true,
         columnVisibility: true, columnOrdering: true, columnResizing: false,
         stickyHeader: false, globalSearch: false, loading: true,
-        keyboardNavigation: false, printable: false, ...optionsOverride,
+        keyboardNavigation: false, printable: false, density: false,
+        copyCell: false, contextMenu: false, virtualScrolling: false,
+        rowGrouping: false, rowReorder: false, batchEdit: false,
+        searchHighlight: false, undoRedo: false, columnPinning: false,
+        persistSelection: false, shortcutsOverlay: false,
+        exportProgress: false, emptyStateIllustration: false,
+        ...optionsOverride,
     }), [optionsOverride]);
 
     const config = tableData.config;
@@ -453,7 +1095,10 @@ export function DataTable<TData extends object>({
         const finishHandler = () => setIsNavigating(false);
         router.on("start", startHandler);
         router.on("finish", finishHandler);
-        return () => {};
+        return () => {
+            router.off("start", startHandler);
+            router.off("finish", finishHandler);
+        };
     }, [resolvedOptions.loading]);
 
     // Real-time updates via Laravel Echo
@@ -495,23 +1140,69 @@ export function DataTable<TData extends object>({
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [showTrashed, setShowTrashed] = useState(false);
 
+    // Density toggle
+    const [density, setDensity] = useState<DataTableDensity>(() => loadDensity(tableName));
+    const handleDensityChange = useCallback((d: DataTableDensity) => { setDensity(d); saveDensity(tableName, d); }, [tableName]);
+    const densityClasses = DENSITY_CLASSES[density];
+
+    // Batch edit
+    const [batchEditOpen, setBatchEditOpen] = useState(false);
+
+    // Import dialog
+    const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+    // Row drag reorder
+    const [dragRowIndex, setDragRowIndex] = useState<number | null>(null);
+    const [dragOverRowIndex, setDragOverRowIndex] = useState<number | null>(null);
+    const handleRowDragStart = useCallback((index: number) => { setDragRowIndex(index); }, []);
+    const handleRowDragOver = useCallback((_e: React.DragEvent, index: number) => { setDragOverRowIndex(index); }, []);
+    const handleRowDragEnd = useCallback(() => {
+        if (dragRowIndex !== null && dragOverRowIndex !== null && dragRowIndex !== dragOverRowIndex && onReorder) {
+            const rows = tableData.data;
+            const ids = rows.map((r) => (r as Record<string, unknown>).id);
+            const reordered = [...ids];
+            const [moved] = reordered.splice(dragRowIndex, 1);
+            reordered.splice(dragOverRowIndex, 0, moved);
+            onReorder(reordered, reordered.map((_, i) => i));
+        }
+        setDragRowIndex(null);
+        setDragOverRowIndex(null);
+    }, [dragRowIndex, dragOverRowIndex, tableData.data, onReorder]);
+
+    // Collapsed row groups
+    const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+    // Search term for highlighting
+    const searchKeyForHighlight = prefix ? `${prefix}_search` : "search";
+    const currentSearchTerm = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get(searchKeyForHighlight) ?? "" : "";
+
+    // Undo/Redo stack for inline edits
+    const { pushEdit, undo: undoEdit, redo: redoEdit, canUndo, canRedo } = useUndoRedo(resolvedOptions.undoRedo);
+
+    // Keyboard shortcuts overlay
+    const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+    // Selection persistence across pages
+    const { persistedIds, addIds: addPersistedIds, removeIds: removePersistedIds, clearAll: clearPersistedSelection, count: persistedSelectionCount } = usePersistedSelection<TData>(tableName, resolvedOptions.persistSelection);
+
     const RESIZE_KEY = `dt-resize-${tableName}`;
     const [columnSizing, setColumnSizing] = useState<Record<string, number>>(() => {
         if (!resolvedOptions.columnResizing) return {};
-        try { const stored = localStorage.getItem(RESIZE_KEY); return stored ? JSON.parse(stored) : {}; }
-        catch { return {}; }
+        const stored = safeGetItem(RESIZE_KEY);
+        if (stored) { try { return JSON.parse(stored); } catch { /* fall through */ } }
+        return {};
     });
 
     useEffect(() => {
         if (resolvedOptions.columnResizing && Object.keys(columnSizing).length > 0)
-            localStorage.setItem(RESIZE_KEY, JSON.stringify(columnSizing));
+            safeSetItem(RESIZE_KEY, JSON.stringify(columnSizing));
     }, [columnSizing, resolvedOptions.columnResizing, RESIZE_KEY]);
 
     // Persist state to localStorage
     const STATE_KEY = `dt-state-${tableName}`;
     useEffect(() => {
         if (!config?.persistState) return;
-        localStorage.setItem(STATE_KEY, JSON.stringify({
+        safeSetItem(STATE_KEY, JSON.stringify({
             filters: tableData.meta.filters, sorts: tableData.meta.sorts, perPage: tableData.meta.perPage,
         }));
     }, [config?.persistState, tableData.meta.filters, tableData.meta.sorts, tableData.meta.perPage, STATE_KEY]);
@@ -528,7 +1219,7 @@ export function DataTable<TData extends object>({
             return {
                 id: col.id, accessorKey: col.id, header: col.label, enableHiding: true,
                 enableResizing: resolvedOptions.columnResizing, size: columnSizing[col.id] || undefined,
-                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable },
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable } satisfies ColumnMeta,
                 cell: ({ row }) => {
                     const value = row.getValue(col.id);
 
@@ -538,22 +1229,26 @@ export function DataTable<TData extends object>({
                             columnId={col.id} toggleUrl={tableData.toggleUrl} />;
                     }
 
-                    // Inline editing
+                    // Inline editing with undo/redo support
                     if (col.editable && onInlineEdit) {
                         return <InlineEditCell value={value} columnId={col.id} columnType={col.type}
-                            onSave={(newVal) => onInlineEdit(row.original, col.id, newVal)} t={t} />;
+                            onSave={(newVal) => {
+                                const rowId = (row.original as Record<string, unknown>).id;
+                                pushEdit({ rowId, columnId: col.id, oldValue: value, newValue: newVal });
+                                return onInlineEdit(row.original, col.id, newVal);
+                            }} t={t} />;
                     }
 
                     if (renderCell) { const custom = renderCell(col.id, value, row.original); if (custom !== undefined) return custom; }
                     if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
 
                     if (col.type === "image" && typeof value === "string") {
-                        return <img src={value} alt="" className="h-8 w-8 rounded-md object-cover" />;
+                        return <img src={value} alt={col.label} className="h-8 w-8 rounded-md object-cover" />;
                     }
                     if (col.type === "badge") {
                         const strValue = String(value);
                         const opt = col.options?.find((o) => o.value === strValue);
-                        return <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                        return <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
                             BADGE_VARIANTS[opt?.variant ?? "default"] ?? BADGE_VARIANTS.default)}>{opt?.label ?? strValue}</span>;
                     }
                     if (col.type === "currency" && (typeof value === "number" || typeof value === "string")) {
@@ -578,21 +1273,37 @@ export function DataTable<TData extends object>({
                         return <a href={`tel:${value}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{value}</a>;
                     }
                     if (typeof value === "boolean") {
-                        return value ? <Check className="inline-flex h-4 items-center rounded-full font-medium text-green-800 dark:text-green-400" />
-                            : <X className="inline-flex h-4 items-center rounded-full font-medium text-red-800 dark:text-red-400" />;
+                        return value ? <Check className="h-4 w-4 text-emerald-600" />
+                            : <X className="h-4 w-4 text-muted-foreground/40" />;
                     }
                     if (col.type === "number" && typeof value === "number") return <span className="tabular-nums">{value.toLocaleString()}</span>;
-                    return String(value);
+                    // Search highlighting for text values
+                    const strValue = String(value);
+                    if (resolvedOptions.searchHighlight && currentSearchTerm && col.type === "text") {
+                        return highlightText(strValue, currentSearchTerm);
+                    }
+                    return strValue;
                 },
             };
         }
 
         const result: ColumnDef<TData>[] = [];
 
+        // Row reorder drag handle column
+        if (resolvedOptions.rowReorder && onReorder) {
+            result.push({
+                id: "_reorder", header: "", enableHiding: false, enableResizing: false, size: 36,
+                cell: ({ row }) => (
+                    <DragHandleCell rowIndex={row.index}
+                        onDragStart={handleRowDragStart} onDragOver={handleRowDragOver} onDragEnd={handleRowDragEnd} />
+                ),
+            });
+        }
+
         // Detail row expand column
         if (hasDetailRows) {
             result.push({
-                id: "_expand", header: "", enableHiding: false, enableResizing: false,
+                id: "_expand", header: "", enableHiding: false, enableResizing: false, size: 36,
                 cell: ({ row }) => {
                     const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
                     const isExpanded = expandedRows.has(rowId);
@@ -612,7 +1323,7 @@ export function DataTable<TData extends object>({
         if (hasBulkActions || selectionMode === "radio") {
             if (selectionMode === "radio") {
                 result.push({
-                    id: "_select", header: "", enableHiding: false, enableResizing: false,
+                    id: "_select", header: "", enableHiding: false, enableResizing: false, size: 40,
                     cell: ({ row, table: tbl }) => (
                         <input type="radio" name={`dt-radio-${tableName}`} checked={row.getIsSelected()}
                             onChange={() => { tbl.toggleAllRowsSelected(false); row.toggleSelected(true); }}
@@ -621,7 +1332,7 @@ export function DataTable<TData extends object>({
                 });
             } else {
                 result.push({
-                    id: "_select", enableHiding: false, enableResizing: false,
+                    id: "_select", enableHiding: false, enableResizing: false, size: 40,
                     header: ({ table: tbl }) => (
                         <Checkbox checked={tbl.getIsAllPageRowsSelected() || (tbl.getIsSomePageRowsSelected() && "indeterminate")}
                             onCheckedChange={(value) => tbl.toggleAllPageRowsSelected(!!value)} aria-label={t.selectAll} />
@@ -645,12 +1356,12 @@ export function DataTable<TData extends object>({
         }
 
         if (actions && actions.length > 0) {
-            result.push({ id: "_actions", header: "", enableHiding: false, enableResizing: false,
+            result.push({ id: "_actions", header: "", enableHiding: false, enableResizing: false, size: 48,
                 cell: ({ row }) => <DataTableRowActions row={row.original} actions={actions} t={t} /> });
         }
 
         return result;
-    }, [mergedColumns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, columnSizing, hasDetailRows, expandedRows, tableName, selectionMode, responsiveHiddenCols, tableData.toggleUrl]);
+    }, [mergedColumns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, resolvedOptions.rowReorder, resolvedOptions.searchHighlight, resolvedOptions.copyCell, columnSizing, hasDetailRows, expandedRows, tableName, selectionMode, responsiveHiddenCols, tableData.toggleUrl, onReorder, handleRowDragStart, handleRowDragOver, handleRowDragEnd, currentSearchTerm]);
 
     const { table, meta, columnVisibility, columnOrder, setColumnOrder, rowSelection, setRowSelection,
         applyColumns, handleSort, handlePageChange, handlePerPageChange, handleCursorChange,
@@ -667,23 +1378,23 @@ export function DataTable<TData extends object>({
     const initialSearch = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get(searchKey) ?? "" : "";
     const [globalSearchValue, setGlobalSearchValue] = useState(initialSearch);
 
-    function handleGlobalSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const handleGlobalSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         setGlobalSearchValue(e.target.value); handleGlobalSearch(e.target.value);
-    }
+    }, [handleGlobalSearch]);
 
-    function handleBulkClick(action: NonNullable<typeof bulkActions>[number]) {
+    const handleBulkClick = useCallback((action: NonNullable<typeof bulkActions>[number]) => {
         if (action.confirm) {
             const opts: DataTableConfirmOptions = typeof action.confirm === "object" ? action.confirm : {};
             setBulkConfirm({ action, opts, rows: serverSelectAll ? serverSelectedIds as TData[] : selectedRows });
         } else { action.onClick(serverSelectAll ? serverSelectedIds as TData[] : selectedRows); }
-    }
+    }, [serverSelectAll, serverSelectedIds, selectedRows]);
 
-    function handleRowInteraction(row: TData, e: React.MouseEvent) {
+    const handleRowInteraction = useCallback((row: TData, e: React.MouseEvent) => {
         if (rowLink) { const href = rowLink(row); if (e.metaKey || e.ctrlKey) window.open(href, "_blank"); else window.location.href = href; }
         else if (onRowClick) onRowClick(row);
-    }
+    }, [rowLink, onRowClick]);
 
-    function handleRowCheckboxClick(rowIndex: number, e: React.MouseEvent) {
+    const handleRowCheckboxClick = useCallback((rowIndex: number, e: React.MouseEvent) => {
         if (e.shiftKey && lastSelectedIndex.current !== null && lastSelectedIndex.current !== rowIndex) {
             const start = Math.min(lastSelectedIndex.current, rowIndex);
             const end = Math.max(lastSelectedIndex.current, rowIndex);
@@ -692,9 +1403,9 @@ export function DataTable<TData extends object>({
             setRowSelection(newSelection);
         }
         lastSelectedIndex.current = rowIndex;
-    }
+    }, [rowSelection, setRowSelection]);
 
-    async function handleSelectAllMatching() {
+    const handleSelectAllMatching = useCallback(async () => {
         if (!tableData.selectAllUrl) return;
         try {
             const currentParams = new URL(window.location.href).searchParams;
@@ -707,11 +1418,11 @@ export function DataTable<TData extends object>({
             table.getRowModel().rows.forEach((_, i) => { allSelection[String(i)] = true; });
             setRowSelection(allSelection);
         } catch { /* silently fail */ }
-    }
+    }, [tableData.selectAllUrl, table, setRowSelection]);
 
-    function clearServerSelectAll() { setServerSelectAll(false); setServerSelectedIds([]); setRowSelection({}); }
+    const clearServerSelectAll = useCallback(() => { setServerSelectAll(false); setServerSelectedIds([]); setRowSelection({}); }, [setRowSelection]);
 
-    function handleTableKeyDown(e: React.KeyboardEvent) {
+    const handleTableKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (!resolvedOptions.keyboardNavigation) return;
         const rows = table.getRowModel().rows;
         if (rows.length === 0) return;
@@ -720,7 +1431,7 @@ export function DataTable<TData extends object>({
         else if (e.key === "Enter" && focusedRowIndex !== null) { e.preventDefault(); const row = rows[focusedRowIndex]; if (row) handleRowInteraction(row.original, e as unknown as React.MouseEvent); }
         else if (e.key === "Escape") { setFocusedRowIndex(null); setRowSelection({}); }
         else if (e.key === " " && focusedRowIndex !== null && hasBulkActions) { e.preventDefault(); const row = rows[focusedRowIndex]; if (row) row.toggleSelected(!row.getIsSelected()); }
-    }
+    }, [resolvedOptions.keyboardNavigation, table, focusedRowIndex, handleRowInteraction, setRowSelection, hasBulkActions]);
 
     useEffect(() => {
         if (focusedRowIndex === null || !tableBodyRef.current) return;
@@ -728,7 +1439,7 @@ export function DataTable<TData extends object>({
     }, [focusedRowIndex]);
 
     // Soft deletes toggle handler
-    function handleTrashedToggle() {
+    const handleTrashedToggle = useCallback(() => {
         const newValue = !showTrashed;
         setShowTrashed(newValue);
         const p = prefix ? `${prefix}_` : "";
@@ -736,42 +1447,132 @@ export function DataTable<TData extends object>({
         if (newValue) currentUrl.searchParams.set(`${p}with_trashed`, "1");
         else currentUrl.searchParams.delete(`${p}with_trashed`);
         router.get(currentUrl.pathname + "?" + currentUrl.searchParams.toString(), {}, { preserveScroll: true });
-    }
+    }, [showTrashed, prefix]);
 
     // Conditional rules
     const rules = config?.rules ?? [];
 
-    function getRowRuleClass(row: TData): string {
+    const getRowRuleClass = useCallback((row: TData): string => {
         if (rules.length === 0) return "";
         return rules.filter((rule) => {
             const value = (row as Record<string, unknown>)[rule.column];
             return evaluateRule(rule, value) && rule.row?.class;
         }).map((r) => r.row!.class!).join(" ");
-    }
+    }, [rules]);
 
-    function getCellRuleClass(row: TData, columnId: string): string {
+    const getCellRuleClass = useCallback((row: TData, columnId: string): string => {
         if (rules.length === 0) return "";
         return rules.filter((rule) => {
             if (rule.column !== columnId) return false;
             const value = (row as Record<string, unknown>)[rule.column];
             return evaluateRule(rule, value) && rule.cell?.class;
         }).map((r) => r.cell!.class!).join(" ");
-    }
+    }, [rules]);
+
+    const editableColumns = useMemo(() => mergedColumns.filter((c) => c.editable), [mergedColumns]);
+
+    // Undo/Redo handlers
+    const handleUndo = useCallback(() => {
+        const action = undoEdit();
+        if (action && onInlineEdit) {
+            // Find the row with matching ID and apply old value
+            const row = tableData.data.find((r) => (r as Record<string, unknown>).id === action.rowId);
+            if (row) onInlineEdit(row, action.columnId, action.oldValue);
+        }
+    }, [undoEdit, onInlineEdit, tableData.data]);
+
+    const handleRedo = useCallback(() => {
+        const action = redoEdit();
+        if (action && onInlineEdit) {
+            const row = tableData.data.find((r) => (r as Record<string, unknown>).id === action.rowId);
+            if (row) onInlineEdit(row, action.columnId, action.newValue);
+        }
+    }, [redoEdit, onInlineEdit, tableData.data]);
+
+    // Column pin handler
+    const handlePinColumn = useCallback((columnId: string, direction: false | "left" | "right") => {
+        const col = table.getColumn(columnId);
+        if (col) col.pin(direction);
+    }, [table]);
+
+    // Keyboard shortcut: ? to show shortcuts overlay
+    useEffect(() => {
+        if (!resolvedOptions.shortcutsOverlay) return;
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === "?" && !e.ctrlKey && !e.metaKey && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+                setShortcutsOpen(true);
+            }
+            // Ctrl+Z / Ctrl+Y for undo/redo
+            if (resolvedOptions.undoRedo && e.ctrlKey && !e.shiftKey && e.key === "z") {
+                e.preventDefault(); handleUndo();
+            }
+            if (resolvedOptions.undoRedo && e.ctrlKey && (e.key === "y" || (e.shiftKey && e.key === "z"))) {
+                e.preventDefault(); handleRedo();
+            }
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [resolvedOptions.shortcutsOverlay, resolvedOptions.undoRedo, handleUndo, handleRedo]);
+
+    // Selection persistence: sync with TanStack row selection
+    useEffect(() => {
+        if (!resolvedOptions.persistSelection) return;
+        const selected = table.getSelectedRowModel().rows;
+        const currentIds = selected.map((r) => (r.original as Record<string, unknown>).id);
+        if (currentIds.length > 0) addPersistedIds(currentIds);
+    }, [resolvedOptions.persistSelection, table.getSelectedRowModel().rows, addPersistedIds]);
 
     const toolbarProps = { tableData, table, tableName, columnVisibility, columnOrder, applyColumns,
-        onReorderColumns: setColumnOrder, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t };
+        onReorderColumns: setColumnOrder, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t,
+        density, onDensityChange: handleDensityChange, onImportClick: tableData.importUrl ? () => setImportDialogOpen(true) : undefined,
+        onShowShortcuts: () => setShortcutsOpen(true), canUndo, canRedo, onUndo: handleUndo, onRedo: handleRedo };
 
     const activeFilterColumnIds = useMemo(() => new Set(Object.keys(meta.filters as Record<string, unknown>)), [meta.filters]);
 
-    const summaryLabels: Record<string, string> = { sum: t.summarySum, avg: t.summaryAvg, min: t.summaryMin, max: t.summaryMax, count: t.summaryCount };
+    const summaryLabels: Record<string, string> = useMemo(() => ({
+        sum: t.summarySum, avg: t.summaryAvg, min: t.summaryMin, max: t.summaryMax, count: t.summaryCount
+    }), [t.summarySum, t.summaryAvg, t.summaryMin, t.summaryMax, t.summaryCount]);
+
+    const visibleLeafColumns = useMemo(() => [
+        ...table.getLeftVisibleLeafColumns(),
+        ...table.getCenterVisibleLeafColumns(),
+        ...table.getRightVisibleLeafColumns(),
+    ], [table.getLeftVisibleLeafColumns(), table.getCenterVisibleLeafColumns(), table.getRightVisibleLeafColumns()]);
+
+    // Context menu: hide column handler
+    const handleHideColumn = useCallback((columnId: string) => {
+        const col = table.getColumn(columnId);
+        if (col) col.toggleVisibility(false);
+    }, [table]);
+
+    // Row grouping: group rows by column value
+    const groupByColumn = tableData.groupByColumn;
+    const groupedRows = useMemo(() => {
+        if (!groupByColumn || !resolvedOptions.rowGrouping) return null;
+        const rows = table.getRowModel().rows;
+        const groups = new Map<string, typeof rows>();
+        for (const row of rows) {
+            const val = String((row.original as Record<string, unknown>)[groupByColumn] ?? t.ungrouped);
+            if (!groups.has(val)) groups.set(val, []);
+            groups.get(val)!.push(row);
+        }
+        return groups;
+    }, [groupByColumn, resolvedOptions.rowGrouping, table, t.ungrouped]);
+
+    // Batch edit handler
+    const handleBatchEditApply = useCallback((columnId: string, value: unknown) => {
+        if (onBatchEdit) onBatchEdit(selectedRows, columnId, value);
+    }, [onBatchEdit, selectedRows]);
 
     return (
-        <div className="space-y-2 dt-root">
+        <div className="space-y-3 dt-root">
             {slots?.beforeTable}
-            <div className="flex items-center justify-between gap-2 py-1 print:hidden">
-                <div className="flex flex-1 items-center gap-2 pl-6">
+
+            {/* ── Toolbar ── */}
+            <div className="flex items-center justify-between gap-3 print:hidden">
+                <div className="flex flex-1 items-center gap-2">
                     {resolvedOptions.globalSearch && (
-                        <div className="relative w-64">
+                        <div className="relative w-56 lg:w-64">
                             <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
                             <Input placeholder={t.search} value={globalSearchValue} onChange={handleGlobalSearchChange} className="h-8 pl-8 text-sm" />
                         </div>
@@ -782,8 +1583,8 @@ export function DataTable<TData extends object>({
                     )}
                     {config?.softDeletesEnabled && (
                         <Button variant={showTrashed ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5" onClick={handleTrashedToggle}>
-                            {showTrashed ? <EyeOff className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-                            {showTrashed ? t.hideTrashed : t.showTrashed}
+                            {showTrashed ? <EyeOff className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            <span className="hidden sm:inline">{showTrashed ? t.hideTrashed : t.showTrashed}</span>
                         </Button>
                     )}
                 </div>
@@ -799,16 +1600,23 @@ export function DataTable<TData extends object>({
                     </>
                 )}
             </div>
+
+            {/* ── Bulk actions bar ── */}
             {hasBulkActions && selectedRows.length > 0 && (
-                <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 print:hidden">
-                    <span className="text-sm font-medium tabular-nums">{serverSelectAll ? t.selected(serverSelectedIds.length) : t.selected(selectedRows.length)}</span>
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm print:hidden">
+                    <span className="font-medium tabular-nums">{serverSelectAll ? t.selected(serverSelectedIds.length) : t.selected(selectedRows.length)}</span>
                     {!serverSelectAll && tableData.selectAllUrl && meta.total > tableData.data.length && table.getIsAllPageRowsSelected() && (
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={handleSelectAllMatching}>{t.selectAllMatching(meta.total)}</Button>
                     )}
                     {serverSelectAll && (
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={clearServerSelectAll}>{t.clearSelection}</Button>
                     )}
-                    <div className="flex items-center gap-1">
+                    <div className="ml-auto flex items-center gap-1.5">
+                        {resolvedOptions.batchEdit && editableColumns.length > 0 && onBatchEdit && (
+                            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setBatchEditOpen(true)}>
+                                <Pencil className="mr-1 h-3.5 w-3.5" />{t.batchEdit}
+                            </Button>
+                        )}
                         {bulkActions.map((action) => {
                             const Icon = action.icon;
                             return (
@@ -819,205 +1627,299 @@ export function DataTable<TData extends object>({
                                 </Button>
                             );
                         })}
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearServerSelectAll}><X className="h-3.5 w-3.5" /></Button>
                     </div>
-                    <Button variant="ghost" size="icon" className="ml-auto h-7 w-7" onClick={clearServerSelectAll}><X className="h-3.5 w-3.5" /></Button>
                 </div>
             )}
+
+            {/* ── Loading indicator ── */}
             {resolvedOptions.loading && isNavigating && (
-                <div className="flex items-center justify-center gap-2 py-1 text-sm text-muted-foreground print:hidden">
-                    <Loader2 className="h-4 w-4 animate-spin" />{t.loading}
+                <div className="flex items-center justify-center gap-2 py-1 text-xs text-muted-foreground print:hidden">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />{t.loading}
                 </div>
             )}
+
+            {/* ── Deferred loading placeholder ── */}
             {config?.deferLoading && !deferLoaded && (
-                <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
                     <Loader2 className="h-5 w-5 animate-spin" />{t.loading}
                 </div>
             )}
+
+            {/* ── Table ── */}
             {(!config?.deferLoading || deferLoaded) && (
-                <div className={cn("rounded-md border border-x-0 overflow-x-auto", className)}
+                <div className={cn("rounded-lg border overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
-                    <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}>
-                        <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
-                            {table.getHeaderGroups().map((headerGroup, groupIdx) => {
-                                const isGroupRow = groupIdx < table.getHeaderGroups().length - 1;
-                                return (
-                                    <TableRow key={headerGroup.id}>
-                                        {headerGroup.headers.map((header) => {
-                                            if (isGroupRow) {
+                    <div className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}>
+                        <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
+                            role="grid" aria-rowcount={meta.total} aria-colcount={table.getVisibleLeafColumns().length}>
+                            <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
+                                {table.getHeaderGroups().map((headerGroup, groupIdx) => {
+                                    const isGroupRow = groupIdx < table.getHeaderGroups().length - 1;
+                                    return (
+                                        <TableRow key={headerGroup.id} className={cn(isGroupRow && "border-b-0")}>
+                                            {headerGroup.headers.map((header) => {
+                                                if (isGroupRow) {
+                                                    const pin = getColumnPinningProps(header.column);
+                                                    const isActualGroup = !header.isPlaceholder && header.colSpan > 1;
+                                                    return (
+                                                        <TableHead key={header.id} colSpan={header.colSpan} style={pin.style}
+                                                            className={cn("h-8",
+                                                                isActualGroup && "text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted/30 border-b",
+                                                                isActualGroup && groupClassName?.[header.column.columnDef.header as string],
+                                                                pin.className)}>
+                                                            {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                                                        </TableHead>
+                                                    );
+                                                }
+                                                const colDef = mergedColumns.find((c) => c.id === header.column.id);
+                                                const isNumber = colDef?.type === "number" || colDef?.type === "currency" || colDef?.type === "percentage";
+                                                const leafGroup = colDef?.group;
                                                 const pin = getColumnPinningProps(header.column);
+                                                const hasActiveFilter = colDef ? activeFilterColumnIds.has(colDef.id) : false;
+                                                const sortState = colDef?.sortable ? meta.sorts.find((s) => s.id === colDef.id) : undefined;
+                                                const ariaSort = sortState ? (sortState.direction === "asc" ? "ascending" : "descending") as const : colDef?.sortable ? "none" as const : undefined;
+                                                const headerContent = (
+                                                    <>
+                                                        {header.isPlaceholder ? null : colDef?.sortable ? (
+                                                            <div className="flex items-center gap-1">
+                                                                <DataTableColumnHeader label={colDef.label} sortable={colDef.sortable} sorts={meta.sorts}
+                                                                    columnId={colDef.id} onSort={handleSort} align={isNumber ? "right" : "left"}>
+                                                                    {renderHeader?.[colDef.id]}
+                                                                </DataTableColumnHeader>
+                                                                {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1">
+                                                                {renderHeader?.[header.column.id] ?? flexRender(header.column.columnDef.header, header.getContext())}
+                                                                {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                            </div>
+                                                        )}
+                                                        {resolvedOptions.columnResizing && header.column.getCanResize() && (
+                                                            <div onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()}
+                                                                className={cn("absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
+                                                                    header.column.getIsResizing() ? "bg-primary" : "hover:bg-border")} />
+                                                        )}
+                                                    </>
+                                                );
                                                 return (
-                                                    <TableHead key={header.id} colSpan={header.colSpan} style={pin.style}
-                                                        className={cn("h-8", !header.isPlaceholder && header.colSpan > 1 && "text-center text-xs font-semibold text-muted-foreground border-b",
-                                                            !header.isPlaceholder && header.colSpan > 1 && groupClassName?.[header.column.columnDef.header as string], pin.className)}>
-                                                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                                                    <TableHead key={header.id} colSpan={header.colSpan}
+                                                        style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: header.getSize() } : {}) }}
+                                                        className={cn("h-9", isNumber && "text-right",
+                                                            leafGroup && groupClassName?.[leafGroup],
+                                                            pin.className, "relative")}
+                                                        aria-sort={ariaSort} role="columnheader">
+                                                        {resolvedOptions.contextMenu && colDef ? (
+                                                            <ColumnContextMenu columnId={colDef.id} sortable={colDef.sortable}
+                                                                isPinned={header.column.getIsPinned() || false}
+                                                                showPinning={resolvedOptions.columnPinning}
+                                                                onSort={handleSort} onHide={handleHideColumn}
+                                                                onPin={handlePinColumn} t={t}>
+                                                                {headerContent}
+                                                            </ColumnContextMenu>
+                                                        ) : headerContent}
                                                     </TableHead>
                                                 );
-                                            }
-                                            const colDef = mergedColumns.find((c) => c.id === header.column.id);
-                                            const isNumber = colDef?.type === "number" || colDef?.type === "currency" || colDef?.type === "percentage";
-                                            const leafGroup = colDef?.group;
-                                            const pin = getColumnPinningProps(header.column);
-                                            const hasActiveFilter = colDef ? activeFilterColumnIds.has(colDef.id) : false;
+                                            })}
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableHeader>
+                            <TableBody ref={tableBodyRef} role="rowgroup">
+                                {resolvedOptions.loading && isNavigating ? (
+                                    <SkeletonRows count={Math.min(meta.perPage, 10)} colCount={table.getVisibleLeafColumns().length} />
+                                ) : table.getRowModel().rows.length > 0 ? (
+                                    (() => {
+                                        const renderRow = (row: ReturnType<typeof table.getRowModel>["rows"][number], index: number) => {
+                                            const dataAttrs = rowDataAttributes?.(row.original) ?? {};
+                                            const rowRuleClass = getRowRuleClass(row.original);
+                                            const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
+                                            const isExpanded = hasDetailRows && expandedRows.has(rowId);
+                                            const isDragOver = dragOverRowIndex === index && dragRowIndex !== index;
                                             return (
-                                                <TableHead key={header.id} colSpan={header.colSpan}
-                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: header.getSize() } : {}) }}
-                                                    className={cn(isNumber && "text-right", leafGroup && groupClassName?.[leafGroup], pin.className, "relative")}>
-                                                    {header.isPlaceholder ? null : colDef?.sortable ? (
-                                                        <div className="flex items-center gap-1">
-                                                            <DataTableColumnHeader label={colDef.label} sortable={colDef.sortable} sorts={meta.sorts}
-                                                                columnId={colDef.id} onSort={handleSort} align={isNumber ? "right" : "left"}>
-                                                                {renderHeader?.[colDef.id]}
-                                                            </DataTableColumnHeader>
-                                                            {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-1">
-                                                            {renderHeader?.[header.column.id] ?? flexRender(header.column.columnDef.header, header.getContext())}
-                                                            {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
-                                                        </div>
+                                                <>{/* keyed fragment */}
+                                                    <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined} {...dataAttrs}
+                                                        role="row" aria-rowindex={(meta.currentPage - 1) * meta.perPage + index + 1}
+                                                        aria-selected={row.getIsSelected() || undefined}
+                                                        className={cn(
+                                                            "transition-colors",
+                                                            densityClasses.row,
+                                                            row.getIsSelected() && "bg-primary/5",
+                                                            isClickable && "cursor-pointer",
+                                                            focusedRowIndex === index && "ring-2 ring-inset ring-primary",
+                                                            isDragOver && "border-t-2 border-t-primary",
+                                                            rowRuleClass, rowClassName?.(row.original))}
+                                                        onClick={(e) => {
+                                                            if (hasBulkActions && e.shiftKey) { handleRowCheckboxClick(index, e); return; }
+                                                            if (isClickable) {
+                                                                const target = e.target as HTMLElement;
+                                                                if (target.closest("button, a, input, [role='checkbox'], [role='switch'], [data-slot='clear']")) return;
+                                                                handleRowInteraction(row.original, e);
+                                                            }
+                                                        }}>
+                                                        {row.getVisibleCells().map((cell) => {
+                                                            const pin = getColumnPinningProps(cell.column);
+                                                            const cellMeta = cell.column.columnDef.meta as ColumnMeta | undefined;
+                                                            const cellRuleClass = getCellRuleClass(row.original, cell.column.id);
+                                                            const cellContent = flexRender(cell.column.columnDef.cell, cell.getContext());
+                                                            return (
+                                                                <TableCell key={cell.id} role="gridcell"
+                                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
+                                                                    className={cn(
+                                                                        "whitespace-nowrap",
+                                                                        densityClasses.cell,
+                                                                        cellMeta?.type === "number" && "text-right",
+                                                                        cellMeta?.type === "currency" && "text-right",
+                                                                        cellMeta?.type === "percentage" && "text-right",
+                                                                        cellMeta?.group && groupClassName?.[cellMeta.group],
+                                                                        pin.className, cellRuleClass)}>
+                                                                    {resolvedOptions.copyCell && cell.column.id !== "_select" && cell.column.id !== "_actions" && cell.column.id !== "_expand" && cell.column.id !== "_reorder" ? (
+                                                                        <CopyableCell value={cell.getValue()} enabled={true} t={t}>{cellContent}</CopyableCell>
+                                                                    ) : cellContent}
+                                                                </TableCell>
+                                                            );
+                                                        })}
+                                                    </TableRow>
+                                                    {isExpanded && renderDetailRow && (
+                                                        <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30">
+                                                            <TableCell colSpan={table.getVisibleLeafColumns().length} className="p-4">
+                                                                {renderDetailRow(row.original)}
+                                                            </TableCell>
+                                                        </TableRow>
                                                     )}
-                                                    {resolvedOptions.columnResizing && header.column.getCanResize() && (
-                                                        <div onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()}
-                                                            className={cn("absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
-                                                                header.column.getIsResizing() ? "bg-primary" : "hover:bg-border")} />
-                                                    )}
-                                                </TableHead>
+                                                </>
+                                            );
+                                        };
+
+                                        // Row grouping mode
+                                        if (groupedRows) {
+                                            let rowIdx = 0;
+                                            return [...groupedRows.entries()].map(([groupName, rows]) => {
+                                                const isCollapsed = collapsedGroups.has(groupName);
+                                                const startIdx = rowIdx;
+                                                rowIdx += rows.length;
+                                                return (
+                                                    <>{/* group fragment */}
+                                                        <TableRow key={`group-${groupName}`}
+                                                            className="bg-muted/30 hover:bg-muted/40 cursor-pointer"
+                                                            onClick={() => setCollapsedGroups((prev) => {
+                                                                const next = new Set(prev);
+                                                                if (next.has(groupName)) next.delete(groupName); else next.add(groupName);
+                                                                return next;
+                                                            })}>
+                                                            <TableCell colSpan={table.getVisibleLeafColumns().length} className="py-2 font-medium">
+                                                                <div className="flex items-center gap-2">
+                                                                    {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                                                    <span>{groupName}</span>
+                                                                    <span className="text-muted-foreground text-xs">({rows.length})</span>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                        {!isCollapsed && rows.map((row, i) => renderRow(row, startIdx + i))}
+                                                    </>
+                                                );
+                                            });
+                                        }
+
+                                        // Normal (non-grouped) mode
+                                        return table.getRowModel().rows.map((row, index) => renderRow(row, index));
+                                    })()
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-40 text-center text-muted-foreground">
+                                            <EmptyState customEmpty={emptyState} illustration={emptyStateIllustration}
+                                                showIllustration={resolvedOptions.emptyStateIllustration} t={t} />
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+
+                            {/* Per-page footer */}
+                            {tableData.footer && (
+                                <TableFooter>
+                                    <TableRow className="bg-muted/20 font-medium">
+                                        {visibleLeafColumns.map((col) => {
+                                            const footerValue = tableData.footer?.[col.id];
+                                            const colMeta = col.columnDef.meta as ColumnMeta | undefined;
+                                            const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
+                                            const group = colMeta?.group;
+                                            const pin = getColumnPinningProps(col);
+                                            let content: React.ReactNode = null;
+                                            if (footerValue !== undefined && footerValue !== null) {
+                                                if (renderFooterCell) {
+                                                    const custom = renderFooterCell(col.id, footerValue);
+                                                    content = custom !== undefined ? custom : (isNumber && typeof footerValue === "number" ? footerValue.toLocaleString() : String(footerValue));
+                                                } else { content = isNumber && typeof footerValue === "number" ? footerValue.toLocaleString() : String(footerValue); }
+                                            }
+                                            return (
+                                                <TableCell key={col.id} style={pin.style}
+                                                    className={cn("whitespace-nowrap py-2 font-semibold", isNumber && "text-right tabular-nums",
+                                                        group && groupClassName?.[group], pin.className)}>
+                                                    {content}
+                                                </TableCell>
                                             );
                                         })}
                                     </TableRow>
-                                );
-                            })}
-                        </TableHeader>
-                        <TableBody ref={tableBodyRef}>
-                            {resolvedOptions.loading && isNavigating ? (
-                                <SkeletonRows count={meta.perPage > 10 ? 10 : meta.perPage} colCount={table.getVisibleLeafColumns().length} />
-                            ) : table.getRowModel().rows.length > 0 ? (
-                                table.getRowModel().rows.map((row, index) => {
-                                    const dataAttrs = rowDataAttributes?.(row.original) ?? {};
-                                    const rowRuleClass = getRowRuleClass(row.original);
-                                    const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
-                                    const isExpanded = hasDetailRows && expandedRows.has(rowId);
-                                    return (
-                                        <>{/* keyed fragment */}
-                                            <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined} {...dataAttrs}
-                                                className={cn(index % 2 === 1 && "bg-muted/40", row.getIsSelected() && "bg-primary/5",
-                                                    isClickable && "cursor-pointer hover:bg-muted/60",
-                                                    focusedRowIndex === index && "ring-2 ring-inset ring-primary",
-                                                    rowRuleClass, rowClassName?.(row.original))}
-                                                onClick={(e) => {
-                                                    if (hasBulkActions && e.shiftKey) { handleRowCheckboxClick(index, e); return; }
-                                                    if (isClickable) {
-                                                        const target = e.target as HTMLElement;
-                                                        if (target.closest("button, a, input, [role='checkbox'], [role='switch'], [data-slot='clear']")) return;
-                                                        handleRowInteraction(row.original, e);
-                                                    }
-                                                }}>
-                                                {row.getVisibleCells().map((cell) => {
-                                                    const pin = getColumnPinningProps(cell.column);
-                                                    const pinnedBg = getPinnedCellBg(cell.column.getIsPinned(), index % 2 === 1, row.getIsSelected());
-                                                    const cellRuleClass = getCellRuleClass(row.original, cell.column.id);
-                                                    return (
-                                                        <TableCell key={cell.id}
-                                                            style={{ ...pin.style, ...pinnedBg, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
-                                                            className={cn(index % 2 === 1 && "bg-muted/40", "whitespace-nowrap py-2",
-                                                                (cell.column.columnDef.meta as { type?: string })?.type === "number" && "text-right",
-                                                                (cell.column.columnDef.meta as { type?: string })?.type === "currency" && "text-right",
-                                                                (cell.column.columnDef.meta as { type?: string })?.type === "percentage" && "text-right",
-                                                                (cell.column.columnDef.meta as { group?: string | null })?.group &&
-                                                                    groupClassName?.[(cell.column.columnDef.meta as { group: string }).group],
-                                                                pin.className, cellRuleClass)}>
-                                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                                        </TableCell>
-                                                    );
-                                                })}
-                                            </TableRow>
-                                            {isExpanded && renderDetailRow && (
-                                                <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30">
-                                                    <TableCell colSpan={table.getVisibleLeafColumns().length} className="p-4">
-                                                        {renderDetailRow(row.original)}
-                                                    </TableCell>
-                                                </TableRow>
-                                            )}
-                                        </>
-                                    );
-                                })
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-24 text-center">
-                                        {emptyState ?? t.noData}
-                                    </TableCell>
-                                </TableRow>
+                                </TableFooter>
                             )}
-                        </TableBody>
-                        {tableData.footer && (
-                            <TableFooter>
-                                <TableRow>
-                                    {[...table.getLeftVisibleLeafColumns(), ...table.getCenterVisibleLeafColumns(), ...table.getRightVisibleLeafColumns()].map((col) => {
-                                        const footerValue = tableData.footer?.[col.id];
-                                        const colMeta = col.columnDef.meta as { type?: string; group?: string | null } | undefined;
-                                        const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
-                                        const group = colMeta?.group;
-                                        const pin = getColumnPinningProps(col);
-                                        let content: React.ReactNode = null;
-                                        if (footerValue !== undefined && footerValue !== null) {
-                                            if (renderFooterCell) {
-                                                const custom = renderFooterCell(col.id, footerValue);
-                                                content = custom !== undefined ? custom : (isNumber && typeof footerValue === "number" ? footerValue.toLocaleString() : String(footerValue));
-                                            } else { content = isNumber && typeof footerValue === "number" ? footerValue.toLocaleString() : String(footerValue); }
-                                        }
-                                        const footerPinnedBg = col.getIsPinned() ? { backgroundColor: "var(--color-background)" } : {};
-                                        return (
-                                            <TableCell key={col.id} style={{ ...pin.style, ...footerPinnedBg }}
-                                                className={cn("whitespace-nowrap py-2 font-semibold", isNumber && "text-right tabular-nums",
-                                                    group && groupClassName?.[group], pin.className)}>
-                                                {content}
-                                            </TableCell>
-                                        );
-                                    })}
-                                </TableRow>
-                            </TableFooter>
-                        )}
-                        {tableData.summary && (
-                            <TableFooter>
-                                <TableRow className="bg-muted/30">
-                                    {[...table.getLeftVisibleLeafColumns(), ...table.getCenterVisibleLeafColumns(), ...table.getRightVisibleLeafColumns()].map((col) => {
-                                        const summaryValue = tableData.summary?.[col.id];
-                                        const colDef = mergedColumns.find((c) => c.id === col.id);
-                                        const colMeta = col.columnDef.meta as { type?: string } | undefined;
-                                        const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
-                                        const pin = getColumnPinningProps(col);
-                                        let content: React.ReactNode = null;
-                                        if (summaryValue !== undefined && summaryValue !== null) {
-                                            const label = summaryLabels[colDef?.summary ?? ""] ?? "";
-                                            const formatted = isNumber && typeof summaryValue === "number" ? summaryValue.toLocaleString() : String(summaryValue);
-                                            content = <span className="text-xs"><span className="text-muted-foreground">{label}: </span><span className="font-semibold">{formatted}</span></span>;
-                                        }
-                                        return (
-                                            <TableCell key={col.id} style={pin.style}
-                                                className={cn("whitespace-nowrap py-1.5", isNumber && "text-right tabular-nums", pin.className)}>
-                                                {content}
-                                            </TableCell>
-                                        );
-                                    })}
-                                </TableRow>
-                            </TableFooter>
-                        )}
-                    </Table>
+
+                            {/* Full-dataset summary row */}
+                            {tableData.summary && (
+                                <TableFooter>
+                                    <TableRow className="bg-muted/10 border-t-2">
+                                        {visibleLeafColumns.map((col) => {
+                                            const summaryValue = tableData.summary?.[col.id];
+                                            const colDef = mergedColumns.find((c) => c.id === col.id);
+                                            const colMeta = col.columnDef.meta as ColumnMeta | undefined;
+                                            const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
+                                            const pin = getColumnPinningProps(col);
+                                            let content: React.ReactNode = null;
+                                            if (summaryValue !== undefined && summaryValue !== null) {
+                                                const label = summaryLabels[colDef?.summary ?? ""] ?? "";
+                                                const formatted = isNumber && typeof summaryValue === "number" ? summaryValue.toLocaleString() : String(summaryValue);
+                                                content = (
+                                                    <span className="text-xs">
+                                                        <span className="text-muted-foreground">{label} </span>
+                                                        <span className="font-semibold tabular-nums">{formatted}</span>
+                                                    </span>
+                                                );
+                                            }
+                                            return (
+                                                <TableCell key={col.id} style={pin.style}
+                                                    className={cn("whitespace-nowrap py-1.5", isNumber && "text-right", pin.className)}>
+                                                    {content}
+                                                </TableCell>
+                                            );
+                                        })}
+                                    </TableRow>
+                                </TableFooter>
+                            )}
+                        </Table>
+                    </div>
                 </div>
             )}
-            {slots?.pagination ?? (
-                <div className="print:hidden">
-                    <DataTablePagination meta={meta} onPageChange={handlePageChange} onPerPageChange={handlePerPageChange} onCursorChange={handleCursorChange} t={t} />
+
+            {/* ── Pagination + Auto-refresh ── */}
+            <div className="flex items-center justify-between print:hidden">
+                <div className="flex-1">
+                    {(config?.pollingInterval ?? 0) > 0 && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: "3s" }} />
+                            {t.autoRefresh} ({config!.pollingInterval}s)
+                        </div>
+                    )}
                 </div>
-            )}
+                <div className="flex-1">
+                    {slots?.pagination ?? (
+                        <DataTablePagination meta={meta} onPageChange={handlePageChange} onPerPageChange={handlePerPageChange} onCursorChange={handleCursorChange} t={t} />
+                    )}
+                </div>
+            </div>
+
             {slots?.afterTable}
-            {(config?.pollingInterval ?? 0) > 0 && (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground print:hidden">
-                    <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: "3s" }} />
-                    {t.autoRefresh} ({config!.pollingInterval}s)
-                </div>
-            )}
+
+            {/* ── Bulk action confirmation dialog ── */}
             <Dialog open={!!bulkConfirm} onOpenChange={(open) => { if (!open) setBulkConfirm(null); }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
@@ -1033,9 +1935,48 @@ export function DataTable<TData extends object>({
                     </DialogFoot>
                 </DialogContent>
             </Dialog>
+
+            {/* ── Keyboard shortcuts dialog ── */}
+            {resolvedOptions.shortcutsOverlay && (
+                <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} t={t} />
+            )}
+
+            {/* ── Persisted selection indicator ── */}
+            {resolvedOptions.persistSelection && persistedSelectionCount > 0 && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground print:hidden">
+                    <span>{t.selected(persistedSelectionCount)} (across pages)</span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={clearPersistedSelection}>
+                        {t.clearSelection}
+                    </Button>
+                </div>
+            )}
+
+            {/* ── Batch edit dialog ── */}
+            {resolvedOptions.batchEdit && editableColumns.length > 0 && onBatchEdit && (
+                <BatchEditDialog open={batchEditOpen} onOpenChange={setBatchEditOpen}
+                    selectedRows={selectedRows} editableColumns={editableColumns}
+                    onApply={handleBatchEditApply} t={t} />
+            )}
+
+            {/* ── Import dialog ── */}
+            {tableData.importUrl && (
+                <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen}
+                    importUrl={tableData.importUrl} t={t} />
+            )}
+
             {resolvedOptions.printable && (
                 <style>{`@media print { body * { visibility: hidden; } .dt-root, .dt-root * { visibility: visible; } .dt-root { position: absolute; left: 0; top: 0; width: 100%; } .print\\:hidden { display: none !important; } table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ddd; padding: 8px; text-align: left; } th { background-color: #f5f5f5; font-weight: bold; } }`}</style>
             )}
         </div>
+    );
+}
+
+// ─── Exported component with Error Boundary ─────────────────────────────────
+
+export function DataTable<TData extends object>(props: DataTableProps<TData>) {
+    return (
+        <DataTableErrorBoundary>
+            <DataTableInner {...props} />
+        </DataTableErrorBoundary>
     );
 }

@@ -129,6 +129,8 @@ test('array value is joined with comma', function () {
 
 test('unknown prefix is treated as value with default operator', function () {
     $filter = new OperatorFilter('text');
-    $this->builder->shouldReceive('where')->once()->with('name', 'LIKE', '%unknown_prefix:value%');
+    // The underscore in 'unknown_prefix' gets escaped since it's a LIKE wildcard
+    $expected = '%' . str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], 'unknown_prefix:value') . '%';
+    $this->builder->shouldReceive('where')->once()->with('name', 'LIKE', $expected);
     $filter($this->builder, 'unknown_prefix:value', 'name');
 });
