@@ -9,6 +9,7 @@ use Machour\DataTable\Concerns\HasImport;
 use Machour\DataTable\Concerns\HasInlineEdit;
 use Machour\DataTable\Concerns\HasReorder;
 use Machour\DataTable\Concerns\HasSelectAll;
+use Machour\DataTable\Concerns\HasToggle;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -242,6 +243,19 @@ class DataTableTestHelper
         Assert::assertTrue(
             $this->usesTrait(HasReorder::class),
             "{$this->class} does not use HasReorder trait."
+        );
+
+        return $this;
+    }
+
+    /**
+     * Assert that toggle is enabled.
+     */
+    public function assertToggleEnabled(): self
+    {
+        Assert::assertTrue(
+            $this->usesTrait(HasToggle::class),
+            "{$this->class} does not use HasToggle trait."
         );
 
         return $this;

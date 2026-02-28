@@ -468,7 +468,7 @@ abstract class AbstractDataTable extends Data
 
         // Toggle URL
         $toggleUrl = null;
-        if (collect(static::tableColumns())->contains(fn (Column $col) => $col->toggleable)) {
+        if (method_exists(static::class, 'resolveToggleUrl') && collect(static::tableColumns())->contains(fn (Column $col) => $col->toggleable)) {
             $toggleUrl = static::resolveToggleUrl();
         }
 

@@ -203,6 +203,7 @@ php artisan make:data-table Product --inline-edit       # Include HasInlineEdit 
 php artisan make:data-table Product --select-all        # Include HasSelectAll trait
 php artisan make:data-table Product --reorder           # Include HasReorder trait
 php artisan make:data-table Product --import            # Include HasImport trait
+php artisan make:data-table Product --toggle            # Include HasToggle trait
 php artisan make:data-table Product --soft-deletes      # Enable soft deletes
 php artisan make:data-table Product --detail-rows       # Enable detail rows
 php artisan make:data-table Product --searchable=name   # Searchable columns
@@ -448,6 +449,24 @@ DataTableExportController::register('products', ProductDataTable::class);
 
 Three formats supported: XLSX, CSV, PDF. Queued exports available via config.
 
+Dynamic filenames based on active filters:
+
+```php
+public static function tableExportFilename(): string|\Closure
+{
+    return fn (array $filters) => 'products-' . ($filters['status'] ?? 'all') . '-' . date('Y-m-d');
+}
+```
+
+Override the export query to customize what gets exported:
+
+```php
+public static function makeExportQuery(?\Illuminate\Http\Request $request = null): \Spatie\QueryBuilder\QueryBuilder
+{
+    return parent::makeExportQuery($request)->where('is_active', true);
+}
+```
+
 #### HasInlineEdit
 
 Double-click-to-edit cells:
@@ -495,6 +514,43 @@ DataTableInlineEditController::register('products', ProductDataTable::class);
 />
 ```
 
+#### HasToggle
+
+One-click boolean toggle switch for columns:
+
+```php
+use Machour\DataTable\Concerns\HasToggle;
+
+class ProductDataTable extends AbstractDataTable
+{
+    use HasToggle;
+
+    public static function tableToggleModel(): string { return \App\Models\Product::class; }
+    public static function tableToggleName(): string { return 'products'; }
+
+    // Optional: custom toggle logic (default just updates the column)
+    public static function handleToggle(\Illuminate\Database\Eloquent\Model $model, string $columnId, bool $value): void
+    {
+        $model->update([$columnId => $value]);
+        // e.g. fire an event, clear cache, etc.
+    }
+}
+```
+
+Register the controller:
+
+```php
+DataTableToggleController::register('products', ProductDataTable::class);
+```
+
+Mark columns as toggleable in your column definitions:
+
+```php
+new Column(id: 'is_active', label: 'Active', type: 'boolean', toggleable: true);
+// or with ColumnBuilder:
+ColumnBuilder::make('is_active', 'Active')->boolean()->toggleable()->build();
+```
+
 #### HasSelectAll
 
 "Select all X matching items" across pages:
@@ -507,6 +563,9 @@ class ProductDataTable extends AbstractDataTable
     use HasSelectAll;
 
     public static function tableSelectAllName(): string { return 'products'; }
+
+    // Optional: customize the primary key column (default: 'id')
+    public static function tableSelectAllKey(): string { return 'uuid'; }
 }
 ```
 
@@ -565,15 +624,21 @@ class ProductDataTable extends AbstractDataTable
 
     public static function tableImportName(): string { return 'products'; }
 
-    // Custom import logic
-    public static function processImport(array $rows): array
+    // Optional: customize file validation rules
+    public static function tableImportRules(): array
+    {
+        return [
+            'file' => 'required|file|max:20480|mimes:csv,xlsx', // 20MB, CSV/XLSX only
+        ];
+    }
+
+    // Custom import logic — receives the temp file path and extension
+    public static function processImport(string $filePath, string $extension): array
     {
         $imported = 0;
-        foreach ($rows as $row) {
-            Product::create($row);
-            $imported++;
-        }
-        return ['imported' => $imported, 'errors' => 0];
+        $errors = [];
+        // Parse the file and create/update records...
+        return ['created' => $imported, 'updated' => 0, 'errors' => $errors];
     }
 }
 ```
@@ -639,10 +704,18 @@ new QuickView(
         'filter[created_at]' => 'after:' . now()->subDays(7)->toDateString(),
         'sort' => '-created_at',
     ],
-    icon: 'calendar',
-    columns: ['id', 'name', 'created_at'],
+    icon: 'calendar',         // Lucide icon name shown next to the label
+    columns: ['id', 'name', 'created_at'], // Only show these columns when this view is active (null = no change)
 );
 ```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `string` | Unique identifier |
+| `label` | `string` | Display label |
+| `params` | `array` | URL parameters to apply (`filter[x]`, `sort`) |
+| `icon` | `?string` | Lucide icon name |
+| `columns` | `?string[]` | Column IDs to show (in display order). `null` = keep current visibility |
 
 ### `OperatorFilter`
 
@@ -674,6 +747,45 @@ public static function tableAllowedFilters(): array
 | `boolean` | `eq` | `eq` |
 
 All types also support `null` and `not_null`.
+
+### Footer & Summary Aggregations
+
+**Per-page footer** — computed from the current page's rows:
+
+```php
+public static function tableFooter(\Illuminate\Support\Collection $pageData): array
+{
+    return [
+        'price' => '$' . number_format($pageData->sum('price'), 2),
+        'name' => $pageData->count() . ' items on this page',
+    ];
+}
+```
+
+**Full-dataset summary** — computed across all filtered records (not just the current page):
+
+```php
+public static function tableSummary(\Spatie\QueryBuilder\QueryBuilder $query): array
+{
+    $builder = $query->getEloquentBuilder();
+    return [
+        'price' => $builder->sum('price'),
+        'id' => $builder->count(),
+    ];
+}
+```
+
+On the frontend, use `renderFooterCell` to customize how footer values are displayed:
+
+```tsx
+<DataTable
+    renderFooterCell={(columnId, value) => {
+        if (columnId === 'price') return <span className="font-bold text-emerald-600">{value}</span>;
+    }}
+/>
+```
+
+Summary values are rendered automatically using column `summary` types (`sum`, `avg`, `min`, `max`, `count`).
 
 ### Conditional Rules (Row/Cell Styling)
 
@@ -1246,9 +1358,12 @@ test('product table has correct columns', function () {
         ->assertColumnGroup('email', 'Contact')
         ->assertColumnCount(8)
         ->assertDefaultSort('-created_at')
+        ->assertNotSortable('photo')
+        ->assertNotFilterable('id')
         ->assertExportEnabled()
         ->assertInlineEditEnabled()
         ->assertSelectAllEnabled()
+        ->assertToggleEnabled()
         ->assertReorderEnabled()
         ->assertImportEnabled()
         ->assertHasQuickViews(3);
@@ -1277,12 +1392,13 @@ use Machour\DataTable\Concerns\HasImport;
 use Machour\DataTable\Concerns\HasInlineEdit;
 use Machour\DataTable\Concerns\HasReorder;
 use Machour\DataTable\Concerns\HasSelectAll;
+use Machour\DataTable\Concerns\HasToggle;
 use Machour\DataTable\QuickView;
 use Illuminate\Database\Eloquent\Builder;
 
 class ProductDataTable extends AbstractDataTable
 {
-    use HasExport, HasInlineEdit, HasSelectAll, HasReorder, HasImport, HasAuditLog;
+    use HasExport, HasInlineEdit, HasSelectAll, HasToggle, HasReorder, HasImport, HasAuditLog;
 
     public function __construct(
         public int $id,
@@ -1323,6 +1439,8 @@ class ProductDataTable extends AbstractDataTable
     public static function tableExportName(): string { return 'products'; }
     public static function tableInlineEditModel(): string { return Product::class; }
     public static function tableSelectAllName(): string { return 'products'; }
+    public static function tableToggleModel(): string { return Product::class; }
+    public static function tableToggleName(): string { return 'products'; }
     public static function tableReorderModel(): string { return Product::class; }
     public static function tableReorderName(): string { return 'products'; }
     public static function tableImportName(): string { return 'products'; }
