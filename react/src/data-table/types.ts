@@ -94,6 +94,12 @@ export interface DataTableOptions {
     rowReorder: boolean;
     batchEdit: boolean;
     searchHighlight: boolean;
+    undoRedo: boolean;
+    columnPinning: boolean;
+    persistSelection: boolean;
+    shortcutsOverlay: boolean;
+    exportProgress: boolean;
+    emptyStateIllustration: boolean;
 }
 
 export interface DataTableResponse<TData = object> {
@@ -191,6 +197,8 @@ export interface DataTableProps<TData extends object> {
     onReorder?: (ids: unknown[], newPositions: number[]) => Promise<void> | void;
     /** Called when a batch edit is applied to multiple rows */
     onBatchEdit?: (rows: TData[], columnId: string, value: unknown) => Promise<void> | void;
+    /** Custom SVG/component for the empty state illustration */
+    emptyStateIllustration?: React.ReactNode;
     /** Slot overrides for composability */
     slots?: {
         toolbar?: React.ReactNode;

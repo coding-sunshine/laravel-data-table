@@ -4,6 +4,7 @@ namespace Machour\DataTable;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Machour\DataTable\Console\Commands\GenerateTranslations;
 use Machour\DataTable\Console\Commands\GenerateTypeScript;
 use Machour\DataTable\Console\Commands\MakeDataTable;
 use Machour\DataTable\Http\Controllers\DataTableAsyncFilterController;
@@ -25,6 +26,7 @@ class DataTableServiceProvider extends ServiceProvider
             $this->commands([
                 MakeDataTable::class,
                 GenerateTypeScript::class,
+                GenerateTranslations::class,
             ]);
 
             $this->publishesMigrations([

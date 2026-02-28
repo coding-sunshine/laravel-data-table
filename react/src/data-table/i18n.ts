@@ -158,6 +158,34 @@ export interface DataTableTranslations {
     importUploading: string;
     importSuccess: string;
     importError: string;
+
+    // Undo/Redo
+    undo: string;
+    redo: string;
+    editUndone: string;
+    editRedone: string;
+
+    // Column pinning UI
+    pinColumn: string;
+
+    // Keyboard shortcuts
+    keyboardShortcuts: string;
+    shortcutNavigation: string;
+    shortcutSelect: string;
+    shortcutExpand: string;
+    shortcutEscape: string;
+    shortcutSearch: string;
+    shortcutHelp: string;
+    close: string;
+
+    // Export progress
+    exporting: string;
+    exportReady: string;
+    exportDownload: string;
+
+    // Empty state
+    emptyTitle: string;
+    emptyDescription: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -320,6 +348,34 @@ export const defaultTranslations: DataTableTranslations = {
     importUploading: "Uploading...",
     importSuccess: "Import successful",
     importError: "Import failed",
+
+    // Undo/Redo
+    undo: "Undo",
+    redo: "Redo",
+    editUndone: "Edit undone",
+    editRedone: "Edit redone",
+
+    // Column pinning UI
+    pinColumn: "Pin column",
+
+    // Keyboard shortcuts
+    keyboardShortcuts: "Keyboard shortcuts",
+    shortcutNavigation: "Navigate rows",
+    shortcutSelect: "Select / deselect row",
+    shortcutExpand: "Expand / collapse row",
+    shortcutEscape: "Clear selection / close",
+    shortcutSearch: "Focus search",
+    shortcutHelp: "Show shortcuts",
+    close: "Close",
+
+    // Export progress
+    exporting: "Exporting...",
+    exportReady: "Export ready",
+    exportDownload: "Download",
+
+    // Empty state
+    emptyTitle: "No data yet",
+    emptyDescription: "There are no records to display. Try adjusting your filters or adding new data.",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -453,4 +509,32 @@ export const frTranslations: DataTableTranslations = {
     importUploading: "Envoi en cours...",
     importSuccess: "Import réussi",
     importError: "Échec de l'import",
+
+    // Undo/Redo
+    undo: "Annuler",
+    redo: "Refaire",
+    editUndone: "Modification annulée",
+    editRedone: "Modification rétablie",
+
+    // Column pinning UI
+    pinColumn: "Épingler la colonne",
+
+    // Keyboard shortcuts
+    keyboardShortcuts: "Raccourcis clavier",
+    shortcutNavigation: "Naviguer entre les lignes",
+    shortcutSelect: "Sélectionner / désélectionner",
+    shortcutExpand: "Développer / réduire",
+    shortcutEscape: "Effacer la sélection / fermer",
+    shortcutSearch: "Rechercher",
+    shortcutHelp: "Afficher les raccourcis",
+    close: "Fermer",
+
+    // Export progress
+    exporting: "Export en cours...",
+    exportReady: "Export prêt",
+    exportDownload: "Télécharger",
+
+    // Empty state
+    emptyTitle: "Aucune donnée",
+    emptyDescription: "Il n'y a aucun enregistrement à afficher. Essayez de modifier vos filtres ou d'ajouter des données.",
 };

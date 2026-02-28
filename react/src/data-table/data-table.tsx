@@ -55,7 +55,9 @@ import {
     FileText,
     GripVertical,
     Hash,
+    HelpCircle,
     Image as ImageIcon,
+    Keyboard,
     Link as LinkIcon,
     List,
     Loader2,
@@ -63,8 +65,10 @@ import {
     Pencil,
     Percent,
     Phone,
+    Pin,
     PinOff,
     Printer,
+    Redo2,
     RefreshCw,
     Rows3,
     Search,
@@ -73,6 +77,7 @@ import {
     ToggleLeft,
     Trash2,
     Type,
+    Undo2,
     Upload,
     X,
 } from "lucide-react";
@@ -264,10 +269,11 @@ function CopyableCell({ value, children, enabled, t }: { value: unknown; childre
 
 // ─── Column header context menu ─────────────────────────────────────────────
 
-function ColumnContextMenu({ columnId, sortable, onSort, onHide, t, children }: {
-    columnId: string; sortable: boolean;
+function ColumnContextMenu({ columnId, sortable, isPinned, showPinning, onSort, onHide, onPin, t, children }: {
+    columnId: string; sortable: boolean; isPinned: false | "left" | "right"; showPinning: boolean;
     onSort: (columnId: string, multi: boolean) => void;
     onHide: (columnId: string) => void;
+    onPin: (columnId: string, direction: false | "left" | "right") => void;
     t: DataTableTranslations; children: React.ReactNode;
 }) {
     const [open, setOpen] = useState(false);
@@ -304,6 +310,10 @@ function ColumnContextMenu({ columnId, sortable, onSort, onHide, t, children }: 
                             onClick={() => { onHide(columnId); setOpen(false); }}>
                             <EyeOff className="h-3.5 w-3.5" />{t.hideColumn}
                         </button>
+                        {showPinning && (
+                            <ColumnPinMenu columnId={columnId} isPinned={isPinned}
+                                onPin={(id, dir) => { onPin(id, dir); setOpen(false); }} t={t} />
+                        )}
                     </div>
                 </>
             )}
@@ -437,6 +447,263 @@ function ImportDialog({ open, onOpenChange, importUrl, t }: {
     );
 }
 
+// ─── Undo/Redo stack for inline edits ───────────────────────────────────────
+
+interface EditAction {
+    rowId: unknown;
+    columnId: string;
+    oldValue: unknown;
+    newValue: unknown;
+    timestamp: number;
+}
+
+function useUndoRedo(enabled: boolean) {
+    const [undoStack, setUndoStack] = useState<EditAction[]>([]);
+    const [redoStack, setRedoStack] = useState<EditAction[]>([]);
+
+    const pushEdit = useCallback((action: Omit<EditAction, "timestamp">) => {
+        if (!enabled) return;
+        setUndoStack((prev) => [...prev.slice(-49), { ...action, timestamp: Date.now() }]);
+        setRedoStack([]);
+    }, [enabled]);
+
+    const undo = useCallback((): EditAction | null => {
+        if (undoStack.length === 0) return null;
+        const action = undoStack[undoStack.length - 1];
+        setUndoStack((prev) => prev.slice(0, -1));
+        setRedoStack((prev) => [...prev, action]);
+        return action;
+    }, [undoStack]);
+
+    const redo = useCallback((): EditAction | null => {
+        if (redoStack.length === 0) return null;
+        const action = redoStack[redoStack.length - 1];
+        setRedoStack((prev) => prev.slice(0, -1));
+        setUndoStack((prev) => [...prev, action]);
+        return action;
+    }, [redoStack]);
+
+    return { pushEdit, undo, redo, canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 };
+}
+
+// ─── Keyboard shortcuts overlay ─────────────────────────────────────────────
+
+function KeyboardShortcutsDialog({ open, onOpenChange, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void; t: DataTableTranslations;
+}) {
+    const shortcuts = [
+        { keys: ["↑", "↓"], description: t.shortcutNavigation },
+        { keys: ["Space"], description: t.shortcutSelect },
+        { keys: ["Enter"], description: t.shortcutExpand },
+        { keys: ["Escape"], description: t.shortcutEscape },
+        { keys: ["/"], description: t.shortcutSearch },
+        { keys: ["?"], description: t.shortcutHelp },
+    ];
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Keyboard className="h-5 w-5" />{t.keyboardShortcuts}
+                    </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-2 py-2">
+                    {shortcuts.map(({ keys, description }) => (
+                        <div key={description} className="flex items-center justify-between py-1.5">
+                            <span className="text-sm text-muted-foreground">{description}</span>
+                            <div className="flex items-center gap-1">
+                                {keys.map((key) => (
+                                    <kbd key={key} className="inline-flex h-6 min-w-[24px] items-center justify-center rounded border bg-muted px-1.5 font-mono text-xs font-medium">
+                                        {key}
+                                    </kbd>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>{t.close}</Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── Export with progress ────────────────────────────────────────────────────
+
+function ExportWithProgress({ exportUrl, table, t }: {
+    exportUrl: string; table: TanStackTable<unknown>; t: DataTableTranslations;
+}) {
+    const [exporting, setExporting] = useState<string | null>(null);
+    const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+
+    const handleExport = useCallback(async (format: string) => {
+        setExporting(format);
+        setDownloadUrl(null);
+        const url = buildExportUrl(exportUrl, format, table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id));
+        try {
+            const response = await fetch(url, {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+            });
+            if (response.ok) {
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                setDownloadUrl(blobUrl);
+                // Auto-download
+                const a = document.createElement("a");
+                a.href = blobUrl;
+                a.download = `export.${format}`;
+                a.click();
+            }
+        } catch { /* fallback to direct download */ }
+        finally { setExporting(null); }
+    }, [exportUrl, table]);
+
+    const formats = [
+        { id: "xlsx", label: "Excel (.xlsx)", icon: FileSpreadsheet },
+        { id: "csv", label: "CSV (.csv)", icon: FileText },
+        { id: "pdf", label: "PDF (.pdf)", icon: FileDown },
+    ];
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                    {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    <span className="hidden sm:inline">{exporting ? t.exporting : t.export}</span>
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuLabel>{t.exportFormat}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {formats.map(({ id, label, icon: Icon }) => (
+                    <DropdownMenuItem key={id} onClick={() => handleExport(id)} disabled={!!exporting}>
+                        <Icon className="mr-2 h-4 w-4" />{label}
+                        {exporting === id && <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin" />}
+                    </DropdownMenuItem>
+                ))}
+                {downloadUrl && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                            <a href={downloadUrl} download>
+                                <Check className="mr-2 h-4 w-4 text-emerald-600" />{t.exportDownload}
+                            </a>
+                        </DropdownMenuItem>
+                    </>
+                )}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+// ─── Empty state illustration ───────────────────────────────────────────────
+
+function DefaultEmptyStateIllustration() {
+    return (
+        <svg className="h-24 w-24 text-muted-foreground/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M3 9h18" />
+            <path d="M3 15h18" />
+            <path d="M9 3v18" />
+            <path d="M15 3v18" />
+        </svg>
+    );
+}
+
+function EmptyState({ customEmpty, illustration, showIllustration, t }: {
+    customEmpty?: React.ReactNode; illustration?: React.ReactNode;
+    showIllustration: boolean; t: DataTableTranslations;
+}) {
+    if (customEmpty) return <>{customEmpty}</>;
+    if (showIllustration) {
+        return (
+            <div className="flex flex-col items-center gap-3">
+                {illustration ?? <DefaultEmptyStateIllustration />}
+                <div className="text-center">
+                    <p className="font-medium text-muted-foreground">{t.emptyTitle}</p>
+                    <p className="text-xs text-muted-foreground/70 max-w-xs">{t.emptyDescription}</p>
+                </div>
+            </div>
+        );
+    }
+    return <span className="text-muted-foreground">{t.noData}</span>;
+}
+
+// ─── Selection persistence across pages ─────────────────────────────────────
+
+function usePersistedSelection<TData>(tableName: string, enabled: boolean) {
+    const storageKey = `dt-selection-${tableName}`;
+
+    const [persistedIds, setPersistedIds] = useState<Set<unknown>>(() => {
+        if (!enabled) return new Set();
+        try {
+            const raw = safeGetItem(storageKey);
+            return raw ? new Set(JSON.parse(raw) as unknown[]) : new Set();
+        } catch { return new Set(); }
+    });
+
+    const addIds = useCallback((ids: unknown[]) => {
+        setPersistedIds((prev) => {
+            const next = new Set(prev);
+            for (const id of ids) next.add(id);
+            return next;
+        });
+    }, []);
+
+    const removeIds = useCallback((ids: unknown[]) => {
+        setPersistedIds((prev) => {
+            const next = new Set(prev);
+            for (const id of ids) next.delete(id);
+            return next;
+        });
+    }, []);
+
+    const clearAll = useCallback(() => setPersistedIds(new Set()), []);
+
+    const isSelected = useCallback((id: unknown) => persistedIds.has(id), [persistedIds]);
+
+    // Persist to localStorage
+    useEffect(() => {
+        if (!enabled) return;
+        safeSetItem(storageKey, JSON.stringify([...persistedIds]));
+    }, [enabled, storageKey, persistedIds]);
+
+    return { persistedIds, addIds, removeIds, clearAll, isSelected, count: persistedIds.size };
+}
+
+// ─── Column pinning UI in context menu ──────────────────────────────────────
+
+function ColumnPinMenu({ columnId, isPinned, onPin, t }: {
+    columnId: string; isPinned: false | "left" | "right";
+    onPin: (columnId: string, direction: false | "left" | "right") => void;
+    t: DataTableTranslations;
+}) {
+    return (
+        <>
+            <div className="my-1 h-px bg-border" />
+            {!isPinned ? (
+                <>
+                    <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                        onClick={() => onPin(columnId, "left")}>
+                        <Pin className="h-3.5 w-3.5" />{t.pinLeft}
+                    </button>
+                    <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                        onClick={() => onPin(columnId, "right")}>
+                        <Pin className="h-3.5 w-3.5 rotate-90" />{t.pinRight}
+                    </button>
+                </>
+            ) : (
+                <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                    onClick={() => onPin(columnId, false)}>
+                    <PinOff className="h-3.5 w-3.5" />{t.unpin}
+                </button>
+            )}
+        </>
+    );
+}
+
 /** Evaluate a conditional rule against a row value */
 function evaluateRule(rule: DataTableRule, rowValue: unknown): boolean {
     const v = rowValue;
@@ -561,7 +828,7 @@ function DensityToggle({ density, onChange, t }: {
     );
 }
 
-function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t, density, onDensityChange, onImportClick }: {
+function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t, density, onDensityChange, onImportClick, onShowShortcuts, canUndo, canRedo, onUndo, onRedo }: {
     tableData: { quickViews: import("./types").DataTableQuickView[]; exportUrl?: string | null; importUrl?: string | null; columns: DataTableColumnDef[] };
     table: TanStackTable<TData>; tableName: string;
     columnVisibility: VisibilityState; columnOrder: ColumnOrderState;
@@ -570,7 +837,8 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
     handleApplyCustomSearch: (search: string) => void;
     resolvedOptions: DataTableOptions; t: DataTableTranslations;
     density: DataTableDensity; onDensityChange: (density: DataTableDensity) => void;
-    onImportClick?: () => void;
+    onImportClick?: () => void; onShowShortcuts?: () => void;
+    canUndo?: boolean; canRedo?: boolean; onUndo?: () => void; onRedo?: () => void;
 }) {
     return (
         <div className="flex items-center gap-2">
@@ -582,32 +850,46 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                     onApplyColumnOrder={onReorderColumns} enableCustom={resolvedOptions.customQuickViews} t={t} />
             )}
             {resolvedOptions.exports && tableData.exportUrl && (
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-8 gap-1.5"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.export}</span></Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>{t.exportFormat}</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                            <a href={buildExportUrl(tableData.exportUrl, "xlsx", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
-                                <FileSpreadsheet className="mr-2 h-4 w-4" />Excel (.xlsx)</a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <a href={buildExportUrl(tableData.exportUrl, "csv", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
-                                <FileText className="mr-2 h-4 w-4" />CSV (.csv)</a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <a href={buildExportUrl(tableData.exportUrl, "pdf", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
-                                <FileDown className="mr-2 h-4 w-4" />PDF (.pdf)</a>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                resolvedOptions.exportProgress ? (
+                    <ExportWithProgress exportUrl={tableData.exportUrl} table={table as TanStackTable<unknown>} t={t} />
+                ) : (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-8 gap-1.5"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.export}</span></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>{t.exportFormat}</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem asChild>
+                                <a href={buildExportUrl(tableData.exportUrl, "xlsx", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
+                                    <FileSpreadsheet className="mr-2 h-4 w-4" />Excel (.xlsx)</a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <a href={buildExportUrl(tableData.exportUrl, "csv", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
+                                    <FileText className="mr-2 h-4 w-4" />CSV (.csv)</a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <a href={buildExportUrl(tableData.exportUrl, "pdf", table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id))}>
+                                    <FileDown className="mr-2 h-4 w-4" />PDF (.pdf)</a>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )
             )}
             {tableData.importUrl && onImportClick && (
                 <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onImportClick}>
                     <Upload className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.importData}</span>
                 </Button>
+            )}
+            {resolvedOptions.undoRedo && (canUndo || canRedo) && (
+                <div className="flex items-center">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canUndo} onClick={onUndo} title={t.undo}>
+                        <Undo2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canRedo} onClick={onRedo} title={t.redo}>
+                        <Redo2 className="h-3.5 w-3.5" />
+                    </Button>
+                </div>
             )}
             {resolvedOptions.printable && (
                 <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => window.print()}>
@@ -621,6 +903,11 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                 <ColumnsDropdown table={table} tableColumns={tableData.columns} columnOrder={columnOrder}
                     onReorder={onReorderColumns} showVisibility={resolvedOptions.columnVisibility}
                     showOrdering={resolvedOptions.columnOrdering} t={t} />
+            )}
+            {resolvedOptions.shortcutsOverlay && onShowShortcuts && (
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onShowShortcuts} title={t.keyboardShortcuts}>
+                    <HelpCircle className="h-3.5 w-3.5" />
+                </Button>
             )}
         </div>
     );
@@ -775,7 +1062,7 @@ function DataTableInner<TData extends object>({
     onRowClick, rowLink, emptyState, debounceMs, partialReloadKey,
     onInlineEdit, realtimeChannel, realtimeEvent = ".updated",
     renderDetailRow, selectionMode = "checkbox", slots,
-    onReorder, onBatchEdit,
+    onReorder, onBatchEdit, emptyStateIllustration,
 }: DataTableProps<TData>) {
     const t = useMemo<DataTableTranslations>(() => ({ ...defaultTranslations, ...translationsOverride }), [translationsOverride]);
 
@@ -786,7 +1073,10 @@ function DataTableInner<TData extends object>({
         keyboardNavigation: false, printable: false, density: false,
         copyCell: false, contextMenu: false, virtualScrolling: false,
         rowGrouping: false, rowReorder: false, batchEdit: false,
-        searchHighlight: false, ...optionsOverride,
+        searchHighlight: false, undoRedo: false, columnPinning: false,
+        persistSelection: false, shortcutsOverlay: false,
+        exportProgress: false, emptyStateIllustration: false,
+        ...optionsOverride,
     }), [optionsOverride]);
 
     const config = tableData.config;
@@ -886,6 +1176,15 @@ function DataTableInner<TData extends object>({
     const searchKeyForHighlight = prefix ? `${prefix}_search` : "search";
     const currentSearchTerm = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get(searchKeyForHighlight) ?? "" : "";
 
+    // Undo/Redo stack for inline edits
+    const { pushEdit, undo: undoEdit, redo: redoEdit, canUndo, canRedo } = useUndoRedo(resolvedOptions.undoRedo);
+
+    // Keyboard shortcuts overlay
+    const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+    // Selection persistence across pages
+    const { persistedIds, addIds: addPersistedIds, removeIds: removePersistedIds, clearAll: clearPersistedSelection, count: persistedSelectionCount } = usePersistedSelection<TData>(tableName, resolvedOptions.persistSelection);
+
     const RESIZE_KEY = `dt-resize-${tableName}`;
     const [columnSizing, setColumnSizing] = useState<Record<string, number>>(() => {
         if (!resolvedOptions.columnResizing) return {};
@@ -930,10 +1229,14 @@ function DataTableInner<TData extends object>({
                             columnId={col.id} toggleUrl={tableData.toggleUrl} />;
                     }
 
-                    // Inline editing
+                    // Inline editing with undo/redo support
                     if (col.editable && onInlineEdit) {
                         return <InlineEditCell value={value} columnId={col.id} columnType={col.type}
-                            onSave={(newVal) => onInlineEdit(row.original, col.id, newVal)} t={t} />;
+                            onSave={(newVal) => {
+                                const rowId = (row.original as Record<string, unknown>).id;
+                                pushEdit({ rowId, columnId: col.id, oldValue: value, newValue: newVal });
+                                return onInlineEdit(row.original, col.id, newVal);
+                            }} t={t} />;
                     }
 
                     if (renderCell) { const custom = renderCell(col.id, value, row.original); if (custom !== undefined) return custom; }
@@ -1168,9 +1471,61 @@ function DataTableInner<TData extends object>({
 
     const editableColumns = useMemo(() => mergedColumns.filter((c) => c.editable), [mergedColumns]);
 
+    // Undo/Redo handlers
+    const handleUndo = useCallback(() => {
+        const action = undoEdit();
+        if (action && onInlineEdit) {
+            // Find the row with matching ID and apply old value
+            const row = tableData.data.find((r) => (r as Record<string, unknown>).id === action.rowId);
+            if (row) onInlineEdit(row, action.columnId, action.oldValue);
+        }
+    }, [undoEdit, onInlineEdit, tableData.data]);
+
+    const handleRedo = useCallback(() => {
+        const action = redoEdit();
+        if (action && onInlineEdit) {
+            const row = tableData.data.find((r) => (r as Record<string, unknown>).id === action.rowId);
+            if (row) onInlineEdit(row, action.columnId, action.newValue);
+        }
+    }, [redoEdit, onInlineEdit, tableData.data]);
+
+    // Column pin handler
+    const handlePinColumn = useCallback((columnId: string, direction: false | "left" | "right") => {
+        const col = table.getColumn(columnId);
+        if (col) col.pin(direction);
+    }, [table]);
+
+    // Keyboard shortcut: ? to show shortcuts overlay
+    useEffect(() => {
+        if (!resolvedOptions.shortcutsOverlay) return;
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === "?" && !e.ctrlKey && !e.metaKey && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+                setShortcutsOpen(true);
+            }
+            // Ctrl+Z / Ctrl+Y for undo/redo
+            if (resolvedOptions.undoRedo && e.ctrlKey && !e.shiftKey && e.key === "z") {
+                e.preventDefault(); handleUndo();
+            }
+            if (resolvedOptions.undoRedo && e.ctrlKey && (e.key === "y" || (e.shiftKey && e.key === "z"))) {
+                e.preventDefault(); handleRedo();
+            }
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [resolvedOptions.shortcutsOverlay, resolvedOptions.undoRedo, handleUndo, handleRedo]);
+
+    // Selection persistence: sync with TanStack row selection
+    useEffect(() => {
+        if (!resolvedOptions.persistSelection) return;
+        const selected = table.getSelectedRowModel().rows;
+        const currentIds = selected.map((r) => (r.original as Record<string, unknown>).id);
+        if (currentIds.length > 0) addPersistedIds(currentIds);
+    }, [resolvedOptions.persistSelection, table.getSelectedRowModel().rows, addPersistedIds]);
+
     const toolbarProps = { tableData, table, tableName, columnVisibility, columnOrder, applyColumns,
         onReorderColumns: setColumnOrder, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t,
-        density, onDensityChange: handleDensityChange, onImportClick: tableData.importUrl ? () => setImportDialogOpen(true) : undefined };
+        density, onDensityChange: handleDensityChange, onImportClick: tableData.importUrl ? () => setImportDialogOpen(true) : undefined,
+        onShowShortcuts: () => setShortcutsOpen(true), canUndo, canRedo, onUndo: handleUndo, onRedo: handleRedo };
 
     const activeFilterColumnIds = useMemo(() => new Set(Object.keys(meta.filters as Record<string, unknown>)), [meta.filters]);
 
@@ -1357,7 +1712,10 @@ function DataTableInner<TData extends object>({
                                                         aria-sort={ariaSort} role="columnheader">
                                                         {resolvedOptions.contextMenu && colDef ? (
                                                             <ColumnContextMenu columnId={colDef.id} sortable={colDef.sortable}
-                                                                onSort={handleSort} onHide={handleHideColumn} t={t}>
+                                                                isPinned={header.column.getIsPinned() || false}
+                                                                showPinning={resolvedOptions.columnPinning}
+                                                                onSort={handleSort} onHide={handleHideColumn}
+                                                                onPin={handlePinColumn} t={t}>
                                                                 {headerContent}
                                                             </ColumnContextMenu>
                                                         ) : headerContent}
@@ -1469,8 +1827,9 @@ function DataTableInner<TData extends object>({
                                     })()
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-32 text-center text-muted-foreground">
-                                            {emptyState ?? t.noData}
+                                        <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-40 text-center text-muted-foreground">
+                                            <EmptyState customEmpty={emptyState} illustration={emptyStateIllustration}
+                                                showIllustration={resolvedOptions.emptyStateIllustration} t={t} />
                                         </TableCell>
                                     </TableRow>
                                 )}
@@ -1576,6 +1935,21 @@ function DataTableInner<TData extends object>({
                     </DialogFoot>
                 </DialogContent>
             </Dialog>
+
+            {/* ── Keyboard shortcuts dialog ── */}
+            {resolvedOptions.shortcutsOverlay && (
+                <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} t={t} />
+            )}
+
+            {/* ── Persisted selection indicator ── */}
+            {resolvedOptions.persistSelection && persistedSelectionCount > 0 && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground print:hidden">
+                    <span>{t.selected(persistedSelectionCount)} (across pages)</span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={clearPersistedSelection}>
+                        {t.clearSelection}
+                    </Button>
+                </div>
+            )}
 
             {/* ── Batch edit dialog ── */}
             {resolvedOptions.batchEdit && editableColumns.length > 0 && onBatchEdit && (
