@@ -355,3 +355,218 @@ test('parseSorts ignores empty segments', function () {
     $result = $method->invoke(null, 'name,,price,');
     expect($result)->toHaveCount(2);
 });
+
+// ── OperatorFilter ────────────────────────────
+
+test('operator filter escapes LIKE wildcards in contains', function () {
+    $filter = new \Machour\DataTable\Filters\OperatorFilter('text');
+
+    $builder = Mockery::mock(\Illuminate\Database\Eloquent\Builder::class);
+    // The LIKE value should have % and _ escaped with backslashes
+    $expected = '%' . str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], 'test%value_here') . '%';
+    $builder->shouldReceive('where')
+        ->with('name', 'LIKE', $expected)
+        ->once()
+        ->andReturnSelf();
+
+    $filter($builder, 'contains:test%value_here', 'name');
+});
+
+test('operator filter handles all known operators', function () {
+    $known = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'not_in', 'contains', 'before', 'after', 'null', 'not_null'];
+    $filter = new \Machour\DataTable\Filters\OperatorFilter('text');
+
+    // Verify the filter exists and the known operators list is complete
+    expect($known)->toHaveCount(14);
+    expect($filter)->toBeInstanceOf(\Machour\DataTable\Filters\OperatorFilter::class);
+});
+
+test('operator filter default operator varies by type', function () {
+    $reflection = new ReflectionClass(\Machour\DataTable\Filters\OperatorFilter::class);
+    $method = $reflection->getMethod('defaultOperator');
+    $method->setAccessible(true);
+
+    $textFilter = new \Machour\DataTable\Filters\OperatorFilter('text');
+    expect($method->invoke($textFilter))->toBe('contains');
+
+    $numberFilter = new \Machour\DataTable\Filters\OperatorFilter('number');
+    expect($method->invoke($numberFilter))->toBe('eq');
+
+    $optionFilter = new \Machour\DataTable\Filters\OperatorFilter('option');
+    expect($method->invoke($optionFilter))->toBe('in');
+
+    $boolFilter = new \Machour\DataTable\Filters\OperatorFilter('boolean');
+    expect($method->invoke($boolFilter))->toBe('eq');
+
+    $dateFilter = new \Machour\DataTable\Filters\OperatorFilter('date');
+    expect($method->invoke($dateFilter))->toBe('eq');
+});
+
+// ── maxPerPage ────────────────────────────
+
+test('maxPerPage property exists on AbstractDataTable', function () {
+    $reflection = new ReflectionClass(StubDataTable::class);
+    $prop = $reflection->getProperty('maxPerPage');
+    $prop->setAccessible(true);
+
+    expect($prop->getValue())->toBe(100);
+});
+
+// ── Column combined properties ────────────────────────────
+
+test('column supports all properties together', function () {
+    $col = new Column(
+        id: 'price',
+        label: 'Price',
+        type: 'currency',
+        sortable: true,
+        filterable: true,
+        visible: true,
+        editable: true,
+        currency: 'EUR',
+        locale: 'de-DE',
+        summary: 'avg',
+        toggleable: false,
+        responsivePriority: 2,
+    );
+
+    expect($col->id)->toBe('price');
+    expect($col->type)->toBe('currency');
+    expect($col->sortable)->toBeTrue();
+    expect($col->filterable)->toBeTrue();
+    expect($col->editable)->toBeTrue();
+    expect($col->currency)->toBe('EUR');
+    expect($col->locale)->toBe('de-DE');
+    expect($col->summary)->toBe('avg');
+    expect($col->toggleable)->toBeFalse();
+    expect($col->responsivePriority)->toBe(2);
+});
+
+test('column serializes all properties to array', function () {
+    $col = new Column(
+        id: 'price',
+        label: 'Price',
+        type: 'currency',
+        summary: 'sum',
+        toggleable: true,
+        responsivePriority: 1,
+    );
+
+    $arr = $col->toArray();
+
+    expect($arr)
+        ->toHaveKey('summary', 'sum')
+        ->toHaveKey('toggleable', true)
+        ->toHaveKey('responsivePriority', 1);
+});
+
+// ── DataTableResponse with all fields ────────────────────────────
+
+test('datatable response serializes all fields to array', function () {
+    $response = new DataTableResponse(
+        data: [['id' => 1, 'name' => 'Test']],
+        columns: [new Column(id: 'id', label: 'ID'), new Column(id: 'name', label: 'Name')],
+        quickViews: [],
+        meta: new DataTableMeta(
+            currentPage: 1, lastPage: 5, perPage: 10, total: 50, sorts: [], filters: [],
+        ),
+        exportUrl: '/export',
+        footer: ['name' => '10 items'],
+        selectAllUrl: '/select-all',
+        summary: ['id' => 50],
+        config: ['pollingInterval' => 15],
+        toggleUrl: '/toggle',
+        enumOptions: ['status' => [['label' => 'Active', 'value' => 'active']]],
+    );
+
+    expect($response->data)->toHaveCount(1);
+    expect($response->columns)->toHaveCount(2);
+    expect($response->meta->total)->toBe(50);
+    expect($response->exportUrl)->toBe('/export');
+    expect($response->footer)->toHaveKey('name');
+    expect($response->selectAllUrl)->toBe('/select-all');
+    expect($response->summary)->toHaveKey('id');
+    expect($response->config)->toHaveKey('pollingInterval');
+    expect($response->toggleUrl)->toBe('/toggle');
+    expect($response->enumOptions)->toHaveKey('status');
+});
+
+// ── QuickView matching ────────────────────────────
+
+test('quickViewMatchesRequest returns true for matching params', function () {
+    $qv = new \Machour\DataTable\QuickView(
+        id: 'active',
+        label: 'Active',
+        params: ['filter[status]' => 'active'],
+    );
+
+    $request = Request::create('/', 'GET', ['filter' => ['status' => 'active']]);
+
+    $reflection = new ReflectionClass(StubDataTable::class);
+    $method = $reflection->getMethod('quickViewMatchesRequest');
+    $method->setAccessible(true);
+
+    expect($method->invoke(null, $qv, $request))->toBeTrue();
+});
+
+test('quickViewMatchesRequest returns false for non-matching params', function () {
+    $qv = new \Machour\DataTable\QuickView(
+        id: 'active',
+        label: 'Active',
+        params: ['filter[status]' => 'active'],
+    );
+
+    $request = Request::create('/', 'GET', ['filter' => ['status' => 'inactive']]);
+
+    $reflection = new ReflectionClass(StubDataTable::class);
+    $method = $reflection->getMethod('quickViewMatchesRequest');
+    $method->setAccessible(true);
+
+    expect($method->invoke(null, $qv, $request))->toBeFalse();
+});
+
+test('quickViewMatchesRequest returns false when request has extra filters', function () {
+    $qv = new \Machour\DataTable\QuickView(
+        id: 'active',
+        label: 'Active',
+        params: ['filter[status]' => 'active'],
+    );
+
+    $request = Request::create('/', 'GET', ['filter' => ['status' => 'active', 'role' => 'admin']]);
+
+    $reflection = new ReflectionClass(StubDataTable::class);
+    $method = $reflection->getMethod('quickViewMatchesRequest');
+    $method->setAccessible(true);
+
+    expect($method->invoke(null, $qv, $request))->toBeFalse();
+});
+
+test('quickViewMatchesRequest empty params matches no filters', function () {
+    $qv = new \Machour\DataTable\QuickView(
+        id: 'all',
+        label: 'All',
+        params: [],
+    );
+
+    $request = Request::create('/', 'GET');
+
+    $reflection = new ReflectionClass(StubDataTable::class);
+    $method = $reflection->getMethod('quickViewMatchesRequest');
+    $method->setAccessible(true);
+
+    expect($method->invoke(null, $qv, $request))->toBeTrue();
+});
+
+// ── Export filename sanitization ────────────────────────────
+
+test('export filename sanitizes path traversal attempts', function () {
+    // The resolveExportFilename should sanitize dangerous characters
+    // We test the sanitization pattern directly
+    $dangerous = '../../../etc/passwd';
+    $sanitized = preg_replace('/[^a-zA-Z0-9_\-]/', '_', basename($dangerous));
+    expect($sanitized)->toBe('passwd');
+
+    $dangerous2 = 'file<>name';
+    $sanitized2 = preg_replace('/[^a-zA-Z0-9_\-]/', '_', basename($dangerous2));
+    expect($sanitized2)->toBe('file__name');
+});

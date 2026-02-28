@@ -18,6 +18,7 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 abstract class AbstractDataTable extends Data
 {
     protected static int $defaultPerPage = 25;
+    protected static int $maxPerPage = 100;
 
     /**
      * @return array<int, Column>
@@ -270,6 +271,46 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Build a filtered + sorted QueryBuilder with optional global search applied.
+     * Shared by makeTable, HasExport, and HasSelectAll to avoid duplication.
+     */
+    public static function buildFilteredQuery(?Request $request = null, ?string $prefix = null): QueryBuilder
+    {
+        $request = $request ?? request();
+        $paramPrefix = $prefix ? "{$prefix}_" : '';
+        $searchKey = "{$paramPrefix}search";
+
+        $baseQuery = static::tableBaseQuery();
+
+        // Soft deletes toggle
+        if (static::tableSoftDeletesEnabled()) {
+            $withTrashed = $request->boolean("{$paramPrefix}with_trashed", static::tableWithTrashedDefault());
+            if ($withTrashed) {
+                $baseQuery = $baseQuery->withTrashed();
+            }
+        }
+
+        $query = QueryBuilder::for($baseQuery, $request)
+            ->allowedFilters(static::tableAllowedFilters())
+            ->allowedSorts(static::tableAllowedSorts())
+            ->defaultSort(static::tableDefaultSort());
+
+        // Global search
+        $searchTerm = $request->get($searchKey, '');
+        $searchableColumns = static::tableSearchableColumns();
+        if ($searchTerm && ! empty($searchableColumns)) {
+            $escaped = str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $searchTerm);
+            $query->where(function (Builder $q) use ($escaped, $searchableColumns) {
+                foreach ($searchableColumns as $column) {
+                    $q->orWhere($column, 'LIKE', '%' . $escaped . '%');
+                }
+            });
+        }
+
+        return $query;
+    }
+
+    /**
      * Build the table response.
      *
      * @param  Request|null  $request
@@ -285,37 +326,10 @@ abstract class AbstractDataTable extends Data
         $pageKey = "{$p}page";
         $perPageKey = "{$p}per_page";
         $filterKey = "{$p}filter";
-        $searchKey = "{$p}search";
 
-        $baseQuery = static::tableBaseQuery();
+        $query = static::buildFilteredQuery($request, $prefix);
 
-        // Soft deletes toggle
-        if (static::tableSoftDeletesEnabled()) {
-            $withTrashed = filter_var($request->get("{$p}with_trashed", static::tableWithTrashedDefault()), FILTER_VALIDATE_BOOLEAN);
-            if ($withTrashed) {
-                $baseQuery = $baseQuery->withTrashed();
-            }
-        }
-
-        $query = QueryBuilder::for($baseQuery, $request)
-            ->allowedFilters(static::tableAllowedFilters())
-            ->allowedSorts(static::tableAllowedSorts())
-            ->defaultSort(static::tableDefaultSort());
-
-        // Global search
-        $searchTerm = $request->get($searchKey, '');
-        $searchableColumns = static::tableSearchableColumns();
-        if ($searchTerm && ! empty($searchableColumns)) {
-            // Escape LIKE wildcards to prevent wildcard injection
-            $escaped = str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $searchTerm);
-            $query->where(function (Builder $q) use ($escaped, $searchableColumns) {
-                foreach ($searchableColumns as $column) {
-                    $q->orWhere($column, 'LIKE', '%' . $escaped . '%');
-                }
-            });
-        }
-
-        $perPage = (int) $request->get($perPageKey, static::$defaultPerPage);
+        $perPage = max(1, min((int) $request->get($perPageKey, static::$defaultPerPage), static::$maxPerPage));
         $paginationType = static::tablePaginationType();
 
         $meta = null;

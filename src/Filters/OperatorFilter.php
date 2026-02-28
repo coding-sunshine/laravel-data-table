@@ -40,10 +40,12 @@ class OperatorFilter implements Filter
             'gte' => $query->where($column, '>=', $values[0]),
             'lt' => $query->where($column, '<', $values[0]),
             'lte' => $query->where($column, '<=', $values[0]),
-            'between' => $query->whereBetween($column, [$values[0], $values[1] ?? $values[0]]),
+            'between' => count($values) >= 2
+                ? $query->whereBetween($column, [$values[0], $values[1]])
+                : $query->where($column, $values[0]),
             'in' => $query->whereIn($column, $values),
             'not_in' => $query->whereNotIn($column, $values),
-            'contains' => $query->where($column, 'LIKE', '%' . $values[0] . '%'),
+            'contains' => $query->where($column, 'LIKE', '%' . str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $values[0]) . '%'),
             'before' => $query->where($column, '<', $values[0]),
             'after' => $query->where($column, '>', $values[0]),
             'null' => $query->whereNull($column),

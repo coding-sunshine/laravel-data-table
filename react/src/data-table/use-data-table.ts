@@ -16,8 +16,18 @@ import type { DataTableColumnDef, DataTableResponse } from "./types";
 const STORAGE_PREFIX = "dt-columns-";
 const ORDER_STORAGE_PREFIX = "dt-column-order-";
 
+function safeGetItem(key: string): string | null {
+    try { return localStorage.getItem(key); }
+    catch { return null; }
+}
+
+function safeSetItem(key: string, value: string): void {
+    try { localStorage.setItem(key, value); }
+    catch { /* storage full or unavailable */ }
+}
+
 function loadVisibility(tableName: string, columns: DataTableColumnDef[]): VisibilityState {
-    const stored = localStorage.getItem(STORAGE_PREFIX + tableName);
+    const stored = safeGetItem(STORAGE_PREFIX + tableName);
     if (stored) {
         try {
             return JSON.parse(stored) as VisibilityState;
@@ -33,11 +43,11 @@ function loadVisibility(tableName: string, columns: DataTableColumnDef[]): Visib
 }
 
 function saveVisibility(tableName: string, visibility: VisibilityState) {
-    localStorage.setItem(STORAGE_PREFIX + tableName, JSON.stringify(visibility));
+    safeSetItem(STORAGE_PREFIX + tableName, JSON.stringify(visibility));
 }
 
 function loadColumnOrder(tableName: string, columns: DataTableColumnDef[]): ColumnOrderState {
-    const stored = localStorage.getItem(ORDER_STORAGE_PREFIX + tableName);
+    const stored = safeGetItem(ORDER_STORAGE_PREFIX + tableName);
     if (stored) {
         try {
             return JSON.parse(stored) as ColumnOrderState;
@@ -49,7 +59,7 @@ function loadColumnOrder(tableName: string, columns: DataTableColumnDef[]): Colu
 }
 
 function saveColumnOrder(tableName: string, order: ColumnOrderState) {
-    localStorage.setItem(ORDER_STORAGE_PREFIX + tableName, JSON.stringify(order));
+    safeSetItem(ORDER_STORAGE_PREFIX + tableName, JSON.stringify(order));
 }
 
 interface UseDataTableOptions<TData> {
@@ -84,6 +94,11 @@ export function useDataTable<TData>({
     const searchKey = prefix ? `${prefix}_search` : "search";
 
     const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Clean up debounce timer on unmount
+    useEffect(() => {
+        return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
+    }, []);
 
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
         loadVisibility(tableName, tableData.columns),

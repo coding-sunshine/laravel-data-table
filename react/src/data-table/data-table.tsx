@@ -1,5 +1,3 @@
-"use no memo";
-
 import {
     Table,
     TableBody,
@@ -75,7 +73,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { router } from "@inertiajs/react";
 import { DataTableColumnHeader } from "./data-table-column-header";
 import { defaultTranslations, type DataTableTranslations } from "./i18n";
@@ -84,6 +82,69 @@ import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
 import type { DataTableColumnDef, DataTableConfirmOptions, DataTableOptions, DataTableProps, DataTableRule } from "./types";
 import { useDataTable } from "./use-data-table";
+
+// ─── Safe localStorage helpers ──────────────────────────────────────────────
+
+function safeGetItem(key: string): string | null {
+    try { return localStorage.getItem(key); }
+    catch { return null; }
+}
+
+function safeSetItem(key: string, value: string): void {
+    try { localStorage.setItem(key, value); }
+    catch { /* storage full or unavailable */ }
+}
+
+// ─── Column meta type ───────────────────────────────────────────────────────
+
+interface ColumnMeta {
+    type?: string;
+    group?: string | null;
+    editable?: boolean;
+    currency?: string;
+    locale?: string;
+    toggleable?: boolean;
+}
+
+// ─── Error Boundary ─────────────────────────────────────────────────────────
+
+interface ErrorBoundaryProps {
+    children: React.ReactNode;
+    fallback?: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+    hasError: boolean;
+    error?: Error;
+}
+
+class DataTableErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+    constructor(props: ErrorBoundaryProps) {
+        super(props);
+        this.state = { hasError: false };
+    }
+
+    static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+        return { hasError: true, error };
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return this.props.fallback ?? (
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 p-8 text-center">
+                    <p className="text-sm font-medium text-destructive">Something went wrong rendering the table.</p>
+                    <p className="text-xs text-muted-foreground">{this.state.error?.message}</p>
+                    <Button variant="outline" size="sm" onClick={() => this.setState({ hasError: false })}>
+                        Try again
+                    </Button>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+// ─── Utility functions ──────────────────────────────────────────────────────
 
 function buildExportUrl(baseUrl: string, format: string, visibleColumns?: string[]): string {
     const currentParams = new URL(window.location.href).searchParams;
@@ -109,25 +170,19 @@ function getColumnPinningProps<T>(column: Column<T, unknown>) {
             zIndex: 1,
         } as React.CSSProperties,
         className: cn(
-            isPinned === "left" && column.getIsLastColumn("left") && "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_4px_-2px_rgba(255,255,255,0.05)]",
-            isPinned === "right" && column.getIsFirstColumn("right") && "shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)] dark:shadow-[-2px_0_4px_-2px_rgba(255,255,255,0.05)]",
+            "bg-background",
+            isPinned === "left" && column.getIsLastColumn("left") && "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]",
+            isPinned === "right" && column.getIsFirstColumn("right") && "shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.06)]",
         ),
     };
 }
 
-function getPinnedCellBg(isPinned: string | false, _isEvenRow: boolean, isSelected: boolean): React.CSSProperties {
-    if (!isPinned) return {};
-    const base: React.CSSProperties = {};
-    if (isSelected) return { ...base, backgroundImage: "linear-gradient(oklch(from var(--color-primary) l c h / 0.05), oklch(from var(--color-primary) l c h / 0.05))" };
-    return base;
-}
-
 const BADGE_VARIANTS: Record<string, string> = {
     default: "bg-primary/10 text-primary dark:bg-primary/20",
-    success: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    warning: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    danger: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-    info: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    warning: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    danger: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+    info: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
     secondary: "bg-muted text-muted-foreground",
 };
 
@@ -154,6 +209,8 @@ function evaluateRule(rule: DataTableRule, rowValue: unknown): boolean {
     }
 }
 
+// ─── Sub-components ─────────────────────────────────────────────────────────
+
 /** Inline editable cell component */
 function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }: {
     value: unknown; columnId: string; columnType: string;
@@ -166,7 +223,7 @@ function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }
 
     useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
-    async function handleSave() {
+    const handleSave = useCallback(async () => {
         setSaving(true);
         try {
             const parsed = columnType === "number" || columnType === "currency" || columnType === "percentage"
@@ -174,7 +231,7 @@ function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }
             await onSave(parsed);
             setEditing(false);
         } finally { setSaving(false); }
-    }
+    }, [editValue, columnType, onSave]);
 
     if (!editing) {
         return (
@@ -182,7 +239,7 @@ function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }
                 onDoubleClick={() => { setEditValue(String(initialValue ?? "")); setEditing(true); }}
                 title="Double-click to edit">
                 {initialValue === null || initialValue === undefined
-                    ? <span className="text-muted-foreground">—</span> : String(initialValue)}
+                    ? <span className="text-muted-foreground italic text-xs">empty</span> : String(initialValue)}
             </span>
         );
     }
@@ -206,7 +263,7 @@ function ToggleCell({ value, row, columnId, toggleUrl }: {
     const [checked, setChecked] = useState(!!value);
     const [saving, setSaving] = useState(false);
 
-    async function handleToggle(newValue: boolean) {
+    const handleToggle = useCallback(async (newValue: boolean) => {
         setSaving(true);
         setChecked(newValue);
         try {
@@ -220,9 +277,9 @@ function ToggleCell({ value, row, columnId, toggleUrl }: {
             });
         } catch { setChecked(!newValue); }
         finally { setSaving(false); }
-    }
+    }, [row.id, toggleUrl, columnId]);
 
-    return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving} className="data-[state=checked]:bg-green-600" />;
+    return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving} className="data-[state=checked]:bg-emerald-600" />;
 }
 
 function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility, columnOrder, applyColumns, onReorderColumns, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t }: {
@@ -235,7 +292,7 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
     resolvedOptions: DataTableOptions; t: DataTableTranslations;
 }) {
     return (
-        <div className="flex gap-3 px-4">
+        <div className="flex items-center gap-2">
             {(resolvedOptions.quickViews || resolvedOptions.customQuickViews) && (
                 <DataTableQuickViews quickViews={resolvedOptions.quickViews ? tableData.quickViews : []}
                     tableName={tableName} columnVisibility={columnVisibility} columnOrder={columnOrder}
@@ -246,7 +303,7 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
             {resolvedOptions.exports && tableData.exportUrl && (
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-8"><Download className="h-4 w-4" />{t.export}</Button>
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.export}</span></Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                         <DropdownMenuLabel>{t.exportFormat}</DropdownMenuLabel>
@@ -267,8 +324,8 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                 </DropdownMenu>
             )}
             {resolvedOptions.printable && (
-                <Button variant="outline" size="sm" className="h-8" onClick={() => window.print()}>
-                    <Printer className="h-4 w-4" />{t.print}
+                <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => window.print()}>
+                    <Printer className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.print}</span>
                 </Button>
             )}
             {(resolvedOptions.columnVisibility || resolvedOptions.columnOrdering) && (
@@ -343,7 +400,7 @@ function ColumnsDropdown<TData>({ table, tableColumns, columnOrder, onReorder, s
     return (
         <DropdownMenu onOpenChange={(open) => { if (!open) { setReordering(false); setDragging(null); setDragOverId(null); } }}>
             <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8"><SlidersHorizontal className="h-4 w-4" />{t.columns}</Button>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5"><SlidersHorizontal className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.columns}</span></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-h-[400px] w-60 overflow-y-auto">
                 <div className="flex items-center justify-between px-2 py-1.5">
@@ -392,7 +449,7 @@ function buildFilterColumns(columns: DataTableColumnDef[]): FilterColumn[] {
 function SkeletonRows({ count, colCount }: { count: number; colCount: number }) {
     return (<>{Array.from({ length: count }).map((_, i) => (
         <TableRow key={`skeleton-${i}`}>{Array.from({ length: colCount }).map((_, j) => (
-            <TableCell key={`skeleton-${i}-${j}`} className="py-3"><Skeleton className="h-4 w-full" /></TableCell>
+            <TableCell key={`skeleton-${i}-${j}`} className="py-2.5"><Skeleton className="h-4 w-full rounded" /></TableCell>
         ))}</TableRow>
     ))}</>);
 }
@@ -419,7 +476,9 @@ function useResponsiveColumns(columns: DataTableColumnDef[]): Set<string> {
     return hiddenCols;
 }
 
-export function DataTable<TData extends object>({
+// ─── Main DataTable component ───────────────────────────────────────────────
+
+function DataTableInner<TData extends object>({
     className, tableData, tableName, prefix, actions, bulkActions,
     renderCell, renderHeader, renderFooterCell, renderFilter,
     rowClassName, rowDataAttributes, groupClassName,
@@ -453,7 +512,10 @@ export function DataTable<TData extends object>({
         const finishHandler = () => setIsNavigating(false);
         router.on("start", startHandler);
         router.on("finish", finishHandler);
-        return () => {};
+        return () => {
+            router.off("start", startHandler);
+            router.off("finish", finishHandler);
+        };
     }, [resolvedOptions.loading]);
 
     // Real-time updates via Laravel Echo
@@ -498,20 +560,21 @@ export function DataTable<TData extends object>({
     const RESIZE_KEY = `dt-resize-${tableName}`;
     const [columnSizing, setColumnSizing] = useState<Record<string, number>>(() => {
         if (!resolvedOptions.columnResizing) return {};
-        try { const stored = localStorage.getItem(RESIZE_KEY); return stored ? JSON.parse(stored) : {}; }
-        catch { return {}; }
+        const stored = safeGetItem(RESIZE_KEY);
+        if (stored) { try { return JSON.parse(stored); } catch { /* fall through */ } }
+        return {};
     });
 
     useEffect(() => {
         if (resolvedOptions.columnResizing && Object.keys(columnSizing).length > 0)
-            localStorage.setItem(RESIZE_KEY, JSON.stringify(columnSizing));
+            safeSetItem(RESIZE_KEY, JSON.stringify(columnSizing));
     }, [columnSizing, resolvedOptions.columnResizing, RESIZE_KEY]);
 
     // Persist state to localStorage
     const STATE_KEY = `dt-state-${tableName}`;
     useEffect(() => {
         if (!config?.persistState) return;
-        localStorage.setItem(STATE_KEY, JSON.stringify({
+        safeSetItem(STATE_KEY, JSON.stringify({
             filters: tableData.meta.filters, sorts: tableData.meta.sorts, perPage: tableData.meta.perPage,
         }));
     }, [config?.persistState, tableData.meta.filters, tableData.meta.sorts, tableData.meta.perPage, STATE_KEY]);
@@ -528,7 +591,7 @@ export function DataTable<TData extends object>({
             return {
                 id: col.id, accessorKey: col.id, header: col.label, enableHiding: true,
                 enableResizing: resolvedOptions.columnResizing, size: columnSizing[col.id] || undefined,
-                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable },
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable } satisfies ColumnMeta,
                 cell: ({ row }) => {
                     const value = row.getValue(col.id);
 
@@ -548,12 +611,12 @@ export function DataTable<TData extends object>({
                     if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
 
                     if (col.type === "image" && typeof value === "string") {
-                        return <img src={value} alt="" className="h-8 w-8 rounded-md object-cover" />;
+                        return <img src={value} alt={col.label} className="h-8 w-8 rounded-md object-cover" />;
                     }
                     if (col.type === "badge") {
                         const strValue = String(value);
                         const opt = col.options?.find((o) => o.value === strValue);
-                        return <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                        return <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
                             BADGE_VARIANTS[opt?.variant ?? "default"] ?? BADGE_VARIANTS.default)}>{opt?.label ?? strValue}</span>;
                     }
                     if (col.type === "currency" && (typeof value === "number" || typeof value === "string")) {
@@ -578,8 +641,8 @@ export function DataTable<TData extends object>({
                         return <a href={`tel:${value}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{value}</a>;
                     }
                     if (typeof value === "boolean") {
-                        return value ? <Check className="inline-flex h-4 items-center rounded-full font-medium text-green-800 dark:text-green-400" />
-                            : <X className="inline-flex h-4 items-center rounded-full font-medium text-red-800 dark:text-red-400" />;
+                        return value ? <Check className="h-4 w-4 text-emerald-600" />
+                            : <X className="h-4 w-4 text-muted-foreground/40" />;
                     }
                     if (col.type === "number" && typeof value === "number") return <span className="tabular-nums">{value.toLocaleString()}</span>;
                     return String(value);
@@ -592,7 +655,7 @@ export function DataTable<TData extends object>({
         // Detail row expand column
         if (hasDetailRows) {
             result.push({
-                id: "_expand", header: "", enableHiding: false, enableResizing: false,
+                id: "_expand", header: "", enableHiding: false, enableResizing: false, size: 36,
                 cell: ({ row }) => {
                     const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
                     const isExpanded = expandedRows.has(rowId);
@@ -612,7 +675,7 @@ export function DataTable<TData extends object>({
         if (hasBulkActions || selectionMode === "radio") {
             if (selectionMode === "radio") {
                 result.push({
-                    id: "_select", header: "", enableHiding: false, enableResizing: false,
+                    id: "_select", header: "", enableHiding: false, enableResizing: false, size: 40,
                     cell: ({ row, table: tbl }) => (
                         <input type="radio" name={`dt-radio-${tableName}`} checked={row.getIsSelected()}
                             onChange={() => { tbl.toggleAllRowsSelected(false); row.toggleSelected(true); }}
@@ -621,7 +684,7 @@ export function DataTable<TData extends object>({
                 });
             } else {
                 result.push({
-                    id: "_select", enableHiding: false, enableResizing: false,
+                    id: "_select", enableHiding: false, enableResizing: false, size: 40,
                     header: ({ table: tbl }) => (
                         <Checkbox checked={tbl.getIsAllPageRowsSelected() || (tbl.getIsSomePageRowsSelected() && "indeterminate")}
                             onCheckedChange={(value) => tbl.toggleAllPageRowsSelected(!!value)} aria-label={t.selectAll} />
@@ -645,7 +708,7 @@ export function DataTable<TData extends object>({
         }
 
         if (actions && actions.length > 0) {
-            result.push({ id: "_actions", header: "", enableHiding: false, enableResizing: false,
+            result.push({ id: "_actions", header: "", enableHiding: false, enableResizing: false, size: 48,
                 cell: ({ row }) => <DataTableRowActions row={row.original} actions={actions} t={t} /> });
         }
 
@@ -667,23 +730,23 @@ export function DataTable<TData extends object>({
     const initialSearch = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get(searchKey) ?? "" : "";
     const [globalSearchValue, setGlobalSearchValue] = useState(initialSearch);
 
-    function handleGlobalSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const handleGlobalSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         setGlobalSearchValue(e.target.value); handleGlobalSearch(e.target.value);
-    }
+    }, [handleGlobalSearch]);
 
-    function handleBulkClick(action: NonNullable<typeof bulkActions>[number]) {
+    const handleBulkClick = useCallback((action: NonNullable<typeof bulkActions>[number]) => {
         if (action.confirm) {
             const opts: DataTableConfirmOptions = typeof action.confirm === "object" ? action.confirm : {};
             setBulkConfirm({ action, opts, rows: serverSelectAll ? serverSelectedIds as TData[] : selectedRows });
         } else { action.onClick(serverSelectAll ? serverSelectedIds as TData[] : selectedRows); }
-    }
+    }, [serverSelectAll, serverSelectedIds, selectedRows]);
 
-    function handleRowInteraction(row: TData, e: React.MouseEvent) {
+    const handleRowInteraction = useCallback((row: TData, e: React.MouseEvent) => {
         if (rowLink) { const href = rowLink(row); if (e.metaKey || e.ctrlKey) window.open(href, "_blank"); else window.location.href = href; }
         else if (onRowClick) onRowClick(row);
-    }
+    }, [rowLink, onRowClick]);
 
-    function handleRowCheckboxClick(rowIndex: number, e: React.MouseEvent) {
+    const handleRowCheckboxClick = useCallback((rowIndex: number, e: React.MouseEvent) => {
         if (e.shiftKey && lastSelectedIndex.current !== null && lastSelectedIndex.current !== rowIndex) {
             const start = Math.min(lastSelectedIndex.current, rowIndex);
             const end = Math.max(lastSelectedIndex.current, rowIndex);
@@ -692,9 +755,9 @@ export function DataTable<TData extends object>({
             setRowSelection(newSelection);
         }
         lastSelectedIndex.current = rowIndex;
-    }
+    }, [rowSelection, setRowSelection]);
 
-    async function handleSelectAllMatching() {
+    const handleSelectAllMatching = useCallback(async () => {
         if (!tableData.selectAllUrl) return;
         try {
             const currentParams = new URL(window.location.href).searchParams;
@@ -707,11 +770,11 @@ export function DataTable<TData extends object>({
             table.getRowModel().rows.forEach((_, i) => { allSelection[String(i)] = true; });
             setRowSelection(allSelection);
         } catch { /* silently fail */ }
-    }
+    }, [tableData.selectAllUrl, table, setRowSelection]);
 
-    function clearServerSelectAll() { setServerSelectAll(false); setServerSelectedIds([]); setRowSelection({}); }
+    const clearServerSelectAll = useCallback(() => { setServerSelectAll(false); setServerSelectedIds([]); setRowSelection({}); }, [setRowSelection]);
 
-    function handleTableKeyDown(e: React.KeyboardEvent) {
+    const handleTableKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (!resolvedOptions.keyboardNavigation) return;
         const rows = table.getRowModel().rows;
         if (rows.length === 0) return;
@@ -720,7 +783,7 @@ export function DataTable<TData extends object>({
         else if (e.key === "Enter" && focusedRowIndex !== null) { e.preventDefault(); const row = rows[focusedRowIndex]; if (row) handleRowInteraction(row.original, e as unknown as React.MouseEvent); }
         else if (e.key === "Escape") { setFocusedRowIndex(null); setRowSelection({}); }
         else if (e.key === " " && focusedRowIndex !== null && hasBulkActions) { e.preventDefault(); const row = rows[focusedRowIndex]; if (row) row.toggleSelected(!row.getIsSelected()); }
-    }
+    }, [resolvedOptions.keyboardNavigation, table, focusedRowIndex, handleRowInteraction, setRowSelection, hasBulkActions]);
 
     useEffect(() => {
         if (focusedRowIndex === null || !tableBodyRef.current) return;
@@ -728,7 +791,7 @@ export function DataTable<TData extends object>({
     }, [focusedRowIndex]);
 
     // Soft deletes toggle handler
-    function handleTrashedToggle() {
+    const handleTrashedToggle = useCallback(() => {
         const newValue = !showTrashed;
         setShowTrashed(newValue);
         const p = prefix ? `${prefix}_` : "";
@@ -736,42 +799,52 @@ export function DataTable<TData extends object>({
         if (newValue) currentUrl.searchParams.set(`${p}with_trashed`, "1");
         else currentUrl.searchParams.delete(`${p}with_trashed`);
         router.get(currentUrl.pathname + "?" + currentUrl.searchParams.toString(), {}, { preserveScroll: true });
-    }
+    }, [showTrashed, prefix]);
 
     // Conditional rules
     const rules = config?.rules ?? [];
 
-    function getRowRuleClass(row: TData): string {
+    const getRowRuleClass = useCallback((row: TData): string => {
         if (rules.length === 0) return "";
         return rules.filter((rule) => {
             const value = (row as Record<string, unknown>)[rule.column];
             return evaluateRule(rule, value) && rule.row?.class;
         }).map((r) => r.row!.class!).join(" ");
-    }
+    }, [rules]);
 
-    function getCellRuleClass(row: TData, columnId: string): string {
+    const getCellRuleClass = useCallback((row: TData, columnId: string): string => {
         if (rules.length === 0) return "";
         return rules.filter((rule) => {
             if (rule.column !== columnId) return false;
             const value = (row as Record<string, unknown>)[rule.column];
             return evaluateRule(rule, value) && rule.cell?.class;
         }).map((r) => r.cell!.class!).join(" ");
-    }
+    }, [rules]);
 
     const toolbarProps = { tableData, table, tableName, columnVisibility, columnOrder, applyColumns,
         onReorderColumns: setColumnOrder, handleApplyQuickView, handleApplyCustomSearch, resolvedOptions, t };
 
     const activeFilterColumnIds = useMemo(() => new Set(Object.keys(meta.filters as Record<string, unknown>)), [meta.filters]);
 
-    const summaryLabels: Record<string, string> = { sum: t.summarySum, avg: t.summaryAvg, min: t.summaryMin, max: t.summaryMax, count: t.summaryCount };
+    const summaryLabels: Record<string, string> = useMemo(() => ({
+        sum: t.summarySum, avg: t.summaryAvg, min: t.summaryMin, max: t.summaryMax, count: t.summaryCount
+    }), [t.summarySum, t.summaryAvg, t.summaryMin, t.summaryMax, t.summaryCount]);
+
+    const visibleLeafColumns = useMemo(() => [
+        ...table.getLeftVisibleLeafColumns(),
+        ...table.getCenterVisibleLeafColumns(),
+        ...table.getRightVisibleLeafColumns(),
+    ], [table.getLeftVisibleLeafColumns(), table.getCenterVisibleLeafColumns(), table.getRightVisibleLeafColumns()]);
 
     return (
-        <div className="space-y-2 dt-root">
+        <div className="space-y-3 dt-root">
             {slots?.beforeTable}
-            <div className="flex items-center justify-between gap-2 py-1 print:hidden">
-                <div className="flex flex-1 items-center gap-2 pl-6">
+
+            {/* ── Toolbar ── */}
+            <div className="flex items-center justify-between gap-3 print:hidden">
+                <div className="flex flex-1 items-center gap-2">
                     {resolvedOptions.globalSearch && (
-                        <div className="relative w-64">
+                        <div className="relative w-56 lg:w-64">
                             <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
                             <Input placeholder={t.search} value={globalSearchValue} onChange={handleGlobalSearchChange} className="h-8 pl-8 text-sm" />
                         </div>
@@ -782,8 +855,8 @@ export function DataTable<TData extends object>({
                     )}
                     {config?.softDeletesEnabled && (
                         <Button variant={showTrashed ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5" onClick={handleTrashedToggle}>
-                            {showTrashed ? <EyeOff className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-                            {showTrashed ? t.hideTrashed : t.showTrashed}
+                            {showTrashed ? <EyeOff className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            <span className="hidden sm:inline">{showTrashed ? t.hideTrashed : t.showTrashed}</span>
                         </Button>
                     )}
                 </div>
@@ -799,16 +872,18 @@ export function DataTable<TData extends object>({
                     </>
                 )}
             </div>
+
+            {/* ── Bulk actions bar ── */}
             {hasBulkActions && selectedRows.length > 0 && (
-                <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 print:hidden">
-                    <span className="text-sm font-medium tabular-nums">{serverSelectAll ? t.selected(serverSelectedIds.length) : t.selected(selectedRows.length)}</span>
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm print:hidden">
+                    <span className="font-medium tabular-nums">{serverSelectAll ? t.selected(serverSelectedIds.length) : t.selected(selectedRows.length)}</span>
                     {!serverSelectAll && tableData.selectAllUrl && meta.total > tableData.data.length && table.getIsAllPageRowsSelected() && (
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={handleSelectAllMatching}>{t.selectAllMatching(meta.total)}</Button>
                     )}
                     {serverSelectAll && (
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={clearServerSelectAll}>{t.clearSelection}</Button>
                     )}
-                    <div className="flex items-center gap-1">
+                    <div className="ml-auto flex items-center gap-1.5">
                         {bulkActions.map((action) => {
                             const Icon = action.icon;
                             return (
@@ -819,205 +894,237 @@ export function DataTable<TData extends object>({
                                 </Button>
                             );
                         })}
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearServerSelectAll}><X className="h-3.5 w-3.5" /></Button>
                     </div>
-                    <Button variant="ghost" size="icon" className="ml-auto h-7 w-7" onClick={clearServerSelectAll}><X className="h-3.5 w-3.5" /></Button>
                 </div>
             )}
+
+            {/* ── Loading indicator ── */}
             {resolvedOptions.loading && isNavigating && (
-                <div className="flex items-center justify-center gap-2 py-1 text-sm text-muted-foreground print:hidden">
-                    <Loader2 className="h-4 w-4 animate-spin" />{t.loading}
+                <div className="flex items-center justify-center gap-2 py-1 text-xs text-muted-foreground print:hidden">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />{t.loading}
                 </div>
             )}
+
+            {/* ── Deferred loading placeholder ── */}
             {config?.deferLoading && !deferLoaded && (
-                <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
                     <Loader2 className="h-5 w-5 animate-spin" />{t.loading}
                 </div>
             )}
+
+            {/* ── Table ── */}
             {(!config?.deferLoading || deferLoaded) && (
-                <div className={cn("rounded-md border border-x-0 overflow-x-auto", className)}
+                <div className={cn("rounded-lg border overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
-                    <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}>
-                        <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
-                            {table.getHeaderGroups().map((headerGroup, groupIdx) => {
-                                const isGroupRow = groupIdx < table.getHeaderGroups().length - 1;
-                                return (
-                                    <TableRow key={headerGroup.id}>
-                                        {headerGroup.headers.map((header) => {
-                                            if (isGroupRow) {
+                    <div className="overflow-x-auto">
+                        <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}>
+                            <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
+                                {table.getHeaderGroups().map((headerGroup, groupIdx) => {
+                                    const isGroupRow = groupIdx < table.getHeaderGroups().length - 1;
+                                    return (
+                                        <TableRow key={headerGroup.id} className={cn(isGroupRow && "border-b-0")}>
+                                            {headerGroup.headers.map((header) => {
+                                                if (isGroupRow) {
+                                                    const pin = getColumnPinningProps(header.column);
+                                                    const isActualGroup = !header.isPlaceholder && header.colSpan > 1;
+                                                    return (
+                                                        <TableHead key={header.id} colSpan={header.colSpan} style={pin.style}
+                                                            className={cn("h-8",
+                                                                isActualGroup && "text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted/30 border-b",
+                                                                isActualGroup && groupClassName?.[header.column.columnDef.header as string],
+                                                                pin.className)}>
+                                                            {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                                                        </TableHead>
+                                                    );
+                                                }
+                                                const colDef = mergedColumns.find((c) => c.id === header.column.id);
+                                                const isNumber = colDef?.type === "number" || colDef?.type === "currency" || colDef?.type === "percentage";
+                                                const leafGroup = colDef?.group;
                                                 const pin = getColumnPinningProps(header.column);
+                                                const hasActiveFilter = colDef ? activeFilterColumnIds.has(colDef.id) : false;
                                                 return (
-                                                    <TableHead key={header.id} colSpan={header.colSpan} style={pin.style}
-                                                        className={cn("h-8", !header.isPlaceholder && header.colSpan > 1 && "text-center text-xs font-semibold text-muted-foreground border-b",
-                                                            !header.isPlaceholder && header.colSpan > 1 && groupClassName?.[header.column.columnDef.header as string], pin.className)}>
-                                                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                                                    <TableHead key={header.id} colSpan={header.colSpan}
+                                                        style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: header.getSize() } : {}) }}
+                                                        className={cn("h-9", isNumber && "text-right",
+                                                            leafGroup && groupClassName?.[leafGroup],
+                                                            pin.className, "relative")}>
+                                                        {header.isPlaceholder ? null : colDef?.sortable ? (
+                                                            <div className="flex items-center gap-1">
+                                                                <DataTableColumnHeader label={colDef.label} sortable={colDef.sortable} sorts={meta.sorts}
+                                                                    columnId={colDef.id} onSort={handleSort} align={isNumber ? "right" : "left"}>
+                                                                    {renderHeader?.[colDef.id]}
+                                                                </DataTableColumnHeader>
+                                                                {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1">
+                                                                {renderHeader?.[header.column.id] ?? flexRender(header.column.columnDef.header, header.getContext())}
+                                                                {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                            </div>
+                                                        )}
+                                                        {resolvedOptions.columnResizing && header.column.getCanResize() && (
+                                                            <div onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()}
+                                                                className={cn("absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
+                                                                    header.column.getIsResizing() ? "bg-primary" : "hover:bg-border")} />
+                                                        )}
                                                     </TableHead>
                                                 );
+                                            })}
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableHeader>
+                            <TableBody ref={tableBodyRef}>
+                                {resolvedOptions.loading && isNavigating ? (
+                                    <SkeletonRows count={Math.min(meta.perPage, 10)} colCount={table.getVisibleLeafColumns().length} />
+                                ) : table.getRowModel().rows.length > 0 ? (
+                                    table.getRowModel().rows.map((row, index) => {
+                                        const dataAttrs = rowDataAttributes?.(row.original) ?? {};
+                                        const rowRuleClass = getRowRuleClass(row.original);
+                                        const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
+                                        const isExpanded = hasDetailRows && expandedRows.has(rowId);
+                                        return (
+                                            <>{/* keyed fragment */}
+                                                <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined} {...dataAttrs}
+                                                    className={cn(
+                                                        "transition-colors",
+                                                        row.getIsSelected() && "bg-primary/5",
+                                                        isClickable && "cursor-pointer",
+                                                        focusedRowIndex === index && "ring-2 ring-inset ring-primary",
+                                                        rowRuleClass, rowClassName?.(row.original))}
+                                                    onClick={(e) => {
+                                                        if (hasBulkActions && e.shiftKey) { handleRowCheckboxClick(index, e); return; }
+                                                        if (isClickable) {
+                                                            const target = e.target as HTMLElement;
+                                                            if (target.closest("button, a, input, [role='checkbox'], [role='switch'], [data-slot='clear']")) return;
+                                                            handleRowInteraction(row.original, e);
+                                                        }
+                                                    }}>
+                                                    {row.getVisibleCells().map((cell) => {
+                                                        const pin = getColumnPinningProps(cell.column);
+                                                        const cellMeta = cell.column.columnDef.meta as ColumnMeta | undefined;
+                                                        const cellRuleClass = getCellRuleClass(row.original, cell.column.id);
+                                                        return (
+                                                            <TableCell key={cell.id}
+                                                                style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
+                                                                className={cn(
+                                                                    "py-2 whitespace-nowrap",
+                                                                    cellMeta?.type === "number" && "text-right",
+                                                                    cellMeta?.type === "currency" && "text-right",
+                                                                    cellMeta?.type === "percentage" && "text-right",
+                                                                    cellMeta?.group && groupClassName?.[cellMeta.group],
+                                                                    pin.className, cellRuleClass)}>
+                                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                            </TableCell>
+                                                        );
+                                                    })}
+                                                </TableRow>
+                                                {isExpanded && renderDetailRow && (
+                                                    <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30">
+                                                        <TableCell colSpan={table.getVisibleLeafColumns().length} className="p-4">
+                                                            {renderDetailRow(row.original)}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )}
+                                            </>
+                                        );
+                                    })
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-32 text-center text-muted-foreground">
+                                            {emptyState ?? t.noData}
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+
+                            {/* Per-page footer */}
+                            {tableData.footer && (
+                                <TableFooter>
+                                    <TableRow className="bg-muted/20 font-medium">
+                                        {visibleLeafColumns.map((col) => {
+                                            const footerValue = tableData.footer?.[col.id];
+                                            const colMeta = col.columnDef.meta as ColumnMeta | undefined;
+                                            const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
+                                            const group = colMeta?.group;
+                                            const pin = getColumnPinningProps(col);
+                                            let content: React.ReactNode = null;
+                                            if (footerValue !== undefined && footerValue !== null) {
+                                                if (renderFooterCell) {
+                                                    const custom = renderFooterCell(col.id, footerValue);
+                                                    content = custom !== undefined ? custom : (isNumber && typeof footerValue === "number" ? footerValue.toLocaleString() : String(footerValue));
+                                                } else { content = isNumber && typeof footerValue === "number" ? footerValue.toLocaleString() : String(footerValue); }
                                             }
-                                            const colDef = mergedColumns.find((c) => c.id === header.column.id);
-                                            const isNumber = colDef?.type === "number" || colDef?.type === "currency" || colDef?.type === "percentage";
-                                            const leafGroup = colDef?.group;
-                                            const pin = getColumnPinningProps(header.column);
-                                            const hasActiveFilter = colDef ? activeFilterColumnIds.has(colDef.id) : false;
                                             return (
-                                                <TableHead key={header.id} colSpan={header.colSpan}
-                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: header.getSize() } : {}) }}
-                                                    className={cn(isNumber && "text-right", leafGroup && groupClassName?.[leafGroup], pin.className, "relative")}>
-                                                    {header.isPlaceholder ? null : colDef?.sortable ? (
-                                                        <div className="flex items-center gap-1">
-                                                            <DataTableColumnHeader label={colDef.label} sortable={colDef.sortable} sorts={meta.sorts}
-                                                                columnId={colDef.id} onSort={handleSort} align={isNumber ? "right" : "left"}>
-                                                                {renderHeader?.[colDef.id]}
-                                                            </DataTableColumnHeader>
-                                                            {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-1">
-                                                            {renderHeader?.[header.column.id] ?? flexRender(header.column.columnDef.header, header.getContext())}
-                                                            {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
-                                                        </div>
-                                                    )}
-                                                    {resolvedOptions.columnResizing && header.column.getCanResize() && (
-                                                        <div onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()}
-                                                            className={cn("absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
-                                                                header.column.getIsResizing() ? "bg-primary" : "hover:bg-border")} />
-                                                    )}
-                                                </TableHead>
+                                                <TableCell key={col.id} style={pin.style}
+                                                    className={cn("whitespace-nowrap py-2 font-semibold", isNumber && "text-right tabular-nums",
+                                                        group && groupClassName?.[group], pin.className)}>
+                                                    {content}
+                                                </TableCell>
                                             );
                                         })}
                                     </TableRow>
-                                );
-                            })}
-                        </TableHeader>
-                        <TableBody ref={tableBodyRef}>
-                            {resolvedOptions.loading && isNavigating ? (
-                                <SkeletonRows count={meta.perPage > 10 ? 10 : meta.perPage} colCount={table.getVisibleLeafColumns().length} />
-                            ) : table.getRowModel().rows.length > 0 ? (
-                                table.getRowModel().rows.map((row, index) => {
-                                    const dataAttrs = rowDataAttributes?.(row.original) ?? {};
-                                    const rowRuleClass = getRowRuleClass(row.original);
-                                    const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
-                                    const isExpanded = hasDetailRows && expandedRows.has(rowId);
-                                    return (
-                                        <>{/* keyed fragment */}
-                                            <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined} {...dataAttrs}
-                                                className={cn(index % 2 === 1 && "bg-muted/40", row.getIsSelected() && "bg-primary/5",
-                                                    isClickable && "cursor-pointer hover:bg-muted/60",
-                                                    focusedRowIndex === index && "ring-2 ring-inset ring-primary",
-                                                    rowRuleClass, rowClassName?.(row.original))}
-                                                onClick={(e) => {
-                                                    if (hasBulkActions && e.shiftKey) { handleRowCheckboxClick(index, e); return; }
-                                                    if (isClickable) {
-                                                        const target = e.target as HTMLElement;
-                                                        if (target.closest("button, a, input, [role='checkbox'], [role='switch'], [data-slot='clear']")) return;
-                                                        handleRowInteraction(row.original, e);
-                                                    }
-                                                }}>
-                                                {row.getVisibleCells().map((cell) => {
-                                                    const pin = getColumnPinningProps(cell.column);
-                                                    const pinnedBg = getPinnedCellBg(cell.column.getIsPinned(), index % 2 === 1, row.getIsSelected());
-                                                    const cellRuleClass = getCellRuleClass(row.original, cell.column.id);
-                                                    return (
-                                                        <TableCell key={cell.id}
-                                                            style={{ ...pin.style, ...pinnedBg, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
-                                                            className={cn(index % 2 === 1 && "bg-muted/40", "whitespace-nowrap py-2",
-                                                                (cell.column.columnDef.meta as { type?: string })?.type === "number" && "text-right",
-                                                                (cell.column.columnDef.meta as { type?: string })?.type === "currency" && "text-right",
-                                                                (cell.column.columnDef.meta as { type?: string })?.type === "percentage" && "text-right",
-                                                                (cell.column.columnDef.meta as { group?: string | null })?.group &&
-                                                                    groupClassName?.[(cell.column.columnDef.meta as { group: string }).group],
-                                                                pin.className, cellRuleClass)}>
-                                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                                        </TableCell>
-                                                    );
-                                                })}
-                                            </TableRow>
-                                            {isExpanded && renderDetailRow && (
-                                                <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30">
-                                                    <TableCell colSpan={table.getVisibleLeafColumns().length} className="p-4">
-                                                        {renderDetailRow(row.original)}
-                                                    </TableCell>
-                                                </TableRow>
-                                            )}
-                                        </>
-                                    );
-                                })
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-24 text-center">
-                                        {emptyState ?? t.noData}
-                                    </TableCell>
-                                </TableRow>
+                                </TableFooter>
                             )}
-                        </TableBody>
-                        {tableData.footer && (
-                            <TableFooter>
-                                <TableRow>
-                                    {[...table.getLeftVisibleLeafColumns(), ...table.getCenterVisibleLeafColumns(), ...table.getRightVisibleLeafColumns()].map((col) => {
-                                        const footerValue = tableData.footer?.[col.id];
-                                        const colMeta = col.columnDef.meta as { type?: string; group?: string | null } | undefined;
-                                        const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
-                                        const group = colMeta?.group;
-                                        const pin = getColumnPinningProps(col);
-                                        let content: React.ReactNode = null;
-                                        if (footerValue !== undefined && footerValue !== null) {
-                                            if (renderFooterCell) {
-                                                const custom = renderFooterCell(col.id, footerValue);
-                                                content = custom !== undefined ? custom : (isNumber && typeof footerValue === "number" ? footerValue.toLocaleString() : String(footerValue));
-                                            } else { content = isNumber && typeof footerValue === "number" ? footerValue.toLocaleString() : String(footerValue); }
-                                        }
-                                        const footerPinnedBg = col.getIsPinned() ? { backgroundColor: "var(--color-background)" } : {};
-                                        return (
-                                            <TableCell key={col.id} style={{ ...pin.style, ...footerPinnedBg }}
-                                                className={cn("whitespace-nowrap py-2 font-semibold", isNumber && "text-right tabular-nums",
-                                                    group && groupClassName?.[group], pin.className)}>
-                                                {content}
-                                            </TableCell>
-                                        );
-                                    })}
-                                </TableRow>
-                            </TableFooter>
-                        )}
-                        {tableData.summary && (
-                            <TableFooter>
-                                <TableRow className="bg-muted/30">
-                                    {[...table.getLeftVisibleLeafColumns(), ...table.getCenterVisibleLeafColumns(), ...table.getRightVisibleLeafColumns()].map((col) => {
-                                        const summaryValue = tableData.summary?.[col.id];
-                                        const colDef = mergedColumns.find((c) => c.id === col.id);
-                                        const colMeta = col.columnDef.meta as { type?: string } | undefined;
-                                        const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
-                                        const pin = getColumnPinningProps(col);
-                                        let content: React.ReactNode = null;
-                                        if (summaryValue !== undefined && summaryValue !== null) {
-                                            const label = summaryLabels[colDef?.summary ?? ""] ?? "";
-                                            const formatted = isNumber && typeof summaryValue === "number" ? summaryValue.toLocaleString() : String(summaryValue);
-                                            content = <span className="text-xs"><span className="text-muted-foreground">{label}: </span><span className="font-semibold">{formatted}</span></span>;
-                                        }
-                                        return (
-                                            <TableCell key={col.id} style={pin.style}
-                                                className={cn("whitespace-nowrap py-1.5", isNumber && "text-right tabular-nums", pin.className)}>
-                                                {content}
-                                            </TableCell>
-                                        );
-                                    })}
-                                </TableRow>
-                            </TableFooter>
-                        )}
-                    </Table>
+
+                            {/* Full-dataset summary row */}
+                            {tableData.summary && (
+                                <TableFooter>
+                                    <TableRow className="bg-muted/10 border-t-2">
+                                        {visibleLeafColumns.map((col) => {
+                                            const summaryValue = tableData.summary?.[col.id];
+                                            const colDef = mergedColumns.find((c) => c.id === col.id);
+                                            const colMeta = col.columnDef.meta as ColumnMeta | undefined;
+                                            const isNumber = colMeta?.type === "number" || colMeta?.type === "currency" || colMeta?.type === "percentage";
+                                            const pin = getColumnPinningProps(col);
+                                            let content: React.ReactNode = null;
+                                            if (summaryValue !== undefined && summaryValue !== null) {
+                                                const label = summaryLabels[colDef?.summary ?? ""] ?? "";
+                                                const formatted = isNumber && typeof summaryValue === "number" ? summaryValue.toLocaleString() : String(summaryValue);
+                                                content = (
+                                                    <span className="text-xs">
+                                                        <span className="text-muted-foreground">{label} </span>
+                                                        <span className="font-semibold tabular-nums">{formatted}</span>
+                                                    </span>
+                                                );
+                                            }
+                                            return (
+                                                <TableCell key={col.id} style={pin.style}
+                                                    className={cn("whitespace-nowrap py-1.5", isNumber && "text-right", pin.className)}>
+                                                    {content}
+                                                </TableCell>
+                                            );
+                                        })}
+                                    </TableRow>
+                                </TableFooter>
+                            )}
+                        </Table>
+                    </div>
                 </div>
             )}
-            {slots?.pagination ?? (
-                <div className="print:hidden">
-                    <DataTablePagination meta={meta} onPageChange={handlePageChange} onPerPageChange={handlePerPageChange} onCursorChange={handleCursorChange} t={t} />
+
+            {/* ── Pagination + Auto-refresh ── */}
+            <div className="flex items-center justify-between print:hidden">
+                <div className="flex-1">
+                    {(config?.pollingInterval ?? 0) > 0 && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: "3s" }} />
+                            {t.autoRefresh} ({config!.pollingInterval}s)
+                        </div>
+                    )}
                 </div>
-            )}
+                <div className="flex-1">
+                    {slots?.pagination ?? (
+                        <DataTablePagination meta={meta} onPageChange={handlePageChange} onPerPageChange={handlePerPageChange} onCursorChange={handleCursorChange} t={t} />
+                    )}
+                </div>
+            </div>
+
             {slots?.afterTable}
-            {(config?.pollingInterval ?? 0) > 0 && (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground print:hidden">
-                    <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: "3s" }} />
-                    {t.autoRefresh} ({config!.pollingInterval}s)
-                </div>
-            )}
+
+            {/* ── Bulk action confirmation dialog ── */}
             <Dialog open={!!bulkConfirm} onOpenChange={(open) => { if (!open) setBulkConfirm(null); }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
@@ -1033,9 +1140,20 @@ export function DataTable<TData extends object>({
                     </DialogFoot>
                 </DialogContent>
             </Dialog>
+
             {resolvedOptions.printable && (
                 <style>{`@media print { body * { visibility: hidden; } .dt-root, .dt-root * { visibility: visible; } .dt-root { position: absolute; left: 0; top: 0; width: 100%; } .print\\:hidden { display: none !important; } table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ddd; padding: 8px; text-align: left; } th { background-color: #f5f5f5; font-weight: bold; } }`}</style>
             )}
         </div>
+    );
+}
+
+// ─── Exported component with Error Boundary ─────────────────────────────────
+
+export function DataTable<TData extends object>(props: DataTableProps<TData>) {
+    return (
+        <DataTableErrorBoundary>
+            <DataTableInner {...props} />
+        </DataTableErrorBoundary>
     );
 }

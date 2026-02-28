@@ -39,10 +39,11 @@ trait HasExport
             $request = $request ?? request();
             $filters = $request->get('filter', []);
 
-            return $filename($filters);
+            $filename = $filename($filters);
         }
 
-        return $filename;
+        // Sanitize filename to prevent path traversal
+        return preg_replace('/[^a-zA-Z0-9_\-]/', '_', basename($filename));
     }
 
     public static function downloadExport(string $format = 'xlsx', ?Request $request = null): BinaryFileResponse
@@ -85,11 +86,6 @@ trait HasExport
 
     public static function makeExportQuery(?Request $request = null): QueryBuilder
     {
-        $request = $request ?? request();
-
-        return QueryBuilder::for(static::tableBaseQuery(), $request)
-            ->allowedFilters(static::tableAllowedFilters())
-            ->allowedSorts(static::tableAllowedSorts())
-            ->defaultSort(static::tableDefaultSort());
+        return static::buildFilteredQuery($request);
     }
 }
