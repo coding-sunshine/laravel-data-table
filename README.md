@@ -383,6 +383,9 @@ Extend this class for each model. It extends `Spatie\LaravelData\Data`, so it's 
 | `tableEnumFilters()` | No | Map column IDs to BackedEnum classes |
 | `tableCascadingFilters()` | No | Map child → parent column IDs |
 | `resolveCascadingFilterOptions(column, parentValues)` | No | Return cascading options |
+| `tableDetailDisplay()` | No | Detail row display mode: `'inline'`, `'modal'`, `'drawer'`. Default: `'inline'` |
+| `tableEagerLoad()` | No | Auto-derived from column `relation` fields. Override to add extra relationships |
+| `buildFilteredQuery(?Request, ?prefix)` | Inherited | Builds a filtered+sorted QueryBuilder (shared by table, export, select-all) |
 | `makeTable(?Request, ?string)` | Inherited | Builds the `DataTableResponse`. Optional `$prefix` for multi-table pages |
 
 ### `Column`
@@ -404,9 +407,24 @@ new Column(
     editable: true,          // Enable inline editing
     currency: 'EUR',         // Currency code for type=currency
     locale: 'fr-FR',         // Locale for formatting
-    summary: 'sum',          // Aggregation: 'sum', 'count', 'avg', 'min', 'max'
+    summary: 'sum',          // Aggregation: 'sum', 'count', 'avg', 'min', 'max', 'range'
     toggleable: true,        // Boolean toggle switch
     responsivePriority: 3,   // Auto-hide on small screens (lower = hidden first)
+    internalName: 'user.name', // Database column path (for relational/aliased columns)
+    relation: 'user',        // Relationship to eager load
+    prefix: '$',             // Text before cell value
+    suffix: ' USD',          // Text after cell value
+    tooltip: 'description',  // Hover tooltip (static text or column ID)
+    description: 'Before tax', // Text below column header
+    lineClamp: 2,            // CSS line clamp for long text
+    iconMap: ['active' => '✓'], // Map values to icons (for type=icon)
+    colorMap: ['high' => 'text-red-600'], // Map values to CSS classes
+    selectOptions: [['label' => 'A', 'value' => 'a']], // For type=select
+    html: false,             // Render cell as HTML
+    markdown: false,         // Render cell as Markdown
+    bulleted: false,         // Display arrays as bullet lists
+    stacked: ['name', 'email'], // Stack multiple columns vertically
+    rowIndex: false,         // Auto-incrementing row number
 );
 ```
 
@@ -1050,6 +1068,15 @@ interface DataTableProps<TData extends object> {
         afterTable?: ReactNode;
         pagination?: ReactNode;
     };
+
+    // New: callbacks & features
+    onStateChange?: (state: DataTableState) => void; // Fires on any state change
+    onRowCreate?: (data: Record<string, unknown>) => Promise<void> | void; // Inline row creation
+    mobileBreakpoint?: number;              // Width in px for mobile card layout (0 = disabled)
+    children?: ReactNode;                   // JSX column API: <DataTable.Column ...>
+    headerActions?: DataTableHeaderAction[]; // Toolbar action buttons
+    groupByOptions?: string[];              // Column IDs for user-selectable grouping
+    onGroupByChange?: (columnId: string | null) => void; // Grouping change callback
 }
 ```
 
@@ -1211,6 +1238,34 @@ import { esTranslations } from "./data-table/i18n-es";
 
 <DataTable translations={esTranslations} />
 ```
+
+#### All Translation Keys
+
+The `DataTableTranslations` interface has **80+ keys** covering every UI string. Key categories:
+
+| Category | Keys | Description |
+|----------|------|-------------|
+| Pagination | `totalResults`, `rowsPerPage`, `pageOf`, `first`, `last`, `next`, `previous` | Pagination controls |
+| Table chrome | `columns`, `reorder`, `search`, `noData`, `loading`, `actions` | Core UI |
+| Selection | `selectAll`, `selectRow`, `selectAllMatching`, `clearSelection`, `selected` | Row selection |
+| Filters | `filtersTitle`, `addFilter`, `clearAllFilters`, `apply`, `activeFilters` | Filter panel |
+| Operators | `opContains`, `opEquals`, `opGreaterThan`, `opBetween`, `opBefore`, `opAfter`, ... | 14 filter operators |
+| Editing | `editSave`, `editCancel`, `editSaving`, `save`, `cancel` | Inline editing |
+| Confirmation | `confirmTitle`, `confirmDescription`, `confirmAction`, `confirmCancel` | Dialogs |
+| Export | `exportXlsx`, `exportCsv`, `exportPdf`, `exporting`, `exportReady`, `exportDownload` | Export UI |
+| Import | `importData`, `importFile`, `importUploading`, `importSuccess`, `importError` | Import dialog |
+| Grouping | `groupBy`, `ungrouped`, `none` | Row grouping |
+| Date grouping | `dateGroupDay`, `dateGroupWeek`, `dateGroupMonth`, `dateGroupYear` | Date grouping labels |
+| Summary | `summarySum`, `summaryAvg`, `summaryMin`, `summaryMax`, `summaryCount`, `summaryRange` | Footer aggregations |
+| Views | `view`, `quickViews`, `savedViews`, `saveFilters`, `viewName` | Quick/saved views |
+| Context menu | `sortAscending`, `sortDescending`, `hideColumn`, `pinLeft`, `pinRight`, `unpin` | Column context menu |
+| Undo/Redo | `undo`, `redo`, `editUndone`, `editRedone` | Undo/redo stack |
+| Keyboard | `keyboardShortcuts`, `shortcutNavigation`, `shortcutSelect`, `shortcutHelp` | Shortcuts overlay |
+| Batch edit | `batchEdit`, `batchEditApply`, `batchEditColumn`, `batchEditValue` | Batch editing |
+| Soft deletes | `showTrashed`, `hideTrashed`, `replicate`, `forceDelete`, `restore` | Soft delete management |
+| Row creation | `addRow` | Inline row creation |
+| Empty state | `emptyTitle`, `emptyDescription` | Empty table |
+| Misc | `expand`, `collapse`, `copied`, `autoRefresh`, `reorderRows`, `matches` | Other UI strings |
 
 ### Row Grouping
 
@@ -1569,6 +1624,8 @@ import {
     defaultTranslations,
     frTranslations,
     type DataTableTranslations,
+    type DataTableFormField,
+    type DataTableHeaderAction,
 } from "@/data-table";
 ```
 
