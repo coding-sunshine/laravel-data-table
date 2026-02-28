@@ -102,7 +102,7 @@ import { defaultTranslations, type DataTableTranslations } from "./i18n";
 import { DataTablePagination } from "./data-table-pagination";
 import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
-import type { DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableOptions, DataTableProps, DataTableRule } from "./types";
+import type { DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableFormField, DataTableHeaderAction, DataTableOptions, DataTableProps, DataTableRule } from "./types";
 import { useDataTable } from "./use-data-table";
 import { DataTableColumn, extractColumnConfigs } from "./data-table-column";
 import {
@@ -135,6 +135,19 @@ interface ColumnMeta {
     currency?: string;
     locale?: string;
     toggleable?: boolean;
+    prefix?: string | null;
+    suffix?: string | null;
+    tooltip?: string | null;
+    description?: string | null;
+    lineClamp?: number | null;
+    iconMap?: Record<string, string> | null;
+    colorMap?: Record<string, string> | null;
+    selectOptions?: { label: string; value: string }[] | null;
+    html?: boolean;
+    markdown?: boolean;
+    bulleted?: boolean;
+    stacked?: string[] | null;
+    rowIndex?: boolean;
 }
 
 // ─── Error Boundary ─────────────────────────────────────────────────────────
@@ -1227,6 +1240,126 @@ function InlineRowCreator({ columns, onRowCreate, t }: {
     );
 }
 
+// ─── Inline select cell ──────────────────────────────────────────────────────
+
+function SelectCell({ value, options, onSave }: {
+    value: string; options: { label: string; value: string }[];
+    onSave: (value: string) => Promise<void> | void;
+}) {
+    const [saving, setSaving] = useState(false);
+    const handleChange = useCallback(async (newVal: string) => {
+        setSaving(true);
+        try { await onSave(newVal); } finally { setSaving(false); }
+    }, [onSave]);
+    return (
+        <Select value={value} onValueChange={handleChange} disabled={saving}>
+            <SelectTrigger className="h-7 w-auto min-w-[100px] text-sm">
+                <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+                {options.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    );
+}
+
+// ─── Form action dialog ──────────────────────────────────────────────────────
+
+function FormActionDialog<TData>({ open, onOpenChange, action, row, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void;
+    action: { label: string; form?: DataTableFormField[]; onClick: (row: TData) => void };
+    row: TData; t: DataTableTranslations;
+}) {
+    const fields = action.form ?? [];
+    const [values, setValues] = useState<Record<string, unknown>>(() => {
+        const init: Record<string, unknown> = {};
+        for (const f of fields) init[f.name] = f.defaultValue ?? (f.type === "checkbox" ? false : "");
+        return init;
+    });
+    const handleSubmit = useCallback(() => {
+        // Attach form values to the row for the handler
+        const enrichedRow = { ...row, _formValues: values } as TData;
+        action.onClick(enrichedRow);
+        onOpenChange(false);
+    }, [action, row, values, onOpenChange]);
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>{action.label}</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-3 py-2">
+                    {fields.map((field) => (
+                        <div key={field.name} className="grid gap-1.5">
+                            <Label className="text-sm">{field.label}{field.required && <span className="text-destructive"> *</span>}</Label>
+                            {field.type === "select" ? (
+                                <Select value={String(values[field.name] ?? "")} onValueChange={(v) => setValues((p) => ({ ...p, [field.name]: v }))}>
+                                    <SelectTrigger><SelectValue placeholder={field.placeholder} /></SelectTrigger>
+                                    <SelectContent>
+                                        {field.options?.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            ) : field.type === "textarea" ? (
+                                <textarea className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                    value={String(values[field.name] ?? "")} placeholder={field.placeholder}
+                                    onChange={(e) => setValues((p) => ({ ...p, [field.name]: e.target.value }))} />
+                            ) : field.type === "checkbox" ? (
+                                <div className="flex items-center gap-2">
+                                    <Checkbox checked={!!values[field.name]} onCheckedChange={(v) => setValues((p) => ({ ...p, [field.name]: !!v }))} />
+                                </div>
+                            ) : (
+                                <Input type={field.type === "number" ? "number" : "text"}
+                                    value={String(values[field.name] ?? "")} placeholder={field.placeholder}
+                                    onChange={(e) => setValues((p) => ({ ...p, [field.name]: field.type === "number" ? Number(e.target.value) : e.target.value }))} />
+                            )}
+                        </div>
+                    ))}
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+                    <Button onClick={handleSubmit}>{t.confirmAction}</Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── User-selectable grouping dropdown ───────────────────────────────────────
+
+function GroupBySelector({ options, columns, currentGroupBy, onChange, t }: {
+    options: string[]; columns: DataTableColumnDef[];
+    currentGroupBy: string | null; onChange: (columnId: string | null) => void;
+    t: DataTableTranslations;
+}) {
+    const colMap = new Map(columns.map((c) => [c.id, c]));
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                    <AlignJustify className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{t.groupBy}</span>
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onChange(null)} className={cn(!currentGroupBy && "font-semibold")}>
+                    {!currentGroupBy && <Check className="mr-2 h-3.5 w-3.5" />}
+                    <span className={currentGroupBy ? "ml-6" : ""}>{t.none}</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {options.map((colId) => (
+                    <DropdownMenuItem key={colId} onClick={() => onChange(colId)} className={cn(currentGroupBy === colId && "font-semibold")}>
+                        {currentGroupBy === colId && <Check className="mr-2 h-3.5 w-3.5" />}
+                        <span className={currentGroupBy !== colId ? "ml-6" : ""}>{colMap.get(colId)?.label ?? colId}</span>
+                    </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
 // ─── Main DataTable component ───────────────────────────────────────────────
 
 function DataTableInner<TData extends object>({
@@ -1240,6 +1373,7 @@ function DataTableInner<TData extends object>({
     renderDetailRow, selectionMode = "checkbox", slots,
     onReorder, onBatchEdit, emptyStateIllustration,
     onStateChange, onRowCreate, mobileBreakpoint = 0, children,
+    headerActions, groupByOptions, onGroupByChange,
 }: DataTableProps<TData>) {
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
@@ -1374,6 +1508,16 @@ function DataTableInner<TData extends object>({
     // Keyboard shortcuts overlay
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
+    // User-selectable grouping
+    const [userGroupBy, setUserGroupBy] = useState<string | null>(null);
+    const handleGroupByChange = useCallback((colId: string | null) => {
+        setUserGroupBy(colId);
+        onGroupByChange?.(colId);
+    }, [onGroupByChange]);
+
+    // Form action dialog
+    const [formAction, setFormAction] = useState<{ action: import("./types").DataTableAction<TData>; row: TData } | null>(null);
+
     // Selection persistence across pages
     const { persistedIds, addIds: addPersistedIds, removeIds: removePersistedIds, clearAll: clearPersistedSelection, count: persistedSelectionCount } = usePersistedSelection<TData>(tableName, resolvedOptions.persistSelection);
 
@@ -1411,21 +1555,48 @@ function DataTableInner<TData extends object>({
             return {
                 id: col.id, accessorKey: col.id, header: col.label, enableHiding: true,
                 enableResizing: resolvedOptions.columnResizing, size: columnSizing[col.id] || undefined,
-                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable } satisfies ColumnMeta,
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex } satisfies ColumnMeta,
                 cell: ({ row }) => {
                     const value = row.getValue(col.id);
+                    const rowData = row.original as Record<string, unknown>;
+
+                    // Row index column
+                    if (col.rowIndex) {
+                        const pageOffset = ((tableData.meta?.currentPage ?? 1) - 1) * (tableData.meta?.perPage ?? 0);
+                        return <span className="text-muted-foreground tabular-nums">{pageOffset + row.index + 1}</span>;
+                    }
+
+                    // Stacked/composite columns
+                    if (col.stacked && col.stacked.length > 0) {
+                        return (
+                            <div className="flex flex-col gap-0.5">
+                                {col.stacked.map((stackedId) => {
+                                    const stackedValue = rowData[stackedId];
+                                    return <span key={stackedId} className="text-sm first:font-medium [&:not(:first-child)]:text-xs [&:not(:first-child)]:text-muted-foreground">{stackedValue != null ? String(stackedValue) : "—"}</span>;
+                                })}
+                            </div>
+                        );
+                    }
 
                     // Boolean toggle switch
                     if (col.toggleable && tableData.toggleUrl) {
-                        return <ToggleCell value={!!value} row={row.original as Record<string, unknown>}
+                        return <ToggleCell value={!!value} row={rowData}
                             columnId={col.id} toggleUrl={tableData.toggleUrl} />;
+                    }
+
+                    // Inline select dropdown
+                    if (col.type === "select" && col.selectOptions && onInlineEdit) {
+                        return <SelectCell value={String(value ?? "")} options={col.selectOptions} onSave={(newVal) => {
+                            pushEdit({ rowId: rowData.id, columnId: col.id, oldValue: value, newValue: newVal });
+                            return onInlineEdit(row.original, col.id, newVal);
+                        }} />;
                     }
 
                     // Inline editing with undo/redo support
                     if (col.editable && onInlineEdit) {
                         return <InlineEditCell value={value} columnId={col.id} columnType={col.type}
                             onSave={(newVal) => {
-                                const rowId = (row.original as Record<string, unknown>).id;
+                                const rowId = rowData.id;
                                 pushEdit({ rowId, columnId: col.id, oldValue: value, newValue: newVal });
                                 return onInlineEdit(row.original, col.id, newVal);
                             }} t={t} />;
@@ -1434,47 +1605,112 @@ function DataTableInner<TData extends object>({
                     if (renderCell) { const custom = renderCell(col.id, value, row.original); if (custom !== undefined) return custom; }
                     if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
 
+                    // Wrap helper for prefix/suffix/tooltip/lineClamp/colorMap
+                    const wrapCell = (content: React.ReactNode) => {
+                        let wrapped = content;
+                        // Prefix/suffix
+                        if (col.prefix || col.suffix) {
+                            wrapped = <span>{col.prefix}{wrapped}{col.suffix}</span>;
+                        }
+                        // Color map
+                        if (col.colorMap) {
+                            const colorClass = col.colorMap[String(value)] ?? null;
+                            if (colorClass) wrapped = <span className={colorClass}>{wrapped}</span>;
+                        }
+                        // Line clamp
+                        if (col.lineClamp) {
+                            wrapped = <span className="block overflow-hidden" style={{ display: "-webkit-box", WebkitLineClamp: col.lineClamp, WebkitBoxOrient: "vertical" }}>{wrapped}</span>;
+                        }
+                        // Tooltip
+                        if (col.tooltip) {
+                            const tooltipText = rowData[col.tooltip] != null ? String(rowData[col.tooltip]) : col.tooltip;
+                            wrapped = <span title={tooltipText}>{wrapped}</span>;
+                        }
+                        return wrapped;
+                    };
+
+                    // Icon column
+                    if (col.type === "icon" && col.iconMap) {
+                        const iconName = col.iconMap[String(value)] ?? String(value);
+                        return wrapCell(<span className="inline-flex items-center gap-1.5"><span className="text-sm">{iconName}</span></span>);
+                    }
+
+                    // Color swatch column
+                    if (col.type === "color" && typeof value === "string") {
+                        return wrapCell(
+                            <div className="flex items-center gap-2">
+                                <span className="inline-block h-5 w-5 rounded border" style={{ backgroundColor: value }} />
+                                <span className="text-xs text-muted-foreground font-mono">{value}</span>
+                            </div>
+                        );
+                    }
+
                     if (col.type === "image" && typeof value === "string") {
                         return <img src={value} alt={col.label} className="h-8 w-8 rounded-md object-cover" />;
                     }
                     if (col.type === "badge") {
                         const strValue = String(value);
                         const opt = col.options?.find((o) => o.value === strValue);
-                        return <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                            BADGE_VARIANTS[opt?.variant ?? "default"] ?? BADGE_VARIANTS.default)}>{opt?.label ?? strValue}</span>;
+                        return wrapCell(<span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                            BADGE_VARIANTS[opt?.variant ?? "default"] ?? BADGE_VARIANTS.default)}>{opt?.label ?? strValue}</span>);
                     }
                     if (col.type === "currency" && (typeof value === "number" || typeof value === "string")) {
                         const numValue = typeof value === "string" ? parseFloat(value) : value;
                         if (!isNaN(numValue)) {
-                            try { return <span className="tabular-nums">{numValue.toLocaleString(col.locale ?? undefined, { style: "currency", currency: col.currency ?? "USD" })}</span>; }
-                            catch { return <span className="tabular-nums">{numValue.toLocaleString()}</span>; }
+                            try { return wrapCell(<span className="tabular-nums">{numValue.toLocaleString(col.locale ?? undefined, { style: "currency", currency: col.currency ?? "USD" })}</span>); }
+                            catch { return wrapCell(<span className="tabular-nums">{numValue.toLocaleString()}</span>); }
                         }
                     }
                     if (col.type === "percentage" && (typeof value === "number" || typeof value === "string")) {
                         const numValue = typeof value === "string" ? parseFloat(value) : value;
-                        if (!isNaN(numValue)) return <span className="tabular-nums">{numValue.toLocaleString(col.locale ?? undefined, { style: "percent", minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>;
+                        if (!isNaN(numValue)) return wrapCell(<span className="tabular-nums">{numValue.toLocaleString(col.locale ?? undefined, { style: "percent", minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>);
                     }
                     if (col.type === "link" && typeof value === "string") {
-                        return <a href={value} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                            <span className="max-w-[200px] truncate">{value.replace(/^https?:\/\//, "")}</span><ExternalLink className="h-3 w-3 shrink-0" /></a>;
+                        return wrapCell(<a href={value} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                            <span className="max-w-[200px] truncate">{value.replace(/^https?:\/\//, "")}</span><ExternalLink className="h-3 w-3 shrink-0" /></a>);
                     }
                     if (col.type === "email" && typeof value === "string") {
-                        return <a href={`mailto:${value}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{value}</a>;
+                        return wrapCell(<a href={`mailto:${value}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{value}</a>);
                     }
                     if (col.type === "phone" && typeof value === "string") {
-                        return <a href={`tel:${value}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{value}</a>;
+                        return wrapCell(<a href={`tel:${value}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{value}</a>);
                     }
                     if (typeof value === "boolean") {
                         return value ? <Check className="h-4 w-4 text-emerald-600" />
                             : <X className="h-4 w-4 text-muted-foreground/40" />;
                     }
-                    if (col.type === "number" && typeof value === "number") return <span className="tabular-nums">{value.toLocaleString()}</span>;
+
+                    // HTML rendering
+                    if (col.html && typeof value === "string") {
+                        return wrapCell(<span dangerouslySetInnerHTML={{ __html: value }} />);
+                    }
+
+                    // Markdown rendering (simplified — bold, italic, code, links)
+                    if (col.markdown && typeof value === "string") {
+                        const rendered = value
+                            .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+                            .replace(/\*(.+?)\*/g, "<em>$1</em>")
+                            .replace(/`(.+?)`/g, "<code class='rounded bg-muted px-1 py-0.5 text-xs'>$1</code>")
+                            .replace(/\[(.+?)\]\((.+?)\)/g, "<a href='$2' class='text-primary hover:underline'>$1</a>");
+                        return wrapCell(<span dangerouslySetInnerHTML={{ __html: rendered }} />);
+                    }
+
+                    // Bulleted list
+                    if (col.bulleted && Array.isArray(value)) {
+                        return wrapCell(
+                            <ul className="list-disc list-inside space-y-0.5 text-sm">
+                                {(value as unknown[]).map((item, i) => <li key={i}>{String(item)}</li>)}
+                            </ul>
+                        );
+                    }
+
+                    if (col.type === "number" && typeof value === "number") return wrapCell(<span className="tabular-nums">{value.toLocaleString()}</span>);
                     // Search highlighting for text values
                     const strValue = String(value);
                     if (resolvedOptions.searchHighlight && currentSearchTerm && col.type === "text") {
-                        return highlightText(strValue, currentSearchTerm);
+                        return wrapCell(highlightText(strValue, currentSearchTerm));
                     }
-                    return strValue;
+                    return wrapCell(strValue);
                 },
             };
         }
@@ -1560,7 +1796,8 @@ function DataTableInner<TData extends object>({
 
         if (actions && actions.length > 0) {
             result.push({ id: "_actions", header: "", enableHiding: false, enableResizing: false, size: 48,
-                cell: ({ row }) => <DataTableRowActions row={row.original} actions={actions} t={t} /> });
+                cell: ({ row }) => <DataTableRowActions row={row.original} actions={actions} t={t}
+                    onFormAction={(action, r) => setFormAction({ action, row: r })} /> });
         }
 
         return result;
@@ -1759,7 +1996,8 @@ function DataTableInner<TData extends object>({
     const activeFilterColumnIds = useMemo(() => new Set(Object.keys(meta.filters as Record<string, unknown>)), [meta.filters]);
 
     const summaryLabels: Record<string, string> = useMemo(() => ({
-        sum: t.summarySum, avg: t.summaryAvg, min: t.summaryMin, max: t.summaryMax, count: t.summaryCount
+        sum: t.summarySum, avg: t.summaryAvg, min: t.summaryMin, max: t.summaryMax, count: t.summaryCount,
+        range: t.summaryRange ?? "Range",
     }), [t.summarySum, t.summaryAvg, t.summaryMin, t.summaryMax, t.summaryCount]);
 
     const visibleLeafColumns = useMemo(() => [
@@ -1774,10 +2012,10 @@ function DataTableInner<TData extends object>({
         if (col) col.toggleVisibility(false);
     }, [table]);
 
-    // Row grouping: group rows by column value
-    const groupByColumn = tableData.groupByColumn;
+    // Row grouping: group rows by column value (server-side or user-selectable)
+    const groupByColumn = userGroupBy ?? tableData.groupByColumn;
     const groupedRows = useMemo(() => {
-        if (!groupByColumn || !resolvedOptions.rowGrouping) return null;
+        if (!groupByColumn || (!resolvedOptions.rowGrouping && !userGroupBy)) return null;
         const rows = table.getRowModel().rows;
         const groups = new Map<string, typeof rows>();
         for (const row of rows) {
@@ -1825,7 +2063,24 @@ function DataTableInner<TData extends object>({
                             </PopoverTrigger>
                             <PopoverContent align="end" className="flex w-auto flex-col gap-2 p-2"><DataTableToolbar {...toolbarProps} /></PopoverContent>
                         </Popover>
-                        <div className="hidden items-center gap-2 md:flex"><DataTableToolbar {...toolbarProps} /></div>
+                        <div className="hidden items-center gap-2 md:flex">
+                            {/* Header actions */}
+                            {headerActions?.map((action, i) => {
+                                const Icon = action.icon;
+                                return (
+                                    <Button key={i} variant={action.variant ?? "outline"} size="sm" className="h-8 gap-1.5" onClick={action.onClick}>
+                                        {Icon && <Icon className="h-3.5 w-3.5" />}
+                                        <span className="hidden sm:inline">{action.label}</span>
+                                    </Button>
+                                );
+                            })}
+                            {/* User-selectable grouping */}
+                            {groupByOptions && groupByOptions.length > 0 && (
+                                <GroupBySelector options={groupByOptions} columns={mergedColumns}
+                                    currentGroupBy={userGroupBy} onChange={handleGroupByChange} t={t} />
+                            )}
+                            <DataTableToolbar {...toolbarProps} />
+                        </div>
                     </>
                 )}
             </div>
@@ -1928,17 +2183,23 @@ function DataTableInner<TData extends object>({
                                                 const headerContent = (
                                                     <>
                                                         {header.isPlaceholder ? null : colDef?.sortable ? (
-                                                            <div className="flex items-center gap-1">
-                                                                <DataTableColumnHeader label={colDef.label} sortable={colDef.sortable} sorts={meta.sorts}
-                                                                    columnId={colDef.id} onSort={handleSort} align={isNumber ? "right" : "left"}>
-                                                                    {renderHeader?.[colDef.id]}
-                                                                </DataTableColumnHeader>
-                                                                {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                            <div className="flex flex-col">
+                                                                <div className="flex items-center gap-1">
+                                                                    <DataTableColumnHeader label={colDef.label} sortable={colDef.sortable} sorts={meta.sorts}
+                                                                        columnId={colDef.id} onSort={handleSort} align={isNumber ? "right" : "left"}>
+                                                                        {renderHeader?.[colDef.id]}
+                                                                    </DataTableColumnHeader>
+                                                                    {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                                </div>
+                                                                {colDef.description && <span className="text-[10px] font-normal text-muted-foreground/70 leading-tight">{colDef.description}</span>}
                                                             </div>
                                                         ) : (
-                                                            <div className="flex items-center gap-1">
-                                                                {renderHeader?.[header.column.id] ?? flexRender(header.column.columnDef.header, header.getContext())}
-                                                                {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                            <div className="flex flex-col">
+                                                                <div className="flex items-center gap-1">
+                                                                    {renderHeader?.[header.column.id] ?? flexRender(header.column.columnDef.header, header.getContext())}
+                                                                    {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                                </div>
+                                                                {colDef?.description && <span className="text-[10px] font-normal text-muted-foreground/70 leading-tight">{colDef.description}</span>}
                                                             </div>
                                                         )}
                                                         {resolvedOptions.columnResizing && header.column.getCanResize() && (
@@ -2237,6 +2498,12 @@ function DataTableInner<TData extends object>({
                         </div>
                     </SheetContent>
                 </Sheet>
+            )}
+
+            {/* ── Form action dialog ── */}
+            {formAction && formAction.action.form && (
+                <FormActionDialog open={!!formAction} onOpenChange={(open) => { if (!open) setFormAction(null); }}
+                    action={formAction.action} row={formAction.row} t={t} />
             )}
 
             {resolvedOptions.printable && (

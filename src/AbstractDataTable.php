@@ -171,7 +171,16 @@ abstract class AbstractDataTable extends Data
         }
 
         $selects = [];
+        $rangeColumns = [];
         foreach ($columns as $col) {
+            if ($col->summary === 'range') {
+                // Range needs both MIN and MAX
+                $selects[] = DB::raw("MIN({$col->id}) as summary_{$col->id}_min");
+                $selects[] = DB::raw("MAX({$col->id}) as summary_{$col->id}_max");
+                $rangeColumns[] = $col->id;
+
+                continue;
+            }
             $fn = match ($col->summary) {
                 'sum' => "SUM({$col->id})",
                 'avg' => "AVG({$col->id})",
@@ -197,7 +206,13 @@ abstract class AbstractDataTable extends Data
 
         $summary = [];
         foreach ($columns as $col) {
-            $summary[$col->id] = $result->{"summary_{$col->id}"};
+            if (in_array($col->id, $rangeColumns, true)) {
+                $min = $result->{"summary_{$col->id}_min"};
+                $max = $result->{"summary_{$col->id}_max"};
+                $summary[$col->id] = "{$min} – {$max}";
+            } else {
+                $summary[$col->id] = $result->{"summary_{$col->id}"};
+            }
         }
 
         return $summary;

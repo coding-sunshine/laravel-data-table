@@ -35,6 +35,8 @@ export type {
     DataTableAction,
     DataTableBulkAction,
     DataTableProps,
+    DataTableFormField,
+    DataTableHeaderAction,
 } from "./types";
 
 // ─── i18n ───────────────────────────────────────────────────────────────────

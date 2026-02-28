@@ -8,7 +8,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 - **Single-file backend** — One PHP class per model acts as both DTO and table configuration
 - **Server-side everything** — Sorting, filtering, pagination handled by Spatie QueryBuilder
-- **14 column types** — text, number, date, option, multiOption, boolean, image, badge, currency, percentage, link, email, phone
+- **17 column types** — text, number, date, option, multiOption, boolean, image, badge, currency, percentage, link, email, phone, icon, color, select
 - **Relational data** — `internalName` + `relation` for dot-notation columns with auto eager loading
 - **Operator-based filters** — URL format `filter[price]=gte:1000` with 14 operators
 - **3 pagination modes** — Standard, simple (no total count), and cursor-based
@@ -38,12 +38,28 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Column header context menu** — Right-click for sort, hide, pin/unpin actions
 - **Responsive column collapse** — Auto-hide columns on small screens based on priority levels
 - **Fluent column builder** — `ColumnBuilder::make('price', 'Price')->currency('EUR')->sortable()->build()`
+- **Column prefix/suffix** — Add text before/after cell values (e.g., `->prefix('$')`, `->suffix(' kg')`)
+- **Column tooltips** — Hover text on cells, static or dynamic from another column (`->tooltip('description')`)
+- **Column descriptions** — Small text below column header labels (`->description('Before tax')`)
+- **Line clamping** — CSS line-clamp to truncate long text (`->lineClamp(2)`)
+- **Icon columns** — Map values to icon names (`->iconColumn(['active' => 'check-circle'])`)
+- **Color columns** — Display color swatches with hex value (`->color()`)
+- **Select columns** — Inline dropdown editing (`->select([['label' => 'Active', 'value' => 'active']])`)
+- **Stacked/composite columns** — Show multiple fields vertically (`->stacked(['name', 'email'])`)
+- **Row index column** — Auto-incrementing row number (`->rowIndex()`)
+- **Conditional cell colors** — Map values to color classes (`->colorMap(['active' => 'text-green-600'])`)
+- **Icon mapping** — Map values to icon names for display (`->iconMap(['yes' => 'check'])`)
+- **HTML/Markdown rendering** — Render cell content as sanitized HTML or Markdown (`->html()`, `->markdown()`)
+- **Bulleted lists** — Display array values as bullet points (`->bulleted()`)
 
 ### Data Display
 
 - **Footer aggregations** — Per-page computed values (sum, avg, etc.) with custom rendering
-- **Full-dataset summaries** — Built-in sum/count/avg/min/max across the entire filtered dataset
+- **Full-dataset summaries** — Built-in sum/count/avg/min/max/range across the entire filtered dataset
+- **Range summarizer** — Show min–max range for numeric columns (`->summary('range')`)
 - **Row grouping** — Group rows by any column with collapsible sections
+- **User-selectable grouping** — Dropdown in toolbar to pick which column to group by (`groupByOptions` prop)
+- **Date grouping** — Group rows by day, week, month, or year with i18n labels
 - **Conditional rules** — Server-side declarative rules for row/cell styling
 - **Cell copy to clipboard** — Hover-to-copy button on any cell
 - **Density toggle** — Switch between compact, comfortable, and spacious row heights
@@ -54,6 +70,11 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Bulk actions** — Checkbox selection with configurable action buttons and confirmation dialogs
 - **Server-side selection** — "Select all X matching items" across pages with backend ID resolution
 - **Row actions** — Per-row dropdown menu with visibility, variant, and confirmation support
+- **Action groups** — Nested submenu dropdowns for organizing related actions (`group` property)
+- **Forms-in-actions** — Modal forms with text, number, select, textarea, and checkbox fields (`form` property)
+- **Header actions** — Custom buttons in the table toolbar (e.g., "Create New") via `headerActions` prop
+- **Replicate action** — Duplicate a row with a single click (i18n label: "Duplicate")
+- **Force-delete/Restore** — Soft delete management actions with confirmation dialogs
 - **Shift+click range selection** — Select a range of rows by holding Shift
 - **Radio button selection** — Single-select mode via `selectionMode="radio"`
 - **Row selection persistence** — Selections persist across page navigation via localStorage
@@ -409,6 +430,25 @@ public static function tableColumns(): array
         ColumnBuilder::make('email', 'Email')->email()->filterable()->responsivePriority(2)->build(),
         ColumnBuilder::make('is_active', 'Active')->boolean()->toggleable()->build(),
         ColumnBuilder::make('photo', 'Photo')->image()->hidden()->build(),
+
+        // Filament-inspired column features:
+        ColumnBuilder::make('row_num', '#')->rowIndex()->build(),
+        ColumnBuilder::make('weight', 'Weight')->number()->prefix('#')->suffix(' kg')->build(),
+        ColumnBuilder::make('user', 'User')->stacked(['name', 'email'])->build(),
+        ColumnBuilder::make('status_icon', 'Status')
+            ->iconColumn(['active' => 'check-circle', 'inactive' => 'x-circle'])->build(),
+        ColumnBuilder::make('brand_color', 'Color')->color()->build(),
+        ColumnBuilder::make('priority', 'Priority')->select([
+            ['label' => 'Low', 'value' => 'low'],
+            ['label' => 'High', 'value' => 'high'],
+        ])->build(),
+        ColumnBuilder::make('bio', 'Bio')->text()->lineClamp(2)->build(),
+        ColumnBuilder::make('score', 'Score')
+            ->number()->colorMap(['high' => 'text-green-600', 'low' => 'text-red-600'])
+            ->tooltip('Performance score')->description('Out of 100')->build(),
+        ColumnBuilder::make('notes', 'Notes')->text()->markdown()->build(),
+        ColumnBuilder::make('tags', 'Tags')->text()->bulleted()->build(),
+        ColumnBuilder::make('revenue', 'Revenue')->currency('USD')->summary('range')->build(),
     ];
 }
 ```
@@ -430,6 +470,9 @@ public static function tableColumns(): array
 | `link` | URL | Clickable link with external icon |
 | `email` | Email address | Clickable `mailto:` link |
 | `phone` | Phone number | Clickable `tel:` link |
+| `icon` | Icon mapping | Displays icon name from `iconMap` based on cell value |
+| `color` | Color swatch | Shows colored square with hex code |
+| `select` | Inline dropdown | Editable select dropdown with `selectOptions` |
 
 #### Badge Variants
 
@@ -441,6 +484,105 @@ public static function tableColumns(): array
 | `danger` | Red |
 | `info` | Blue |
 | `secondary` | Muted gray |
+
+#### Column Modifiers
+
+| Method | Description | Example |
+|--------|-------------|---------|
+| `prefix(string)` | Text before cell value | `->prefix('$')` |
+| `suffix(string)` | Text after cell value | `->suffix(' kg')` |
+| `tooltip(string)` | Hover tooltip (static or column ID) | `->tooltip('description')` |
+| `description(string)` | Text below column header | `->description('Before tax')` |
+| `lineClamp(int)` | Truncate to N lines | `->lineClamp(2)` |
+| `colorMap(array)` | Value → CSS class mapping | `->colorMap(['active' => 'text-green-600'])` |
+| `iconMap(array)` | Value → icon name mapping | `->iconMap(['yes' => 'check'])` |
+| `stacked(array)` | Stack multiple columns vertically | `->stacked(['name', 'email'])` |
+| `rowIndex()` | Auto-incrementing row number | `->rowIndex()` |
+| `html()` | Render as sanitized HTML | `->html()` |
+| `markdown()` | Render as Markdown | `->markdown()` |
+| `bulleted()` | Display array as bullet list | `->bulleted()` |
+
+#### Header Actions
+
+Add custom action buttons to the table toolbar:
+
+```tsx
+<DataTable
+  tableData={data}
+  tableName="products"
+  headerActions={[
+    { label: "Create New", icon: Plus, onClick: () => router.visit('/products/create') },
+    { label: "Sync", icon: RefreshCw, variant: "outline", onClick: handleSync },
+  ]}
+/>
+```
+
+#### Action Groups (Nested Submenus)
+
+Organize row actions into nested dropdown groups:
+
+```tsx
+<DataTable
+  actions={[
+    { label: "Edit", onClick: (row) => router.visit(`/products/${row.id}/edit`) },
+    {
+      label: "Status",
+      group: [
+        { label: "Activate", onClick: (row) => activate(row) },
+        { label: "Deactivate", onClick: (row) => deactivate(row) },
+      ],
+    },
+    { label: "Delete", variant: "destructive", confirm: true, onClick: (row) => destroy(row) },
+  ]}
+/>
+```
+
+#### Forms-in-Actions (Modal Forms)
+
+Attach a form to a row action — a modal dialog will open with the specified fields:
+
+```tsx
+<DataTable
+  actions={[
+    {
+      label: "Change Status",
+      form: [
+        { name: "status", label: "New Status", type: "select", options: [
+          { label: "Active", value: "active" },
+          { label: "Inactive", value: "inactive" },
+        ]},
+        { name: "reason", label: "Reason", type: "textarea", required: true },
+      ],
+      onClick: (row) => {
+        const formValues = (row as any)._formValues;
+        updateStatus(row.id, formValues.status, formValues.reason);
+      },
+    },
+  ]}
+/>
+```
+
+#### User-Selectable Grouping
+
+Allow users to pick which column to group rows by:
+
+```tsx
+<DataTable
+  tableData={data}
+  tableName="orders"
+  groupByOptions={["status", "category", "customer_name"]}
+  onGroupByChange={(columnId) => console.log("Grouped by:", columnId)}
+/>
+```
+
+#### Range Summarizer
+
+Show a min–max range in the summary footer:
+
+```php
+ColumnBuilder::make('price', 'Price')->currency('USD')->summary('range')->build(),
+// Renders: "Range $50 – $500" in the summary row
+```
 
 ### Traits
 

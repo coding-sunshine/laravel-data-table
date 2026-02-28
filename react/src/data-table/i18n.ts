@@ -192,6 +192,20 @@ export interface DataTableTranslations {
 
     // Filter chips
     activeFilters: string;
+
+    // Summary range
+    summaryRange: string;
+
+    // Replicate / Force-delete / Restore
+    replicate: string;
+    forceDelete: string;
+    restore: string;
+
+    // Date grouping
+    dateGroupDay: string;
+    dateGroupWeek: string;
+    dateGroupMonth: string;
+    dateGroupYear: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -388,6 +402,20 @@ export const defaultTranslations: DataTableTranslations = {
 
     // Filter chips
     activeFilters: "Active filters",
+
+    // Summary range
+    summaryRange: "Range",
+
+    // Replicate / Force-delete / Restore
+    replicate: "Duplicate",
+    forceDelete: "Permanently delete",
+    restore: "Restore",
+
+    // Date grouping
+    dateGroupDay: "Day",
+    dateGroupWeek: "Week",
+    dateGroupMonth: "Month",
+    dateGroupYear: "Year",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -555,4 +583,18 @@ export const frTranslations: DataTableTranslations = {
 
     // Filter chips
     activeFilters: "Filtres actifs",
+
+    // Summary range
+    summaryRange: "Plage",
+
+    // Replicate / Force-delete / Restore
+    replicate: "Dupliquer",
+    forceDelete: "Supprimer définitivement",
+    restore: "Restaurer",
+
+    // Date grouping
+    dateGroupDay: "Jour",
+    dateGroupWeek: "Semaine",
+    dateGroupMonth: "Mois",
+    dateGroupYear: "Année",
 };
