@@ -33,5 +33,9 @@ class Column extends Data
         public bool $toggleable = false,
         /** Column priority for responsive collapse (lower = hidden first on small screens). null = always visible */
         public ?int $responsivePriority = null,
+        /** Internal database column name or dot-notation relation path (e.g., 'user.name', 'category.title'). If null, uses $id. */
+        public ?string $internalName = null,
+        /** Relationship to eager load for this column (e.g., 'user', 'category.parent'). Used for automatic eager loading. */
+        public ?string $relation = null,
     ) {}
 }

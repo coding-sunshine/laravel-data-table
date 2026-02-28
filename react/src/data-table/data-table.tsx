@@ -30,6 +30,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+} from "@/components/ui/sheet";
 import { Filters } from "../filters/filters";
 import type { FilterColumn } from "../filters/types";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -48,6 +55,7 @@ import {
     DollarSign,
     Download,
     EllipsisVertical,
+    Expand,
     ExternalLink,
     EyeOff,
     FileDown,
@@ -62,6 +70,7 @@ import {
     List,
     Loader2,
     Mail,
+    PanelRight,
     Pencil,
     Percent,
     Phone,
@@ -1319,6 +1328,10 @@ function DataTableInner<TData extends object>({
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [showTrashed, setShowTrashed] = useState(false);
 
+    // Detail modal/drawer state
+    const detailDisplay = config?.detailDisplay ?? "inline";
+    const [detailRow, setDetailRow] = useState<TData | null>(null);
+
     // Density toggle
     const [density, setDensity] = useState<DataTableDensity>(() => loadDensity(tableName));
     const handleDensityChange = useCallback((d: DataTableDensity) => { setDensity(d); saveDensity(tableName, d); }, [tableName]);
@@ -1479,13 +1492,24 @@ function DataTableInner<TData extends object>({
             });
         }
 
-        // Detail row expand column
+        // Detail row expand column (supports inline, modal, and drawer modes)
         if (hasDetailRows) {
             result.push({
                 id: "_expand", header: "", enableHiding: false, enableResizing: false, size: 36,
                 cell: ({ row }) => {
                     const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
                     const isExpanded = expandedRows.has(rowId);
+
+                    if (detailDisplay === "modal" || detailDisplay === "drawer") {
+                        return (
+                            <Button variant="ghost" size="icon" className="h-6 w-6"
+                                onClick={(e) => { e.stopPropagation(); setDetailRow(row.original); }}
+                                aria-label={t.expand}>
+                                {detailDisplay === "drawer" ? <PanelRight className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
+                            </Button>
+                        );
+                    }
+
                     return (
                         <Button variant="ghost" size="icon" className="h-6 w-6"
                             onClick={(e) => { e.stopPropagation(); setExpandedRows((prev) => {
@@ -2002,7 +2026,7 @@ function DataTableInner<TData extends object>({
                                                             );
                                                         })}
                                                     </TableRow>
-                                                    {isExpanded && renderDetailRow && (
+                                                    {isExpanded && renderDetailRow && detailDisplay === "inline" && (
                                                         <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30">
                                                             <TableCell colSpan={table.getVisibleLeafColumns().length} className="p-4">
                                                                 {renderDetailRow(row.original)}
@@ -2183,6 +2207,36 @@ function DataTableInner<TData extends object>({
             {tableData.importUrl && (
                 <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen}
                     importUrl={tableData.importUrl} t={t} />
+            )}
+
+            {/* ── Detail row modal ── */}
+            {hasDetailRows && detailDisplay === "modal" && renderDetailRow && (
+                <Dialog open={!!detailRow} onOpenChange={(open) => { if (!open) setDetailRow(null); }}>
+                    <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle>{t.expand}</DialogTitle>
+                            <DialogDescription className="sr-only">{t.expand}</DialogDescription>
+                        </DialogHeader>
+                        <div className="py-2">
+                            {detailRow && renderDetailRow(detailRow)}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
+
+            {/* ── Detail row drawer (side sheet) ── */}
+            {hasDetailRows && detailDisplay === "drawer" && renderDetailRow && (
+                <Sheet open={!!detailRow} onOpenChange={(open) => { if (!open) setDetailRow(null); }}>
+                    <SheetContent className="sm:max-w-lg overflow-y-auto">
+                        <SheetHeader>
+                            <SheetTitle>{t.expand}</SheetTitle>
+                            <SheetDescription className="sr-only">{t.expand}</SheetDescription>
+                        </SheetHeader>
+                        <div className="py-4">
+                            {detailRow && renderDetailRow(detailRow)}
+                        </div>
+                    </SheetContent>
+                </Sheet>
             )}
 
             {resolvedOptions.printable && (

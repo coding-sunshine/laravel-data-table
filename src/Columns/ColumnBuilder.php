@@ -46,6 +46,10 @@ class ColumnBuilder
 
     private ?int $responsivePriority = null;
 
+    private ?string $internalName = null;
+
+    private ?string $relation = null;
+
     private function __construct(string $id, string $label)
     {
         $this->id = $id;
@@ -344,6 +348,47 @@ class ColumnBuilder
     }
 
     /**
+     * Set the internal database column name or dot-notation relation path.
+     *
+     * Use this when the column ID differs from the database column name,
+     * or to reference a related model's field.
+     *
+     * Example: ->internalName('user.name') for a "user_name" column
+     */
+    public function internalName(string $name): self
+    {
+        $this->internalName = $name;
+
+        return $this;
+    }
+
+    /**
+     * Set the relationship to eager load for this column.
+     *
+     * Example: ->relation('user') or ->relation('category.parent')
+     */
+    public function relation(string $relation): self
+    {
+        $this->relation = $relation;
+
+        return $this;
+    }
+
+    /**
+     * Shorthand: set both internalName (dot-notation) and relation at once.
+     *
+     * Example: ->belongsTo('user', 'name') → internalName='user.name', relation='user'
+     * Example: ->belongsTo('category.parent', 'title') → internalName='category.parent.title', relation='category.parent'
+     */
+    public function belongsTo(string $relation, string $attribute): self
+    {
+        $this->relation = $relation;
+        $this->internalName = $relation . '.' . $attribute;
+
+        return $this;
+    }
+
+    /**
      * Build the Column instance.
      */
     public function build(): Column
@@ -367,6 +412,8 @@ class ColumnBuilder
             summary: $this->summaryType,
             toggleable: $this->toggleable,
             responsivePriority: $this->responsivePriority,
+            internalName: $this->internalName,
+            relation: $this->relation,
         );
     }
 }

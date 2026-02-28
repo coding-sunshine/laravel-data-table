@@ -154,11 +154,13 @@ class AuditReport extends Command
         return strlen($value) > $length ? substr($value, 0, $length) . '...' : $value;
     }
 
-    private function csvEscape(?string $value): string
+    private function csvEscape(mixed $value): string
     {
         if ($value === null) {
             return '';
         }
+
+        $value = (string) $value;
 
         if (str_contains($value, ',') || str_contains($value, '"') || str_contains($value, "\n")) {
             return '"' . str_replace('"', '""', $value) . '"';

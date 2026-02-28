@@ -112,6 +112,14 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Detail row display mode: 'inline' (expandable row), 'modal' (centered dialog), or 'drawer' (side sheet).
+     */
+    public static function tableDetailDisplay(): string
+    {
+        return 'inline';
+    }
+
+    /**
      * Return the detail data for a given model row.
      *
      * @param  mixed  $model
@@ -271,13 +279,29 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Return relationships to eager load, auto-derived from columns with `relation` set.
+     * Override to add additional relationships.
+     *
+     * @return array<int, string>
+     */
+    public static function tableEagerLoad(): array
+    {
+        return collect(static::tableColumns())
+            ->filter(fn (Column $col) => $col->relation !== null)
+            ->map(fn (Column $col) => $col->relation)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<int, AllowedFilter|string>
      */
     public static function tableAllowedFilters(): array
     {
         return collect(static::tableColumns())
             ->filter(fn (Column $col) => $col->filterable)
-            ->map(fn (Column $col) => $col->id)
+            ->map(fn (Column $col) => $col->internalName ?? $col->id)
             ->values()
             ->all();
     }
@@ -289,7 +313,7 @@ abstract class AbstractDataTable extends Data
     {
         return collect(static::tableColumns())
             ->filter(fn (Column $col) => $col->sortable)
-            ->map(fn (Column $col) => $col->id)
+            ->map(fn (Column $col) => $col->internalName ?? $col->id)
             ->values()
             ->all();
     }
@@ -305,6 +329,12 @@ abstract class AbstractDataTable extends Data
         $searchKey = "{$paramPrefix}search";
 
         $baseQuery = static::tableBaseQuery();
+
+        // Auto eager load relationships from column definitions
+        $eagerLoad = static::tableEagerLoad();
+        if (! empty($eagerLoad)) {
+            $baseQuery = $baseQuery->with($eagerLoad);
+        }
 
         // Soft deletes toggle
         if (static::tableSoftDeletesEnabled()) {
@@ -457,6 +487,7 @@ abstract class AbstractDataTable extends Data
         // Build table config for frontend
         $tableConfig = [
             'detailRowEnabled' => static::tableDetailRowEnabled(),
+            'detailDisplay' => static::tableDetailDisplay(),
             'softDeletesEnabled' => static::tableSoftDeletesEnabled(),
             'pollingInterval' => static::tablePollingInterval(),
             'persistState' => static::tablePersistState(),

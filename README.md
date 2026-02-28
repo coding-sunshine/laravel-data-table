@@ -9,6 +9,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Single-file backend** — One PHP class per model acts as both DTO and table configuration
 - **Server-side everything** — Sorting, filtering, pagination handled by Spatie QueryBuilder
 - **14 column types** — text, number, date, option, multiOption, boolean, image, badge, currency, percentage, link, email, phone
+- **Relational data** — `internalName` + `relation` for dot-notation columns with auto eager loading
 - **Operator-based filters** — URL format `filter[price]=gte:1000` with 14 operators
 - **3 pagination modes** — Standard, simple (no total count), and cursor-based
 - **URL-driven state** — Everything is bookmarkable — filters, sorts, pagination, search
@@ -80,7 +81,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 ### Row Features
 
 - **Row drag-and-drop reorder** — Drag rows to reorder with server-side position persistence
-- **Detail / expandable rows** — Click to expand nested content per row
+- **Detail rows** — Expandable inline rows, centered modal dialog, or side drawer/sheet
 - **Row links / click handlers** — Make rows clickable with href links or custom callbacks
 - **Soft deletes toggle** — Show/hide trashed records with a single click
 - **Row data attributes** — Add custom `data-*` attributes to rows for styling/testing
@@ -1259,6 +1260,140 @@ php artisan data-table:translations --all          # All 8 languages
 ```
 
 Supported languages: English, French, Spanish, German, Portuguese, Arabic, Chinese, Japanese.
+
+---
+
+## Relational Data
+
+Columns can reference related model data using `internalName` and `relation`. The package automatically handles eager loading and maps column IDs to database paths.
+
+### Column Definition
+
+```php
+public static function tableColumns(): array
+{
+    return [
+        new Column(id: 'name', label: 'Name', sortable: true),
+
+        // Relation column with manual setup
+        new Column(
+            id: 'user_name',
+            label: 'Author',
+            sortable: true,
+            filterable: true,
+            internalName: 'user.name',  // Database path for sorting/filtering
+            relation: 'user',           // Eager loaded automatically
+        ),
+
+        // Using the fluent builder
+        ColumnBuilder::make('category_title', 'Category')
+            ->belongsTo('category', 'title')  // Sets both internalName + relation
+            ->sortable()
+            ->filterable()
+            ->build(),
+
+        // Nested relation
+        ColumnBuilder::make('parent_category', 'Parent Category')
+            ->belongsTo('category.parent', 'name')
+            ->build(),
+    ];
+}
+```
+
+### Automatic Eager Loading
+
+Relationships defined in column `relation` fields are automatically eager loaded via `with()`. Override `tableEagerLoad()` for additional relationships:
+
+```php
+public static function tableEagerLoad(): array
+{
+    return array_merge(parent::tableEagerLoad(), [
+        'tags',          // Additional relation not tied to a column
+        'media',
+    ]);
+}
+```
+
+### Data Transformation
+
+For complex relational data, use an API Resource:
+
+```php
+public static function tableResource(): string
+{
+    return ProductResource::class;
+}
+
+// In ProductResource.php:
+class ProductResource extends JsonResource
+{
+    public function toArray($request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'user_name' => $this->user->name,
+            'category_title' => $this->category?->title,
+            'tags' => $this->tags->pluck('name')->join(', '),
+        ];
+    }
+}
+```
+
+---
+
+## Detail Row Display Modes
+
+Detail rows support three display modes: **inline** (default), **modal**, and **drawer** (side sheet).
+
+### Configuration (PHP)
+
+```php
+// Expandable inline row (default)
+public static function tableDetailDisplay(): string
+{
+    return 'inline';
+}
+
+// Centered modal dialog
+public static function tableDetailDisplay(): string
+{
+    return 'modal';
+}
+
+// Side drawer / sheet
+public static function tableDetailDisplay(): string
+{
+    return 'drawer';
+}
+```
+
+### React Usage
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    renderDetailRow={(row) => (
+        <div className="space-y-4">
+            <h3 className="font-semibold">{row.name}</h3>
+            <p className="text-muted-foreground">{row.description}</p>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <span className="text-sm font-medium">SKU:</span>
+                    <span className="ml-2">{row.sku}</span>
+                </div>
+                <div>
+                    <span className="text-sm font-medium">Stock:</span>
+                    <span className="ml-2">{row.stock}</span>
+                </div>
+            </div>
+        </div>
+    )}
+/>
+```
+
+The display mode is set server-side via `tableDetailDisplay()`. The same `renderDetailRow` callback works for all three modes.
 
 ---
 

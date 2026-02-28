@@ -22,6 +22,10 @@ export interface DataTableColumnDef {
     toggleable?: boolean;
     /** Responsive priority (lower = hidden first on small screens). null = always visible */
     responsivePriority?: number | null;
+    /** Internal database column name or dot-notation relation path (e.g., 'user.name') */
+    internalName?: string | null;
+    /** Relationship name for eager loading (e.g., 'user', 'category.parent') */
+    relation?: string | null;
 }
 
 export interface DataTableQuickView {
@@ -53,6 +57,8 @@ export interface DataTableMeta {
 /** Server-side table configuration passed from backend */
 export interface DataTableConfig {
     detailRowEnabled?: boolean;
+    /** Display mode for detail rows: 'inline' (expandable row), 'modal' (dialog), or 'drawer' (side sheet) */
+    detailDisplay?: "inline" | "modal" | "drawer";
     softDeletesEnabled?: boolean;
     pollingInterval?: number;
     persistState?: boolean;
