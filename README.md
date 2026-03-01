@@ -270,6 +270,8 @@ php artisan make:data-table Product --pagination=cursor # Pagination type
 php artisan make:data-table Product --resource          # Generate API Resource
 php artisan make:data-table Product --route             # Append route to web.php
 php artisan make:data-table Product --all               # Include all traits
+php artisan make:data-table Product --route-file=routes/api.php  # Custom route file
+php artisan make:data-table Product --page-path=resources/js/views # Custom React page path
 ```
 
 ### 2. Or create your DataTable class manually
@@ -407,6 +409,18 @@ Extend this class for each model. It extends `Spatie\LaravelData\Data`, so it's 
 | `buildFilteredQuery(?Request, ?prefix)` | Inherited | Builds a filtered+sorted QueryBuilder (shared by table, export, select-all) |
 | `makeTable(?Request, ?string)` | Inherited | Builds the `DataTableResponse`. Optional `$prefix` for multi-table pages |
 
+**Per-class overrides:**
+
+Override these protected static properties in your DataTable subclass to customize per-page defaults at the class level (instead of globally via config):
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    protected static ?int $defaultPerPage = 50;  // Override config('data-table.default_per_page')
+    protected static ?int $maxPerPage = 200;     // Override config('data-table.max_per_page')
+}
+```
+
 ### `Column`
 
 ```php
@@ -522,22 +536,45 @@ public static function tableColumns(): array
 | `info` | Blue |
 | `secondary` | Muted gray |
 
-#### Column Modifiers
+#### Column Modifiers (ColumnBuilder Fluent API)
+
+All `ColumnBuilder` methods return `$this` for chaining. Call `->build()` at the end to create the `Column` instance.
 
 | Method | Description | Example |
 |--------|-------------|---------|
+| `sortable(bool)` | Enable sorting | `->sortable()` |
+| `filterable(bool)` | Enable filtering | `->filterable()` |
+| `visible(bool)` | Set default visibility | `->visible(false)` |
+| `hidden()` | Hide by default (shorthand for `visible(false)`) | `->hidden()` |
+| `editable(bool)` | Enable inline editing | `->editable()` |
+| `toggleable(bool)` | Enable boolean toggle switch | `->toggleable()` |
+| `options(array)` | Set filter/badge options | `->options([['label' => 'A', 'value' => 'a']])` |
+| `range(?float, ?float)` | Set min/max for number range filter | `->range(0, 1000)` |
+| `icon(string)` | Set Lucide icon name | `->icon('star')` |
+| `searchThreshold(int)` | Show search in filter dropdown at N+ options | `->searchThreshold(5)` |
+| `group(string)` | Group column under a shared header | `->group('Contact')` |
+| `locale(string)` | Locale for number/currency formatting | `->locale('fr-FR')` |
+| `summary(string)` | Aggregation type for footer (`sum`, `avg`, `min`, `max`, `count`, `range`) | `->summary('sum')` |
+| `responsivePriority(int)` | Auto-hide on small screens (lower = hidden first) | `->responsivePriority(2)` |
+| `internalName(string)` | Database column path or relation dot-notation | `->internalName('user.name')` |
+| `relation(string)` | Relationship to eager load | `->relation('user')` |
+| `belongsTo(string, string)` | Shorthand: sets both `relation` and `internalName` | `->belongsTo('category', 'title')` |
+| `currency(?string)` | Set type to currency with code | `->currency('EUR')` |
+| `selectOptions(array)` | Options for inline select dropdown | `->selectOptions([...])` |
 | `prefix(string)` | Text before cell value | `->prefix('$')` |
 | `suffix(string)` | Text after cell value | `->suffix(' kg')` |
-| `tooltip(string)` | Hover tooltip (static or column ID) | `->tooltip('description')` |
-| `description(string)` | Text below column header | `->description('Before tax')` |
-| `lineClamp(int)` | Truncate to N lines | `->lineClamp(2)` |
+| `tooltip(string)` | Hover tooltip (static text or column ID) | `->tooltip('description')` |
+| `description(string)` | Small text below column header | `->description('Before tax')` |
+| `lineClamp(int)` | CSS line-clamp to truncate long text | `->lineClamp(2)` |
 | `colorMap(array)` | Value → CSS class mapping | `->colorMap(['active' => 'text-green-600'])` |
 | `iconMap(array)` | Value → icon name mapping | `->iconMap(['yes' => 'check'])` |
 | `stacked(array)` | Stack multiple columns vertically | `->stacked(['name', 'email'])` |
 | `rowIndex()` | Auto-incrementing row number | `->rowIndex()` |
-| `html()` | Render as sanitized HTML | `->html()` |
-| `markdown()` | Render as Markdown | `->markdown()` |
-| `bulleted()` | Display array as bullet list | `->bulleted()` |
+| `html()` | Render cell as sanitized HTML | `->html()` |
+| `markdown()` | Render cell as Markdown | `->markdown()` |
+| `bulleted()` | Display array values as bullet list | `->bulleted()` |
+
+**Type setters:** `text()`, `number()`, `date()`, `option(?array)`, `multiOption(?array)`, `boolean()`, `image()`, `badge(?array)`, `currency(?string)`, `percentage()`, `link()`, `email()`, `phone()`, `iconColumn(array)`, `color()`, `select(array)`
 
 #### Header Actions
 
@@ -1298,6 +1335,57 @@ The `DataTableTranslations` interface has **80+ keys** covering every UI string.
 | Empty state | `emptyTitle`, `emptyDescription` | Empty table |
 | Misc | `expand`, `collapse`, `copied`, `autoRefresh`, `reorderRows`, `matches` | Other UI strings |
 
+### `SavedView` Model
+
+The `SavedView` Eloquent model stores user-saved views in the `data_table_saved_views` table:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_id` | `int` | Owner of the saved view |
+| `table_name` | `string` | DataTable identifier |
+| `name` | `string` | Display name |
+| `filters` | `array` | Serialized filter state |
+| `sort` | `?string` | Sort string |
+| `columns` | `?array` | Visible column IDs |
+| `column_order` | `?array` | Column display order |
+| `is_default` | `bool` | Auto-apply on page load |
+
+**Scopes:** `scopeForTable($query, string $tableName)`, `scopeForUser($query, int|string $userId)`
+
+**Relationship:** `user()` — belongsTo the auth user model
+
+### TypeScript Type Reference
+
+```tsx
+// Confirm dialog options (used in actions and bulk actions)
+interface DataTableConfirmOptions {
+    title?: string;
+    description?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    variant?: "default" | "destructive";
+}
+
+// Form field for forms-in-actions
+interface DataTableFormField {
+    name: string;
+    label: string;
+    type: "text" | "number" | "select" | "textarea" | "checkbox";
+    options?: { label: string; value: string }[];
+    required?: boolean;
+    placeholder?: string;
+    defaultValue?: unknown;
+}
+
+// Header action button in toolbar
+interface DataTableHeaderAction {
+    label: string;
+    icon?: React.ComponentType<{ className?: string }>;
+    onClick: () => void;
+    variant?: "default" | "outline" | "destructive" | "ghost";
+}
+```
+
 ### Row Grouping
 
 Group rows by any column with collapsible sections:
@@ -1639,7 +1727,7 @@ import {
     // Component
     DataTable,
     DataTableColumn,
-    // Sub-components
+    // Sub-components (for building custom layouts)
     DataTablePagination,
     DataTableColumnHeader,
     DataTableRowActions,
@@ -1647,6 +1735,17 @@ import {
     // Types
     type DataTableProps,
     type DataTableState,
+    type DataTableResponse,
+    type DataTableColumnDef,
+    type DataTableMeta,
+    type DataTableConfig,
+    type DataTableOptions,
+    type DataTableAction,
+    type DataTableBulkAction,
+    type DataTableConfirmOptions,
+    type DataTableFormField,
+    type DataTableHeaderAction,
+    type DataTableColumnProps,
     type UseDataTableOptions,
     type UseDataTableReturn,
     type UseDataTableFiltersOptions,
@@ -1655,12 +1754,64 @@ import {
     defaultTranslations,
     frTranslations,
     type DataTableTranslations,
-    type DataTableFormField,
-    type DataTableHeaderAction,
 } from "@/data-table";
 ```
 
 ### `useDataTable` Hook
+
+**Options:**
+
+```tsx
+interface UseDataTableOptions<TData> {
+    tableData: DataTableResponse<TData>;   // Server response from makeTable()
+    tableName: string;                      // Unique table identifier
+    columnDefs: ColumnDef<TData>[];         // TanStack column definitions
+    prefix?: string;                        // Query param prefix for multi-table
+    debounceMs?: number;                    // Input debounce delay (default: 0)
+    partialReloadKey?: string;              // Inertia partial reload key
+    columnResizing?: boolean;               // Enable column resizing
+    columnSizing?: Record<string, number>;  // External column sizing state
+    onColumnSizingChange?: (sizing: Record<string, number>) => void;
+    onStateChange?: (state: DataTableState) => void;
+}
+```
+
+**Return value:**
+
+```tsx
+interface UseDataTableReturn<TData> {
+    table: Table<TData>;                    // TanStack Table instance
+    meta: DataTableMeta;                    // Server pagination metadata
+    columnVisibility: VisibilityState;      // Current visibility state
+    columnOrder: ColumnOrderState;          // Current column order
+    setColumnOrder: (order: string[]) => void;          // Directly set column order
+    rowSelection: RowSelectionState;        // Current row selection
+    setRowSelection: (selection: RowSelectionState) => void; // Directly set selection
+    applyColumns: (columnIds: string[]) => void;        // Set visible columns programmatically
+    handleSort: (columnId: string, multi: boolean) => void;
+    handlePageChange: (page: number) => void;
+    handlePerPageChange: (perPage: number) => void;
+    handleCursorChange: (cursor: string | null) => void;
+    handleGlobalSearch: (term: string) => void;
+    handleApplyQuickView: (params: Record<string, unknown>) => void;
+    handleApplyCustomSearch: (search: string) => void;  // Navigate with custom search string
+}
+```
+
+**`DataTableState` interface:**
+
+```tsx
+interface DataTableState {
+    sorting: SortingState;
+    columnFilters: ColumnFiltersState;
+    columnVisibility: VisibilityState;
+    columnOrder: ColumnOrderState;
+    rowSelection: RowSelectionState;
+    globalSearch: string;
+    page: number;
+    perPage: number;
+}
+```
 
 Use this hook to get full table control with TanStack Table integration, without rendering the `<DataTable>` component:
 
@@ -2040,9 +2191,12 @@ test('product table has correct columns', function () {
     DataTableTestHelper::for(ProductDataTable::class)
         ->assertColumnExists('id')
         ->assertColumnExists('name')
+        ->assertColumnNotExists('secret')
         ->assertColumnType('price', 'currency')
         ->assertSortable('name')
+        ->assertNotSortable('photo')
         ->assertFilterable('status')
+        ->assertNotFilterable('id')
         ->assertEditable('price')
         ->assertVisible('name')
         ->assertHidden('internal_notes')
@@ -2050,8 +2204,6 @@ test('product table has correct columns', function () {
         ->assertColumnGroup('email', 'Contact')
         ->assertColumnCount(8)
         ->assertDefaultSort('-created_at')
-        ->assertNotSortable('photo')
-        ->assertNotFilterable('id')
         ->assertExportEnabled()
         ->assertInlineEditEnabled()
         ->assertSelectAllEnabled()
@@ -2061,6 +2213,34 @@ test('product table has correct columns', function () {
         ->assertHasQuickViews(3);
 });
 ```
+
+#### Full Assertion API
+
+| Method | Description |
+|--------|-------------|
+| `for(string $class)` | Create helper for a DataTable class |
+| `assertColumnExists(string)` | Column with ID exists |
+| `assertColumnNotExists(string)` | Column does NOT exist |
+| `assertColumnCount(int)` | Exact column count |
+| `assertColumnType(string, string)` | Column has expected type |
+| `assertSortable(string)` | Column is sortable |
+| `assertNotSortable(string)` | Column is NOT sortable |
+| `assertFilterable(string)` | Column is filterable |
+| `assertNotFilterable(string)` | Column is NOT filterable |
+| `assertEditable(string)` | Column is inline-editable |
+| `assertVisible(string)` | Column is visible by default |
+| `assertHidden(string)` | Column is hidden by default |
+| `assertHasSummary(string, ?string)` | Column has a summary (optionally of a specific type) |
+| `assertColumnGroup(string, string)` | Column belongs to a group |
+| `assertDefaultSort(string)` | Default sort matches (e.g., `'-created_at'`) |
+| `assertExportEnabled()` | DataTable uses `HasExport` trait |
+| `assertInlineEditEnabled()` | DataTable uses `HasInlineEdit` trait |
+| `assertSelectAllEnabled()` | DataTable uses `HasSelectAll` trait |
+| `assertToggleEnabled()` | DataTable uses `HasToggle` trait |
+| `assertReorderEnabled()` | DataTable uses `HasReorder` trait |
+| `assertImportEnabled()` | DataTable uses `HasImport` trait |
+| `assertHasQuickViews(int)` | At least N quick views defined |
+| `getColumns()` | Returns `Column[]` for custom assertions |
 
 ---
 
