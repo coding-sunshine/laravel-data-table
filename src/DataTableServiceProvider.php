@@ -92,6 +92,10 @@ class DataTableServiceProvider extends ServiceProvider
             Route::post($prefix . '/import/{table}', DataTableImportController::class)
                 ->name('data-table.import');
 
+            // Export status endpoint (for queued exports)
+            Route::get($prefix . '/export-status', [DataTableExportController::class, 'status'])
+                ->name('data-table.export-status');
+
             // Saved views API
             Route::get($prefix . '/saved-views/{tableName}', [SavedViewController::class, 'index'])
                 ->name('data-table.saved-views.index');

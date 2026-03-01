@@ -25,6 +25,11 @@ class DataTableToggleController
 
         abort_unless((bool) $class, 404, "Unknown table: {$table}");
 
+        // Authorization check
+        if (method_exists($class, 'tableAuthorize')) {
+            abort_unless($class::tableAuthorize('toggle', $request), 403, 'You are not authorized to toggle this table.');
+        }
+
         $request->validate([
             'column' => 'required|string|max:255',
             'value' => 'required',
@@ -58,7 +63,17 @@ class DataTableToggleController
             return response()->json(['error' => 'Column is not toggleable.'], 422);
         }
 
-        $model = $class::tableBaseQuery()->findOrFail($id);
+        // Soft delete safeguard: use withTrashed query if soft deletes enabled
+        $query = $class::tableBaseQuery();
+        if ($class::tableSoftDeletesEnabled() && method_exists($query->getModel(), 'trashed')) {
+            $model = $query->withTrashed()->findOrFail($id);
+            if ($model->trashed()) {
+                return response()->json(['error' => 'Cannot modify a trashed record.'], 422);
+            }
+        } else {
+            $model = $query->findOrFail($id);
+        }
+
         $class::handleToggle($model, $columnId, $value);
 
         return response()->json(['success' => true, 'value' => $value]);

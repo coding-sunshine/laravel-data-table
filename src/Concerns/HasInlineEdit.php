@@ -5,6 +5,7 @@ namespace Machour\DataTable\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Machour\DataTable\Columns\Column;
 
 trait HasInlineEdit
 {
@@ -31,14 +32,31 @@ trait HasInlineEdit
     }
 
     /**
-     * Validate the incoming value for an inline edit.
-     * Override to add custom validation rules per column.
+     * Auto-generate validation rules from column type.
+     * Override to customize validation per column.
      *
      * @return array<string, mixed>
      */
     public static function tableInlineEditRules(string $columnId): array
     {
-        return ['value' => 'required'];
+        $column = collect(static::tableColumns())->first(fn (Column $col) => $col->id === $columnId);
+
+        if (! $column) {
+            return ['value' => 'required'];
+        }
+
+        return match ($column->type) {
+            'number' => ['value' => 'required|numeric'],
+            'currency' => ['value' => 'required|numeric|min:0'],
+            'percentage' => ['value' => 'required|numeric|min:0|max:100'],
+            'date' => ['value' => 'required|date'],
+            'email' => ['value' => 'required|email|max:255'],
+            'phone' => ['value' => 'required|string|max:50'],
+            'link' => ['value' => 'required|url|max:2048'],
+            'boolean' => ['value' => 'required|boolean'],
+            'select' => ['value' => 'required|string|max:255'],
+            default => ['value' => 'required|string|max:65535'],
+        };
     }
 
     /**
@@ -58,7 +76,17 @@ trait HasInlineEdit
         $request->validate(static::tableInlineEditRules($columnId));
 
         $modelClass = static::tableInlineEditModel();
-        $model = $modelClass::findOrFail($id);
+
+        // Soft delete safeguard: prevent editing trashed records
+        if (static::tableSoftDeletesEnabled() && method_exists($modelClass, 'trashed')) {
+            $model = $modelClass::withTrashed()->findOrFail($id);
+            if ($model->trashed()) {
+                return response()->json(['error' => 'Cannot edit a trashed record.'], 422);
+            }
+        } else {
+            $model = $modelClass::findOrFail($id);
+        }
+
         $model->update([$columnId => $value]);
 
         return response()->json(['success' => true, 'value' => $model->{$columnId}]);

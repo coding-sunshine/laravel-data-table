@@ -91,13 +91,24 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Undo/redo** — Stack-based undo/redo for inline edits with Ctrl+Z / Ctrl+Y
 - **Boolean toggle switch** — One-click switch to toggle boolean columns inline (uses Inertia `router.patch`)
 - **Inline row creation** — "Add row" button with inline form for creating new records
-- **Rate limiting** — Configurable per-minute limits on inline edits and toggles (default: 60/min)
+- **Auto-validation by type** — Inline edit rules auto-generated from column type (e.g., `email` → `required|email|max:255`)
+- **Toast notifications** — Success/error toasts with auto-dismiss on inline edits and toggles
+- **Rate limiting** — Configurable per-minute limits on inline edits, toggles, exports, and imports
+
+### Security
+
+- **Authorization hooks** — Override `tableAuthorize($action, $request)` to gate export, import, inline edit, and toggle actions
+- **HTML sanitization** — All rendered HTML content is sanitized via DOMPurify (with regex fallback)
+- **Soft delete safeguards** — Toggle and inline edit controllers prevent mutation of trashed/soft-deleted records
+- **Rate limiting** — Per-user rate limiting on all mutation endpoints (configurable per action)
 
 ### Data Import/Export
 
 - **XLSX/CSV/PDF export** — Via Maatwebsite Excel with optional queued exports and DomPDF
 - **Export with progress** — Spinner and blob download instead of raw navigation
+- **Export status polling** — Dedicated `/export-status` endpoint for polling queued export completion
 - **CSV/Excel import** — Upload dialog with file validation and error handling
+- **Export/import rate limiting** — Configurable per-minute limits (default: 10 exports, 5 imports)
 
 ### Row Features
 
@@ -116,20 +127,27 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 - **Keyboard navigation** — Arrow keys, Enter, Escape, Space for accessible table interaction
 - **Keyboard shortcuts overlay** — Press `?` to see all available shortcuts
+- **Ctrl+F search focus** — Press `Ctrl+F` / `Cmd+F` to jump to the search input
 - **ARIA attributes** — `role="grid"`, `aria-sort`, `aria-rowindex`, `aria-selected` on table elements
+- **Toggle ARIA** — `role="switch"`, `aria-checked`, `aria-label` on boolean toggle cells
+- **Drag handle ARIA** — `aria-label="Drag to reorder"` on row reorder handles
+- **Accessible toasts** — `aria-live="polite"` + `role="status"` on toast notification container
 - **Print-friendly** — `@media print` stylesheet with print button
 
 ### Responsive
 
 - **Mobile card layout** — Automatic card-based layout on small screens via `mobileBreakpoint` prop
 - **Responsive column collapse** — Auto-hide columns on small screens based on priority levels
+- **Mobile toolbar stacking** — Toolbar wraps gracefully on small screens with `flex-wrap` and `min-w-0`
 
 ### Real-time & Performance
 
 - **Real-time updates** — Laravel Echo integration for auto-refreshing on server events
 - **Auto-refresh polling** — Timer-based automatic data refresh at configurable intervals
 - **Deferred/lazy loading** — Render table shell immediately, load data asynchronously
-- **Virtual scrolling** — Option for virtualized rendering of large datasets
+- **Virtual scrolling** — Lightweight built-in `useVirtualRows` hook — no external dependencies needed
+- **Lazy detail rows** — Detail row content only renders when expanded (inline) or opened (modal/drawer)
+- **Undo/redo cleanup** — Undo and redo stacks are automatically cleared on component unmount to prevent memory leaks
 - **Persist state** — Save filters/sort/pagination to localStorage across page reloads
 - **Partial reloads** — Inertia.js partial reload support for optimized data fetching
 - **Inertia v2 prefetching** — Pagination buttons prefetch the next/prev page on hover for instant navigation
@@ -385,6 +403,7 @@ Extend this class for each model. It extends `Spatie\LaravelData\Data`, so it's 
 | `resolveCascadingFilterOptions(column, parentValues)` | No | Return cascading options |
 | `tableDetailDisplay()` | No | Detail row display mode: `'inline'`, `'modal'`, `'drawer'`. Default: `'inline'` |
 | `tableEagerLoad()` | No | Auto-derived from column `relation` fields. Override to add extra relationships |
+| `tableAuthorize(string $action, Request $request)` | No | Authorization gate for actions (`export`, `import`, `inline_edit`, `toggle`). Return `false` to deny. Default: `true` |
 | `buildFilteredQuery(?Request, ?prefix)` | Inherited | Builds a filtered+sorted QueryBuilder (shared by table, export, select-all) |
 | `makeTable(?Request, ?string)` | Inherited | Builds the `DataTableResponse`. Optional `$prefix` for multi-table pages |
 
@@ -664,6 +683,17 @@ class ProductDataTable extends AbstractDataTable
     }
 
     // Optional: custom validation per column
+    // If not overridden, rules are auto-generated from column type:
+    //   number → required|numeric
+    //   currency → required|numeric|min:0
+    //   percentage → required|numeric|min:0|max:100
+    //   date → required|date
+    //   email → required|email|max:255
+    //   phone → required|string|max:50
+    //   link → required|url|max:2048
+    //   boolean → required|boolean
+    //   select → required|string|max:255
+    //   default → required|string|max:65535
     public static function tableInlineEditRules(string $columnId): array
     {
         return match ($columnId) {
@@ -1116,7 +1146,7 @@ All options default to sensible values. Only override what you need:
         shortcutsOverlay: true,      // ? key shows keyboard shortcuts
         exportProgress: true,        // Show spinner during export download
         emptyStateIllustration: true, // Show illustration when table is empty
-        virtualScrolling: true,      // Virtualized rendering for large datasets
+        virtualScrolling: true,      // Lightweight built-in row virtualization (no external deps)
 
         // Enabled by default:
         loading: true,               // Skeleton during Inertia navigation
@@ -1135,6 +1165,7 @@ When `keyboardNavigation` is enabled:
 | `Space` | Toggle row selection |
 | `Escape` | Clear focus and selection |
 | `/` | Focus the search input |
+| `Ctrl+F` | Focus the search input (prevents browser find) |
 | `?` | Open keyboard shortcuts overlay |
 | `Ctrl+Z` | Undo last inline edit |
 | `Ctrl+Y` | Redo last undone edit |
@@ -1812,17 +1843,63 @@ Toggle switches and file imports use `router.patch()` / `router.post()` instead 
 
 ## Rate Limiting
 
-Inline edit and toggle endpoints include configurable rate limiting:
+All mutation endpoints include configurable rate limiting:
 
 ```php
 // config/data-table.php
 'rate_limit' => [
     'inline_edit' => 60,  // 60 requests per minute per user
     'toggle' => 60,       // 60 requests per minute per user
+    'export' => 10,       // 10 exports per minute per user
+    'import' => 5,        // 5 imports per minute per user
 ],
 ```
 
 Set to `0` to disable rate limiting for a specific endpoint. Rate limiting is keyed per user (or per IP for unauthenticated requests) per table.
+
+---
+
+## Authorization
+
+Override `tableAuthorize()` to gate actions per table:
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tableAuthorize(string $action, \Illuminate\Http\Request $request): bool
+    {
+        return match ($action) {
+            'export' => $request->user()?->can('export products'),
+            'import' => $request->user()?->hasRole('admin'),
+            'inline_edit' => $request->user()?->can('edit products'),
+            'toggle' => $request->user()?->can('edit products'),
+            default => true,
+        };
+    }
+}
+```
+
+The `$action` parameter is one of: `export`, `import`, `inline_edit`, `toggle`. Return `false` to abort with a 403.
+
+---
+
+## HTML Sanitization
+
+All HTML content rendered in cells (via `html: true` or `renderCell`) is sanitized to prevent XSS:
+
+- **DOMPurify** — If `DOMPurify` is available on `window`, it's used automatically
+- **Fallback** — A built-in regex strips `<script>`, `<iframe>`, `<object>`, `<embed>`, `javascript:` URIs, and inline event handlers
+
+To use DOMPurify (recommended for production):
+
+```bash
+npm install dompurify
+```
+
+```tsx
+import DOMPurify from "dompurify";
+// DOMPurify is auto-detected on window — no extra config needed
+```
 
 ---
 
@@ -1876,6 +1953,8 @@ return [
     'rate_limit' => [
         'inline_edit' => 60,               // Max inline edits per minute per user (0 = disabled)
         'toggle' => 60,                    // Max toggle requests per minute per user (0 = disabled)
+        'export' => 10,                    // Max exports per minute per user (0 = disabled)
+        'import' => 5,                     // Max imports per minute per user (0 = disabled)
     ],
     'audit_table' => 'data_table_audit_log', // Database table for audit log storage
 ];
@@ -1898,6 +1977,7 @@ The service provider registers these routes automatically:
 | GET | `/data-table/detail/{table}/{id}` | Fetch detail/expandable row data |
 | GET | `/data-table/filter-options/{table}/{column}` | Async filter options |
 | GET | `/data-table/cascading-options/{table}/{column}` | Cascading filter options |
+| GET | `/data-table/export-status` | Poll queued export completion |
 | GET | `/data-table/saved-views/{tableName}` | List saved views |
 | POST | `/data-table/saved-views/{tableName}` | Create saved view |
 | PUT | `/data-table/saved-views/{tableName}/{id}` | Update saved view |

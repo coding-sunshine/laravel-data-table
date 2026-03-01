@@ -5,6 +5,7 @@ namespace Machour\DataTable\Http\Controllers;
 use Machour\DataTable\AbstractDataTable;
 use Machour\DataTable\DataTableExport;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DataTableExportController
@@ -27,6 +28,26 @@ class DataTableExportController
 
         abort_unless((bool) $class, 404, "Unknown table: {$table}");
         abort_unless($class::tableExportEnabled(), 403, 'Export is not enabled for this table.');
+
+        // Authorization check
+        if (method_exists($class, 'tableAuthorize')) {
+            abort_unless($class::tableAuthorize('export', $request), 403, 'You are not authorized to export this table.');
+        }
+
+        // Rate limiting
+        $maxAttempts = config('data-table.rate_limit.export', 10);
+        if ($maxAttempts > 0) {
+            $key = 'dt-export:' . ($request->user()?->id ?? $request->ip()) . ':' . $table;
+            if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+                $retryAfter = RateLimiter::availableIn($key);
+
+                return response()->json([
+                    'error' => 'Too many export requests. Please try again later.',
+                    'retry_after' => $retryAfter,
+                ], 429);
+            }
+            RateLimiter::hit($key, 60);
+        }
 
         $format = $request->get('format', 'xlsx');
         abort_unless(in_array($format, ['xlsx', 'csv', 'pdf'], true), 422, 'Invalid format.');
@@ -81,5 +102,26 @@ class DataTableExportController
             'path' => $path,
             'message' => 'Export is being processed. You will be notified when it is ready.',
         ]);
+    }
+
+    /**
+     * Check the status of a queued export.
+     */
+    public function status(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $path = $request->get('path');
+        abort_unless($path, 422, 'Missing export path.');
+
+        $disk = \Illuminate\Support\Facades\Storage::disk(config('data-table.export.disk', 'local'));
+
+        if ($disk->exists($path)) {
+            return response()->json([
+                'ready' => true,
+                'url' => $disk->url($path),
+                'size' => $disk->size($path),
+            ]);
+        }
+
+        return response()->json(['ready' => false]);
     }
 }
