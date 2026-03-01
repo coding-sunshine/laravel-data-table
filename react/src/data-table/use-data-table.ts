@@ -62,7 +62,7 @@ function saveColumnOrder(tableName: string, order: ColumnOrderState) {
     safeSetItem(ORDER_STORAGE_PREFIX + tableName, JSON.stringify(order));
 }
 
-interface UseDataTableOptions<TData> {
+export interface UseDataTableOptions<TData> {
     tableData: DataTableResponse<TData>;
     tableName: string;
     columnDefs: ColumnDef<TData>[];
@@ -72,6 +72,37 @@ interface UseDataTableOptions<TData> {
     columnResizing?: boolean;
     columnSizing?: Record<string, number>;
     onColumnSizingChange?: (sizing: Record<string, number>) => void;
+    /** Called whenever table state changes (sorting, filtering, pagination, visibility, etc.) */
+    onStateChange?: (state: DataTableState) => void;
+}
+
+export interface DataTableState {
+    sorting: SortingState;
+    columnFilters: ColumnFiltersState;
+    columnVisibility: VisibilityState;
+    columnOrder: ColumnOrderState;
+    rowSelection: RowSelectionState;
+    globalSearch: string;
+    page: number;
+    perPage: number;
+}
+
+export interface UseDataTableReturn<TData> {
+    table: ReturnType<typeof useReactTable<TData>>;
+    meta: DataTableResponse<TData>["meta"];
+    columnVisibility: VisibilityState;
+    columnOrder: ColumnOrderState;
+    setColumnOrder: (order: ColumnOrderState) => void;
+    rowSelection: RowSelectionState;
+    setRowSelection: (selection: RowSelectionState) => void;
+    applyColumns: (columnIds: string[]) => void;
+    handleSort: (columnId: string, multi: boolean) => void;
+    handlePageChange: (page: number) => void;
+    handlePerPageChange: (perPage: number) => void;
+    handleCursorChange: (cursor: string | null) => void;
+    handleGlobalSearch: (term: string) => void;
+    handleApplyQuickView: (params: Record<string, unknown>) => void;
+    handleApplyCustomSearch: (search: string) => void;
 }
 
 export function useDataTable<TData>({
@@ -84,7 +115,8 @@ export function useDataTable<TData>({
     columnResizing = false,
     columnSizing: externalColumnSizing,
     onColumnSizingChange,
-}: UseDataTableOptions<TData>) {
+    onStateChange,
+}: UseDataTableOptions<TData>): UseDataTableReturn<TData> {
     const { meta } = tableData;
 
     // Prefixed param keys for multi-table support
@@ -318,6 +350,25 @@ export function useDataTable<TData>({
     useEffect(() => {
         saveColumnOrder(tableName, columnOrder);
     }, [tableName, columnOrder]);
+
+    // Notify parent of any state change (improvement #6: onStateChange callback)
+    const searchKeyState = prefix ? `${prefix}_search` : "search";
+    const currentSearchForState = typeof window !== "undefined"
+        ? new URL(window.location.href).searchParams.get(searchKeyState) ?? "" : "";
+
+    useEffect(() => {
+        if (!onStateChange) return;
+        onStateChange({
+            sorting,
+            columnFilters,
+            columnVisibility,
+            columnOrder,
+            rowSelection,
+            globalSearch: currentSearchForState,
+            page: meta.currentPage,
+            perPage: meta.perPage,
+        });
+    }, [onStateChange, sorting, columnFilters, columnVisibility, columnOrder, rowSelection, currentSearchForState, meta.currentPage, meta.perPage]);
 
     const handleApplyCustomSearch = useCallback(
         (search: string) => {

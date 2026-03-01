@@ -4,6 +4,7 @@ namespace Machour\DataTable;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Machour\DataTable\Console\Commands\AuditReport;
 use Machour\DataTable\Console\Commands\GenerateTranslations;
 use Machour\DataTable\Console\Commands\GenerateTypeScript;
 use Machour\DataTable\Console\Commands\MakeDataTable;
@@ -27,6 +28,7 @@ class DataTableServiceProvider extends ServiceProvider
                 MakeDataTable::class,
                 GenerateTypeScript::class,
                 GenerateTranslations::class,
+                AuditReport::class,
             ]);
 
             $this->publishesMigrations([

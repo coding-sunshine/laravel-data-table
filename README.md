@@ -8,7 +8,8 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 - **Single-file backend** — One PHP class per model acts as both DTO and table configuration
 - **Server-side everything** — Sorting, filtering, pagination handled by Spatie QueryBuilder
-- **14 column types** — text, number, date, option, multiOption, boolean, image, badge, currency, percentage, link, email, phone
+- **17 column types** — text, number, date, option, multiOption, boolean, image, badge, currency, percentage, link, email, phone, icon, color, select
+- **Relational data** — `internalName` + `relation` for dot-notation columns with auto eager loading
 - **Operator-based filters** — URL format `filter[price]=gte:1000` with 14 operators
 - **3 pagination modes** — Standard, simple (no total count), and cursor-based
 - **URL-driven state** — Everything is bookmarkable — filters, sorts, pagination, search
@@ -37,12 +38,28 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Column header context menu** — Right-click for sort, hide, pin/unpin actions
 - **Responsive column collapse** — Auto-hide columns on small screens based on priority levels
 - **Fluent column builder** — `ColumnBuilder::make('price', 'Price')->currency('EUR')->sortable()->build()`
+- **Column prefix/suffix** — Add text before/after cell values (e.g., `->prefix('$')`, `->suffix(' kg')`)
+- **Column tooltips** — Hover text on cells, static or dynamic from another column (`->tooltip('description')`)
+- **Column descriptions** — Small text below column header labels (`->description('Before tax')`)
+- **Line clamping** — CSS line-clamp to truncate long text (`->lineClamp(2)`)
+- **Icon columns** — Map values to icon names (`->iconColumn(['active' => 'check-circle'])`)
+- **Color columns** — Display color swatches with hex value (`->color()`)
+- **Select columns** — Inline dropdown editing (`->select([['label' => 'Active', 'value' => 'active']])`)
+- **Stacked/composite columns** — Show multiple fields vertically (`->stacked(['name', 'email'])`)
+- **Row index column** — Auto-incrementing row number (`->rowIndex()`)
+- **Conditional cell colors** — Map values to color classes (`->colorMap(['active' => 'text-green-600'])`)
+- **Icon mapping** — Map values to icon names for display (`->iconMap(['yes' => 'check'])`)
+- **HTML/Markdown rendering** — Render cell content as sanitized HTML or Markdown (`->html()`, `->markdown()`)
+- **Bulleted lists** — Display array values as bullet points (`->bulleted()`)
 
 ### Data Display
 
 - **Footer aggregations** — Per-page computed values (sum, avg, etc.) with custom rendering
-- **Full-dataset summaries** — Built-in sum/count/avg/min/max across the entire filtered dataset
+- **Full-dataset summaries** — Built-in sum/count/avg/min/max/range across the entire filtered dataset
+- **Range summarizer** — Show min–max range for numeric columns (`->summary('range')`)
 - **Row grouping** — Group rows by any column with collapsible sections
+- **User-selectable grouping** — Dropdown in toolbar to pick which column to group by (`groupByOptions` prop)
+- **Date grouping** — Group rows by day, week, month, or year with i18n labels
 - **Conditional rules** — Server-side declarative rules for row/cell styling
 - **Cell copy to clipboard** — Hover-to-copy button on any cell
 - **Density toggle** — Switch between compact, comfortable, and spacious row heights
@@ -53,16 +70,28 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Bulk actions** — Checkbox selection with configurable action buttons and confirmation dialogs
 - **Server-side selection** — "Select all X matching items" across pages with backend ID resolution
 - **Row actions** — Per-row dropdown menu with visibility, variant, and confirmation support
+- **Action groups** — Nested submenu dropdowns for organizing related actions (`group` property)
+- **Forms-in-actions** — Modal forms with text, number, select, textarea, and checkbox fields (`form` property)
+- **Header actions** — Custom buttons in the table toolbar (e.g., "Create New") via `headerActions` prop
+- **Replicate action** — Duplicate a row with a single click (i18n label: "Duplicate")
+- **Force-delete/Restore** — Soft delete management actions with confirmation dialogs
 - **Shift+click range selection** — Select a range of rows by holding Shift
 - **Radio button selection** — Single-select mode via `selectionMode="radio"`
 - **Row selection persistence** — Selections persist across page navigation via localStorage
+
+### Filter UX
+
+- **Filter chips** — Removable badge chips above the table showing active filters with one-click clear
+- **Active filter indicators** — Dot indicators on column headers when filters are active
 
 ### Editing
 
 - **Inline editing** — Double-click to edit cells with server-side PATCH save
 - **Batch inline editing** — Edit a column value across multiple selected rows at once
 - **Undo/redo** — Stack-based undo/redo for inline edits with Ctrl+Z / Ctrl+Y
-- **Boolean toggle switch** — One-click switch to toggle boolean columns inline
+- **Boolean toggle switch** — One-click switch to toggle boolean columns inline (uses Inertia `router.patch`)
+- **Inline row creation** — "Add row" button with inline form for creating new records
+- **Rate limiting** — Configurable per-minute limits on inline edits and toggles (default: 60/min)
 
 ### Data Import/Export
 
@@ -73,7 +102,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 ### Row Features
 
 - **Row drag-and-drop reorder** — Drag rows to reorder with server-side position persistence
-- **Detail / expandable rows** — Click to expand nested content per row
+- **Detail rows** — Expandable inline rows, centered modal dialog, or side drawer/sheet
 - **Row links / click handlers** — Make rows clickable with href links or custom callbacks
 - **Soft deletes toggle** — Show/hide trashed records with a single click
 - **Row data attributes** — Add custom `data-*` attributes to rows for styling/testing
@@ -90,6 +119,11 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **ARIA attributes** — `role="grid"`, `aria-sort`, `aria-rowindex`, `aria-selected` on table elements
 - **Print-friendly** — `@media print` stylesheet with print button
 
+### Responsive
+
+- **Mobile card layout** — Automatic card-based layout on small screens via `mobileBreakpoint` prop
+- **Responsive column collapse** — Auto-hide columns on small screens based on priority levels
+
 ### Real-time & Performance
 
 - **Real-time updates** — Laravel Echo integration for auto-refreshing on server events
@@ -98,7 +132,9 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Virtual scrolling** — Option for virtualized rendering of large datasets
 - **Persist state** — Save filters/sort/pagination to localStorage across page reloads
 - **Partial reloads** — Inertia.js partial reload support for optimized data fetching
+- **Inertia v2 prefetching** — Pagination buttons prefetch the next/prev page on hover for instant navigation
 - **Loading state** — Skeleton rows and spinner during Inertia navigation
+- **Inertia router for mutations** — Toggle and import use `router.patch`/`router.post` instead of raw `fetch()`
 
 ### Internationalization
 
@@ -111,10 +147,15 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Artisan generator** — `php artisan make:data-table Product --export --inline-edit --all`
 - **TypeScript generation** — `php artisan data-table:types` generates `.d.ts` from PHP classes
 - **Translation generation** — `php artisan data-table:translations --lang=es` generates i18n files
+- **Audit report** — `php artisan data-table:audit-report --days=7 --format=table` CLI report
 - **Testing helpers** — `DataTableTestHelper::for(Table::class)->assertColumnExists('x')->assertSortable('x')`
 - **Publishable config** — `php artisan vendor:publish --tag=data-table-config`
 - **Audit log** — `HasAuditLog` trait records inline edits, toggles, reorders, and bulk actions
 - **Layout slots** — Composable slot overrides for toolbar, pagination, and surrounding content
+- **Barrel exports** — First-class `index.ts` barrel with all hooks, components, and types
+- **Composable hooks** — `useDataTable` and `useDataTableFilters` for headless usage without `<DataTable>`
+- **JSX column API** — `<DataTable.Column id="name" renderCell={...} />` declarative column configuration
+- **State change callback** — `onStateChange` event callback for reacting to any table state change
 
 ## Requirements
 
@@ -203,6 +244,7 @@ php artisan make:data-table Product --inline-edit       # Include HasInlineEdit 
 php artisan make:data-table Product --select-all        # Include HasSelectAll trait
 php artisan make:data-table Product --reorder           # Include HasReorder trait
 php artisan make:data-table Product --import            # Include HasImport trait
+php artisan make:data-table Product --toggle            # Include HasToggle trait
 php artisan make:data-table Product --soft-deletes      # Enable soft deletes
 php artisan make:data-table Product --detail-rows       # Enable detail rows
 php artisan make:data-table Product --searchable=name   # Searchable columns
@@ -341,6 +383,9 @@ Extend this class for each model. It extends `Spatie\LaravelData\Data`, so it's 
 | `tableEnumFilters()` | No | Map column IDs to BackedEnum classes |
 | `tableCascadingFilters()` | No | Map child → parent column IDs |
 | `resolveCascadingFilterOptions(column, parentValues)` | No | Return cascading options |
+| `tableDetailDisplay()` | No | Detail row display mode: `'inline'`, `'modal'`, `'drawer'`. Default: `'inline'` |
+| `tableEagerLoad()` | No | Auto-derived from column `relation` fields. Override to add extra relationships |
+| `buildFilteredQuery(?Request, ?prefix)` | Inherited | Builds a filtered+sorted QueryBuilder (shared by table, export, select-all) |
 | `makeTable(?Request, ?string)` | Inherited | Builds the `DataTableResponse`. Optional `$prefix` for multi-table pages |
 
 ### `Column`
@@ -362,9 +407,24 @@ new Column(
     editable: true,          // Enable inline editing
     currency: 'EUR',         // Currency code for type=currency
     locale: 'fr-FR',         // Locale for formatting
-    summary: 'sum',          // Aggregation: 'sum', 'count', 'avg', 'min', 'max'
+    summary: 'sum',          // Aggregation: 'sum', 'count', 'avg', 'min', 'max', 'range'
     toggleable: true,        // Boolean toggle switch
     responsivePriority: 3,   // Auto-hide on small screens (lower = hidden first)
+    internalName: 'user.name', // Database column path (for relational/aliased columns)
+    relation: 'user',        // Relationship to eager load
+    prefix: '$',             // Text before cell value
+    suffix: ' USD',          // Text after cell value
+    tooltip: 'description',  // Hover tooltip (static text or column ID)
+    description: 'Before tax', // Text below column header
+    lineClamp: 2,            // CSS line clamp for long text
+    iconMap: ['active' => '✓'], // Map values to icons (for type=icon)
+    colorMap: ['high' => 'text-red-600'], // Map values to CSS classes
+    selectOptions: [['label' => 'A', 'value' => 'a']], // For type=select
+    html: false,             // Render cell as HTML
+    markdown: false,         // Render cell as Markdown
+    bulleted: false,         // Display arrays as bullet lists
+    stacked: ['name', 'email'], // Stack multiple columns vertically
+    rowIndex: false,         // Auto-incrementing row number
 );
 ```
 
@@ -388,6 +448,25 @@ public static function tableColumns(): array
         ColumnBuilder::make('email', 'Email')->email()->filterable()->responsivePriority(2)->build(),
         ColumnBuilder::make('is_active', 'Active')->boolean()->toggleable()->build(),
         ColumnBuilder::make('photo', 'Photo')->image()->hidden()->build(),
+
+        // Filament-inspired column features:
+        ColumnBuilder::make('row_num', '#')->rowIndex()->build(),
+        ColumnBuilder::make('weight', 'Weight')->number()->prefix('#')->suffix(' kg')->build(),
+        ColumnBuilder::make('user', 'User')->stacked(['name', 'email'])->build(),
+        ColumnBuilder::make('status_icon', 'Status')
+            ->iconColumn(['active' => 'check-circle', 'inactive' => 'x-circle'])->build(),
+        ColumnBuilder::make('brand_color', 'Color')->color()->build(),
+        ColumnBuilder::make('priority', 'Priority')->select([
+            ['label' => 'Low', 'value' => 'low'],
+            ['label' => 'High', 'value' => 'high'],
+        ])->build(),
+        ColumnBuilder::make('bio', 'Bio')->text()->lineClamp(2)->build(),
+        ColumnBuilder::make('score', 'Score')
+            ->number()->colorMap(['high' => 'text-green-600', 'low' => 'text-red-600'])
+            ->tooltip('Performance score')->description('Out of 100')->build(),
+        ColumnBuilder::make('notes', 'Notes')->text()->markdown()->build(),
+        ColumnBuilder::make('tags', 'Tags')->text()->bulleted()->build(),
+        ColumnBuilder::make('revenue', 'Revenue')->currency('USD')->summary('range')->build(),
     ];
 }
 ```
@@ -409,6 +488,9 @@ public static function tableColumns(): array
 | `link` | URL | Clickable link with external icon |
 | `email` | Email address | Clickable `mailto:` link |
 | `phone` | Phone number | Clickable `tel:` link |
+| `icon` | Icon mapping | Displays icon name from `iconMap` based on cell value |
+| `color` | Color swatch | Shows colored square with hex code |
+| `select` | Inline dropdown | Editable select dropdown with `selectOptions` |
 
 #### Badge Variants
 
@@ -420,6 +502,105 @@ public static function tableColumns(): array
 | `danger` | Red |
 | `info` | Blue |
 | `secondary` | Muted gray |
+
+#### Column Modifiers
+
+| Method | Description | Example |
+|--------|-------------|---------|
+| `prefix(string)` | Text before cell value | `->prefix('$')` |
+| `suffix(string)` | Text after cell value | `->suffix(' kg')` |
+| `tooltip(string)` | Hover tooltip (static or column ID) | `->tooltip('description')` |
+| `description(string)` | Text below column header | `->description('Before tax')` |
+| `lineClamp(int)` | Truncate to N lines | `->lineClamp(2)` |
+| `colorMap(array)` | Value → CSS class mapping | `->colorMap(['active' => 'text-green-600'])` |
+| `iconMap(array)` | Value → icon name mapping | `->iconMap(['yes' => 'check'])` |
+| `stacked(array)` | Stack multiple columns vertically | `->stacked(['name', 'email'])` |
+| `rowIndex()` | Auto-incrementing row number | `->rowIndex()` |
+| `html()` | Render as sanitized HTML | `->html()` |
+| `markdown()` | Render as Markdown | `->markdown()` |
+| `bulleted()` | Display array as bullet list | `->bulleted()` |
+
+#### Header Actions
+
+Add custom action buttons to the table toolbar:
+
+```tsx
+<DataTable
+  tableData={data}
+  tableName="products"
+  headerActions={[
+    { label: "Create New", icon: Plus, onClick: () => router.visit('/products/create') },
+    { label: "Sync", icon: RefreshCw, variant: "outline", onClick: handleSync },
+  ]}
+/>
+```
+
+#### Action Groups (Nested Submenus)
+
+Organize row actions into nested dropdown groups:
+
+```tsx
+<DataTable
+  actions={[
+    { label: "Edit", onClick: (row) => router.visit(`/products/${row.id}/edit`) },
+    {
+      label: "Status",
+      group: [
+        { label: "Activate", onClick: (row) => activate(row) },
+        { label: "Deactivate", onClick: (row) => deactivate(row) },
+      ],
+    },
+    { label: "Delete", variant: "destructive", confirm: true, onClick: (row) => destroy(row) },
+  ]}
+/>
+```
+
+#### Forms-in-Actions (Modal Forms)
+
+Attach a form to a row action — a modal dialog will open with the specified fields:
+
+```tsx
+<DataTable
+  actions={[
+    {
+      label: "Change Status",
+      form: [
+        { name: "status", label: "New Status", type: "select", options: [
+          { label: "Active", value: "active" },
+          { label: "Inactive", value: "inactive" },
+        ]},
+        { name: "reason", label: "Reason", type: "textarea", required: true },
+      ],
+      onClick: (row) => {
+        const formValues = (row as any)._formValues;
+        updateStatus(row.id, formValues.status, formValues.reason);
+      },
+    },
+  ]}
+/>
+```
+
+#### User-Selectable Grouping
+
+Allow users to pick which column to group rows by:
+
+```tsx
+<DataTable
+  tableData={data}
+  tableName="orders"
+  groupByOptions={["status", "category", "customer_name"]}
+  onGroupByChange={(columnId) => console.log("Grouped by:", columnId)}
+/>
+```
+
+#### Range Summarizer
+
+Show a min–max range in the summary footer:
+
+```php
+ColumnBuilder::make('price', 'Price')->currency('USD')->summary('range')->build(),
+// Renders: "Range $50 – $500" in the summary row
+```
 
 ### Traits
 
@@ -447,6 +628,24 @@ DataTableExportController::register('products', ProductDataTable::class);
 ```
 
 Three formats supported: XLSX, CSV, PDF. Queued exports available via config.
+
+Dynamic filenames based on active filters:
+
+```php
+public static function tableExportFilename(): string|\Closure
+{
+    return fn (array $filters) => 'products-' . ($filters['status'] ?? 'all') . '-' . date('Y-m-d');
+}
+```
+
+Override the export query to customize what gets exported:
+
+```php
+public static function makeExportQuery(?\Illuminate\Http\Request $request = null): \Spatie\QueryBuilder\QueryBuilder
+{
+    return parent::makeExportQuery($request)->where('is_active', true);
+}
+```
 
 #### HasInlineEdit
 
@@ -495,6 +694,43 @@ DataTableInlineEditController::register('products', ProductDataTable::class);
 />
 ```
 
+#### HasToggle
+
+One-click boolean toggle switch for columns:
+
+```php
+use Machour\DataTable\Concerns\HasToggle;
+
+class ProductDataTable extends AbstractDataTable
+{
+    use HasToggle;
+
+    public static function tableToggleModel(): string { return \App\Models\Product::class; }
+    public static function tableToggleName(): string { return 'products'; }
+
+    // Optional: custom toggle logic (default just updates the column)
+    public static function handleToggle(\Illuminate\Database\Eloquent\Model $model, string $columnId, bool $value): void
+    {
+        $model->update([$columnId => $value]);
+        // e.g. fire an event, clear cache, etc.
+    }
+}
+```
+
+Register the controller:
+
+```php
+DataTableToggleController::register('products', ProductDataTable::class);
+```
+
+Mark columns as toggleable in your column definitions:
+
+```php
+new Column(id: 'is_active', label: 'Active', type: 'boolean', toggleable: true);
+// or with ColumnBuilder:
+ColumnBuilder::make('is_active', 'Active')->boolean()->toggleable()->build();
+```
+
 #### HasSelectAll
 
 "Select all X matching items" across pages:
@@ -507,6 +743,9 @@ class ProductDataTable extends AbstractDataTable
     use HasSelectAll;
 
     public static function tableSelectAllName(): string { return 'products'; }
+
+    // Optional: customize the primary key column (default: 'id')
+    public static function tableSelectAllKey(): string { return 'uuid'; }
 }
 ```
 
@@ -565,15 +804,21 @@ class ProductDataTable extends AbstractDataTable
 
     public static function tableImportName(): string { return 'products'; }
 
-    // Custom import logic
-    public static function processImport(array $rows): array
+    // Optional: customize file validation rules
+    public static function tableImportRules(): array
+    {
+        return [
+            'file' => 'required|file|max:20480|mimes:csv,xlsx', // 20MB, CSV/XLSX only
+        ];
+    }
+
+    // Custom import logic — receives the temp file path and extension
+    public static function processImport(string $filePath, string $extension): array
     {
         $imported = 0;
-        foreach ($rows as $row) {
-            Product::create($row);
-            $imported++;
-        }
-        return ['imported' => $imported, 'errors' => 0];
+        $errors = [];
+        // Parse the file and create/update records...
+        return ['created' => $imported, 'updated' => 0, 'errors' => $errors];
     }
 }
 ```
@@ -639,10 +884,18 @@ new QuickView(
         'filter[created_at]' => 'after:' . now()->subDays(7)->toDateString(),
         'sort' => '-created_at',
     ],
-    icon: 'calendar',
-    columns: ['id', 'name', 'created_at'],
+    icon: 'calendar',         // Lucide icon name shown next to the label
+    columns: ['id', 'name', 'created_at'], // Only show these columns when this view is active (null = no change)
 );
 ```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `string` | Unique identifier |
+| `label` | `string` | Display label |
+| `params` | `array` | URL parameters to apply (`filter[x]`, `sort`) |
+| `icon` | `?string` | Lucide icon name |
+| `columns` | `?string[]` | Column IDs to show (in display order). `null` = keep current visibility |
 
 ### `OperatorFilter`
 
@@ -674,6 +927,45 @@ public static function tableAllowedFilters(): array
 | `boolean` | `eq` | `eq` |
 
 All types also support `null` and `not_null`.
+
+### Footer & Summary Aggregations
+
+**Per-page footer** — computed from the current page's rows:
+
+```php
+public static function tableFooter(\Illuminate\Support\Collection $pageData): array
+{
+    return [
+        'price' => '$' . number_format($pageData->sum('price'), 2),
+        'name' => $pageData->count() . ' items on this page',
+    ];
+}
+```
+
+**Full-dataset summary** — computed across all filtered records (not just the current page):
+
+```php
+public static function tableSummary(\Spatie\QueryBuilder\QueryBuilder $query): array
+{
+    $builder = $query->getEloquentBuilder();
+    return [
+        'price' => $builder->sum('price'),
+        'id' => $builder->count(),
+    ];
+}
+```
+
+On the frontend, use `renderFooterCell` to customize how footer values are displayed:
+
+```tsx
+<DataTable
+    renderFooterCell={(columnId, value) => {
+        if (columnId === 'price') return <span className="font-bold text-emerald-600">{value}</span>;
+    }}
+/>
+```
+
+Summary values are rendered automatically using column `summary` types (`sum`, `avg`, `min`, `max`, `count`).
 
 ### Conditional Rules (Row/Cell Styling)
 
@@ -776,6 +1068,15 @@ interface DataTableProps<TData extends object> {
         afterTable?: ReactNode;
         pagination?: ReactNode;
     };
+
+    // New: callbacks & features
+    onStateChange?: (state: DataTableState) => void; // Fires on any state change
+    onRowCreate?: (data: Record<string, unknown>) => Promise<void> | void; // Inline row creation
+    mobileBreakpoint?: number;              // Width in px for mobile card layout (0 = disabled)
+    children?: ReactNode;                   // JSX column API: <DataTable.Column ...>
+    headerActions?: DataTableHeaderAction[]; // Toolbar action buttons
+    groupByOptions?: string[];              // Column IDs for user-selectable grouping
+    onGroupByChange?: (columnId: string | null) => void; // Grouping change callback
 }
 ```
 
@@ -937,6 +1238,34 @@ import { esTranslations } from "./data-table/i18n-es";
 
 <DataTable translations={esTranslations} />
 ```
+
+#### All Translation Keys
+
+The `DataTableTranslations` interface has **80+ keys** covering every UI string. Key categories:
+
+| Category | Keys | Description |
+|----------|------|-------------|
+| Pagination | `totalResults`, `rowsPerPage`, `pageOf`, `first`, `last`, `next`, `previous` | Pagination controls |
+| Table chrome | `columns`, `reorder`, `search`, `noData`, `loading`, `actions` | Core UI |
+| Selection | `selectAll`, `selectRow`, `selectAllMatching`, `clearSelection`, `selected` | Row selection |
+| Filters | `filtersTitle`, `addFilter`, `clearAllFilters`, `apply`, `activeFilters` | Filter panel |
+| Operators | `opContains`, `opEquals`, `opGreaterThan`, `opBetween`, `opBefore`, `opAfter`, ... | 14 filter operators |
+| Editing | `editSave`, `editCancel`, `editSaving`, `save`, `cancel` | Inline editing |
+| Confirmation | `confirmTitle`, `confirmDescription`, `confirmAction`, `confirmCancel` | Dialogs |
+| Export | `exportXlsx`, `exportCsv`, `exportPdf`, `exporting`, `exportReady`, `exportDownload` | Export UI |
+| Import | `importData`, `importFile`, `importUploading`, `importSuccess`, `importError` | Import dialog |
+| Grouping | `groupBy`, `ungrouped`, `none` | Row grouping |
+| Date grouping | `dateGroupDay`, `dateGroupWeek`, `dateGroupMonth`, `dateGroupYear` | Date grouping labels |
+| Summary | `summarySum`, `summaryAvg`, `summaryMin`, `summaryMax`, `summaryCount`, `summaryRange` | Footer aggregations |
+| Views | `view`, `quickViews`, `savedViews`, `saveFilters`, `viewName` | Quick/saved views |
+| Context menu | `sortAscending`, `sortDescending`, `hideColumn`, `pinLeft`, `pinRight`, `unpin` | Column context menu |
+| Undo/Redo | `undo`, `redo`, `editUndone`, `editRedone` | Undo/redo stack |
+| Keyboard | `keyboardShortcuts`, `shortcutNavigation`, `shortcutSelect`, `shortcutHelp` | Shortcuts overlay |
+| Batch edit | `batchEdit`, `batchEditApply`, `batchEditColumn`, `batchEditValue` | Batch editing |
+| Soft deletes | `showTrashed`, `hideTrashed`, `replicate`, `forceDelete`, `restore` | Soft delete management |
+| Row creation | `addRow` | Inline row creation |
+| Empty state | `emptyTitle`, `emptyDescription` | Empty table |
+| Misc | `expand`, `collapse`, `copied`, `autoRefresh`, `reorderRows`, `matches` | Other UI strings |
 
 ### Row Grouping
 
@@ -1131,6 +1460,396 @@ Supported languages: English, French, Spanish, German, Portuguese, Arabic, Chine
 
 ---
 
+## Relational Data
+
+Columns can reference related model data using `internalName` and `relation`. The package automatically handles eager loading and maps column IDs to database paths.
+
+### Column Definition
+
+```php
+public static function tableColumns(): array
+{
+    return [
+        new Column(id: 'name', label: 'Name', sortable: true),
+
+        // Relation column with manual setup
+        new Column(
+            id: 'user_name',
+            label: 'Author',
+            sortable: true,
+            filterable: true,
+            internalName: 'user.name',  // Database path for sorting/filtering
+            relation: 'user',           // Eager loaded automatically
+        ),
+
+        // Using the fluent builder
+        ColumnBuilder::make('category_title', 'Category')
+            ->belongsTo('category', 'title')  // Sets both internalName + relation
+            ->sortable()
+            ->filterable()
+            ->build(),
+
+        // Nested relation
+        ColumnBuilder::make('parent_category', 'Parent Category')
+            ->belongsTo('category.parent', 'name')
+            ->build(),
+    ];
+}
+```
+
+### Automatic Eager Loading
+
+Relationships defined in column `relation` fields are automatically eager loaded via `with()`. Override `tableEagerLoad()` for additional relationships:
+
+```php
+public static function tableEagerLoad(): array
+{
+    return array_merge(parent::tableEagerLoad(), [
+        'tags',          // Additional relation not tied to a column
+        'media',
+    ]);
+}
+```
+
+### Data Transformation
+
+For complex relational data, use an API Resource:
+
+```php
+public static function tableResource(): string
+{
+    return ProductResource::class;
+}
+
+// In ProductResource.php:
+class ProductResource extends JsonResource
+{
+    public function toArray($request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'user_name' => $this->user->name,
+            'category_title' => $this->category?->title,
+            'tags' => $this->tags->pluck('name')->join(', '),
+        ];
+    }
+}
+```
+
+---
+
+## Detail Row Display Modes
+
+Detail rows support three display modes: **inline** (default), **modal**, and **drawer** (side sheet).
+
+### Configuration (PHP)
+
+```php
+// Expandable inline row (default)
+public static function tableDetailDisplay(): string
+{
+    return 'inline';
+}
+
+// Centered modal dialog
+public static function tableDetailDisplay(): string
+{
+    return 'modal';
+}
+
+// Side drawer / sheet
+public static function tableDetailDisplay(): string
+{
+    return 'drawer';
+}
+```
+
+### React Usage
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    renderDetailRow={(row) => (
+        <div className="space-y-4">
+            <h3 className="font-semibold">{row.name}</h3>
+            <p className="text-muted-foreground">{row.description}</p>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <span className="text-sm font-medium">SKU:</span>
+                    <span className="ml-2">{row.sku}</span>
+                </div>
+                <div>
+                    <span className="text-sm font-medium">Stock:</span>
+                    <span className="ml-2">{row.stock}</span>
+                </div>
+            </div>
+        </div>
+    )}
+/>
+```
+
+The display mode is set server-side via `tableDetailDisplay()`. The same `renderDetailRow` callback works for all three modes.
+
+---
+
+## Composable Hooks (Headless API)
+
+The package exports first-class composable hooks that can be used independently of the `<DataTable>` component. This is ideal for building custom table UIs or integrating with other component libraries.
+
+### Barrel Imports
+
+```tsx
+import {
+    // Hooks
+    useDataTable,
+    useDataTableFilters,
+    // Component
+    DataTable,
+    DataTableColumn,
+    // Sub-components
+    DataTablePagination,
+    DataTableColumnHeader,
+    DataTableRowActions,
+    DataTableQuickViews,
+    // Types
+    type DataTableProps,
+    type DataTableState,
+    type UseDataTableOptions,
+    type UseDataTableReturn,
+    type UseDataTableFiltersOptions,
+    type UseDataTableFiltersReturn,
+    // i18n
+    defaultTranslations,
+    frTranslations,
+    type DataTableTranslations,
+    type DataTableFormField,
+    type DataTableHeaderAction,
+} from "@/data-table";
+```
+
+### `useDataTable` Hook
+
+Use this hook to get full table control with TanStack Table integration, without rendering the `<DataTable>` component:
+
+```tsx
+function CustomProductTable({ tableData }: { tableData: DataTableResponse<Product> }) {
+    const {
+        table,
+        meta,
+        columnVisibility,
+        columnOrder,
+        handleSort,
+        handlePageChange,
+        handlePerPageChange,
+        handleGlobalSearch,
+    } = useDataTable({
+        tableData,
+        tableName: "products",
+        columnDefs: buildColumnDefs(tableData.columns),
+        partialReloadKey: "tableData",
+        onStateChange: (state) => {
+            console.log("Table state changed:", state);
+            // state.sorting, state.columnVisibility, state.page, etc.
+        },
+    });
+
+    return (
+        <div>
+            {/* Build your own UI using the table instance */}
+            {table.getRowModel().rows.map((row) => (
+                <div key={row.id}>{/* custom row rendering */}</div>
+            ))}
+            <DataTablePagination meta={meta} onPageChange={handlePageChange}
+                onPerPageChange={handlePerPageChange} t={defaultTranslations} />
+        </div>
+    );
+}
+```
+
+### `useDataTableFilters` Hook
+
+Use this hook to manage filters programmatically without the built-in filter UI:
+
+```tsx
+function CustomFilterBar({ tableData }: { tableData: DataTableResponse<Product> }) {
+    const { activeFilters, setFilter, clearFilter, clearAllFilters, hasActiveFilters, activeFilterCount } =
+        useDataTableFilters({
+            serverFilters: tableData.meta.filters,
+            prefix: "products",
+            debounceMs: 300,
+            partialReloadKey: "tableData",
+        });
+
+    return (
+        <div>
+            <button onClick={() => setFilter("status", "in", ["active"])}>Active only</button>
+            <button onClick={() => setFilter("price", "gte", ["100"])}>Price ≥ 100</button>
+            {hasActiveFilters && (
+                <button onClick={clearAllFilters}>Clear all ({activeFilterCount})</button>
+            )}
+        </div>
+    );
+}
+```
+
+### `onStateChange` Callback
+
+React to any table state change (sorting, filtering, pagination, visibility, etc.):
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    onStateChange={(state) => {
+        // state: { sorting, columnFilters, columnVisibility, columnOrder, rowSelection, globalSearch, page, perPage }
+        analytics.track("table_state_change", { page: state.page, sorting: state.sorting });
+    }}
+/>
+```
+
+---
+
+## Declarative Column API (JSX)
+
+Define column overrides using JSX instead of render props:
+
+```tsx
+<DataTable tableData={tableData} tableName="products">
+    <DataTable.Column
+        id="name"
+        renderCell={(value, row) => <strong>{value as string}</strong>}
+    />
+    <DataTable.Column
+        id="price"
+        renderCell={(value) => <span className="text-emerald-600">${value}</span>}
+    />
+    <DataTable.Column
+        id="status"
+        renderHeader={<span className="text-blue-500">Status</span>}
+    />
+</DataTable>
+```
+
+Both the prop-based (`renderCell`, `renderHeader`) and JSX-based (`<DataTable.Column>`) APIs work. Props take priority when both are specified.
+
+---
+
+## Mobile Card Layout
+
+On small screens, the table automatically switches to a card-based layout. Set the breakpoint in pixels:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    mobileBreakpoint={768}  // Switch to cards below 768px
+/>
+```
+
+Each row becomes a card showing label-value pairs with optional action buttons. The layout automatically respects the current density setting.
+
+---
+
+## Filter Chips
+
+Active filters are automatically displayed as removable badge chips above the table. Users can:
+
+- Click the × on any chip to clear that specific filter
+- Click "Clear all filters" to remove all filters at once
+
+Filter chips show the column label and the current filter value, stripping the operator prefix for readability.
+
+---
+
+## Inline Row Creation
+
+Enable inline row creation with the `onRowCreate` callback:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    onRowCreate={async (data) => {
+        await router.post("/products", data);
+    }}
+/>
+```
+
+This adds an "Add row" button that expands to an inline form with inputs for all editable columns. Users can:
+
+- Press **Enter** to save the new row
+- Press **Escape** to cancel
+- Click **Save** / **Cancel** buttons
+
+---
+
+## Inertia v2 Integration
+
+### Prefetching Pagination
+
+Pagination buttons automatically prefetch the next/prev page on hover using Inertia v2's `router.prefetch()`. This makes page navigation feel instant. Works with partial reloads:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    partialReloadKey="tableData"  // Only reload the table data prop
+/>
+```
+
+### Inertia Router for Mutations
+
+Toggle switches and file imports use `router.patch()` / `router.post()` instead of raw `fetch()`. This means:
+
+- Automatic CSRF handling (no manual token management)
+- Proper Inertia session management
+- `preserveScroll` and `preserveState` are automatic
+- Error handling via Inertia's `onError` callback
+
+---
+
+## Rate Limiting
+
+Inline edit and toggle endpoints include configurable rate limiting:
+
+```php
+// config/data-table.php
+'rate_limit' => [
+    'inline_edit' => 60,  // 60 requests per minute per user
+    'toggle' => 60,       // 60 requests per minute per user
+],
+```
+
+Set to `0` to disable rate limiting for a specific endpoint. Rate limiting is keyed per user (or per IP for unauthenticated requests) per table.
+
+---
+
+## Audit Report Command
+
+Generate audit reports from the command line:
+
+```bash
+# Default: last 7 days in table format
+php artisan data-table:audit-report
+
+# Filter by table, action, or user
+php artisan data-table:audit-report --table=products --action=inline_edit --user=1
+
+# Last 30 days in JSON format
+php artisan data-table:audit-report --days=30 --format=json
+
+# Export as CSV
+php artisan data-table:audit-report --format=csv > audit.csv
+```
+
+The report includes:
+- Summary statistics: actions breakdown, tables breakdown, users breakdown
+- Detailed entries with table, action, row ID, column, old/new values, user, IP, timestamp
+
+---
+
 ## Configuration
 
 After publishing the config (`php artisan vendor:publish --tag=data-table-config`), you can customize:
@@ -1154,6 +1873,11 @@ return [
         'max_file_size' => 10240,          // Max file size in KB
         'allowed_extensions' => ['csv', 'xlsx', 'xls'],
     ],
+    'rate_limit' => [
+        'inline_edit' => 60,               // Max inline edits per minute per user (0 = disabled)
+        'toggle' => 60,                    // Max toggle requests per minute per user (0 = disabled)
+    ],
+    'audit_table' => 'data_table_audit_log', // Database table for audit log storage
 ];
 ```
 
@@ -1246,9 +1970,12 @@ test('product table has correct columns', function () {
         ->assertColumnGroup('email', 'Contact')
         ->assertColumnCount(8)
         ->assertDefaultSort('-created_at')
+        ->assertNotSortable('photo')
+        ->assertNotFilterable('id')
         ->assertExportEnabled()
         ->assertInlineEditEnabled()
         ->assertSelectAllEnabled()
+        ->assertToggleEnabled()
         ->assertReorderEnabled()
         ->assertImportEnabled()
         ->assertHasQuickViews(3);
@@ -1277,12 +2004,13 @@ use Machour\DataTable\Concerns\HasImport;
 use Machour\DataTable\Concerns\HasInlineEdit;
 use Machour\DataTable\Concerns\HasReorder;
 use Machour\DataTable\Concerns\HasSelectAll;
+use Machour\DataTable\Concerns\HasToggle;
 use Machour\DataTable\QuickView;
 use Illuminate\Database\Eloquent\Builder;
 
 class ProductDataTable extends AbstractDataTable
 {
-    use HasExport, HasInlineEdit, HasSelectAll, HasReorder, HasImport, HasAuditLog;
+    use HasExport, HasInlineEdit, HasSelectAll, HasToggle, HasReorder, HasImport, HasAuditLog;
 
     public function __construct(
         public int $id,
@@ -1323,6 +2051,8 @@ class ProductDataTable extends AbstractDataTable
     public static function tableExportName(): string { return 'products'; }
     public static function tableInlineEditModel(): string { return Product::class; }
     public static function tableSelectAllName(): string { return 'products'; }
+    public static function tableToggleModel(): string { return Product::class; }
+    public static function tableToggleName(): string { return 'products'; }
     public static function tableReorderModel(): string { return Product::class; }
     public static function tableReorderName(): string { return 'products'; }
     public static function tableImportName(): string { return 'products'; }

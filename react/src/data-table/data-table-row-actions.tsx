@@ -11,6 +11,10 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuSub,
+    DropdownMenuSubContent,
+    DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
@@ -22,12 +26,15 @@ interface DataTableRowActionsProps<TData> {
     row: TData;
     actions: DataTableAction<TData>[];
     t: DataTableTranslations;
+    /** Callback to open form action dialog externally */
+    onFormAction?: (action: DataTableAction<TData>, row: TData) => void;
 }
 
 export function DataTableRowActions<TData>({
     row,
     actions,
     t,
+    onFormAction,
 }: DataTableRowActionsProps<TData>) {
     const [confirmAction, setConfirmAction] = useState<{ action: DataTableAction<TData>; opts: DataTableConfirmOptions } | null>(null);
 
@@ -38,6 +45,11 @@ export function DataTableRowActions<TData>({
     if (visibleActions.length === 0) return null;
 
     function handleClick(action: DataTableAction<TData>) {
+        // Form actions open a separate dialog
+        if (action.form && action.form.length > 0 && onFormAction) {
+            onFormAction(action, row);
+            return;
+        }
         if (action.confirm) {
             const opts: DataTableConfirmOptions = typeof action.confirm === "object"
                 ? action.confirm
@@ -55,6 +67,58 @@ export function DataTableRowActions<TData>({
         }
     }
 
+    function renderActionItem(action: DataTableAction<TData>, index: number) {
+        // Action group (nested submenu)
+        if (action.group && action.group.length > 0) {
+            const visibleGroupActions = action.group.filter(
+                (a) => !a.visible || a.visible(row),
+            );
+            if (visibleGroupActions.length === 0) return null;
+            return (
+                <DropdownMenuSub key={index}>
+                    <DropdownMenuSubTrigger className={
+                        action.variant === "destructive" ? "text-destructive focus:text-destructive" : ""
+                    }>
+                        {action.label}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                        {visibleGroupActions.map((subAction, subIdx) => (
+                            <DropdownMenuItem
+                                key={subIdx}
+                                onClick={() => handleClick(subAction)}
+                                className={
+                                    subAction.variant === "destructive"
+                                        ? "text-destructive focus:text-destructive"
+                                        : ""
+                                }
+                            >
+                                {subAction.label}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuSubContent>
+                </DropdownMenuSub>
+            );
+        }
+
+        return (
+            <DropdownMenuItem
+                key={index}
+                onClick={() => handleClick(action)}
+                className={
+                    action.variant === "destructive"
+                        ? "text-destructive focus:text-destructive"
+                        : ""
+                }
+            >
+                {action.label}
+            </DropdownMenuItem>
+        );
+    }
+
+    // Separate destructive actions with a separator
+    const normalActions = visibleActions.filter((a) => a.variant !== "destructive");
+    const destructiveActions = visibleActions.filter((a) => a.variant === "destructive");
+
     return (
         <>
             <DropdownMenu>
@@ -65,19 +129,9 @@ export function DataTableRowActions<TData>({
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                    {visibleActions.map((action, index) => (
-                        <DropdownMenuItem
-                            key={index}
-                            onClick={() => handleClick(action)}
-                            className={
-                                action.variant === "destructive"
-                                    ? "text-destructive focus:text-destructive"
-                                    : ""
-                            }
-                        >
-                            {action.label}
-                        </DropdownMenuItem>
-                    ))}
+                    {normalActions.map((action, index) => renderActionItem(action, index))}
+                    {destructiveActions.length > 0 && normalActions.length > 0 && <DropdownMenuSeparator />}
+                    {destructiveActions.map((action, index) => renderActionItem(action, normalActions.length + index))}
                 </DropdownMenuContent>
             </DropdownMenu>
 

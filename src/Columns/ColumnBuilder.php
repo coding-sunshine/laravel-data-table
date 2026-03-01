@@ -7,6 +7,7 @@ namespace Machour\DataTable\Columns;
  *
  * Usage:
  *   ColumnBuilder::make('price', 'Price')->currency('EUR')->sortable()->summary('sum')->build()
+ *   ColumnBuilder::make('status', 'Status')->iconColumn(['active' => 'check-circle', 'inactive' => 'x-circle'])->build()
  */
 class ColumnBuilder
 {
@@ -46,6 +47,36 @@ class ColumnBuilder
 
     private ?int $responsivePriority = null;
 
+    private ?string $internalName = null;
+
+    private ?string $relation = null;
+
+    private ?string $prefix = null;
+
+    private ?string $suffix = null;
+
+    private ?string $tooltip = null;
+
+    private ?string $description = null;
+
+    private ?int $lineClamp = null;
+
+    private ?array $iconMap = null;
+
+    private ?array $colorMap = null;
+
+    private ?array $selectOptions = null;
+
+    private bool $html = false;
+
+    private bool $markdown = false;
+
+    private bool $bulleted = false;
+
+    private ?array $stacked = null;
+
+    private bool $rowIndex = false;
+
     private function __construct(string $id, string $label)
     {
         $this->id = $id;
@@ -60,9 +91,8 @@ class ColumnBuilder
         return new self($id, $label);
     }
 
-    /**
-     * Set the column type to 'text'.
-     */
+    // ─── Type setters ────────────────────────────────────────
+
     public function text(): self
     {
         $this->type = 'text';
@@ -70,9 +100,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'number'.
-     */
     public function number(): self
     {
         $this->type = 'number';
@@ -80,9 +107,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'date'.
-     */
     public function date(): self
     {
         $this->type = 'date';
@@ -90,9 +114,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'option' with optional options list.
-     */
     public function option(?array $options = null): self
     {
         $this->type = 'option';
@@ -103,9 +124,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'multiOption' with optional options list.
-     */
     public function multiOption(?array $options = null): self
     {
         $this->type = 'multiOption';
@@ -116,9 +134,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'boolean'.
-     */
     public function boolean(): self
     {
         $this->type = 'boolean';
@@ -126,9 +141,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'image'.
-     */
     public function image(): self
     {
         $this->type = 'image';
@@ -136,9 +148,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'badge' with optional options.
-     */
     public function badge(?array $options = null): self
     {
         $this->type = 'badge';
@@ -149,9 +158,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'currency' with an optional currency code.
-     */
     public function currency(?string $code = null): self
     {
         $this->type = 'currency';
@@ -162,9 +168,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'percentage'.
-     */
     public function percentage(): self
     {
         $this->type = 'percentage';
@@ -172,9 +175,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'link'.
-     */
     public function link(): self
     {
         $this->type = 'link';
@@ -182,9 +182,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'email'.
-     */
     public function email(): self
     {
         $this->type = 'email';
@@ -192,9 +189,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column type to 'phone'.
-     */
     public function phone(): self
     {
         $this->type = 'phone';
@@ -203,8 +197,40 @@ class ColumnBuilder
     }
 
     /**
-     * Mark the column as sortable.
+     * Set the column type to 'icon' with a value-to-icon mapping.
      */
+    public function iconColumn(array $iconMap): self
+    {
+        $this->type = 'icon';
+        $this->iconMap = $iconMap;
+
+        return $this;
+    }
+
+    /**
+     * Set the column type to 'color' (displays a color swatch).
+     */
+    public function color(): self
+    {
+        $this->type = 'color';
+
+        return $this;
+    }
+
+    /**
+     * Set the column type to 'select' for inline dropdown editing.
+     */
+    public function select(array $options): self
+    {
+        $this->type = 'select';
+        $this->selectOptions = $options;
+        $this->editable = true;
+
+        return $this;
+    }
+
+    // ─── Behavior setters ────────────────────────────────────
+
     public function sortable(bool $sortable = true): self
     {
         $this->sortable = $sortable;
@@ -212,9 +238,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Mark the column as filterable.
-     */
     public function filterable(bool $filterable = true): self
     {
         $this->filterable = $filterable;
@@ -222,9 +245,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the column visibility.
-     */
     public function visible(bool $visible = true): self
     {
         $this->visible = $visible;
@@ -232,9 +252,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Hide the column by default.
-     */
     public function hidden(): self
     {
         $this->visible = false;
@@ -242,9 +259,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set filter/select options.
-     */
     public function options(array $options): self
     {
         $this->options = $options;
@@ -252,9 +266,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set min/max range for number filters.
-     */
     public function range(?float $min = null, ?float $max = null): self
     {
         $this->min = $min;
@@ -263,9 +274,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set an icon for the column.
-     */
     public function icon(string $icon): self
     {
         $this->icon = $icon;
@@ -273,9 +281,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the search threshold for option filters.
-     */
     public function searchThreshold(int $threshold): self
     {
         $this->searchThreshold = $threshold;
@@ -283,9 +288,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Assign the column to a group.
-     */
     public function group(string $group): self
     {
         $this->group = $group;
@@ -293,9 +295,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Mark the column as inline editable.
-     */
     public function editable(bool $editable = true): self
     {
         $this->editable = $editable;
@@ -303,9 +302,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the locale for number/currency formatting.
-     */
     public function locale(string $locale): self
     {
         $this->locale = $locale;
@@ -313,9 +309,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set a summary aggregation type: 'sum', 'count', 'avg', 'min', 'max'.
-     */
     public function summary(string $type): self
     {
         $this->summaryType = $type;
@@ -323,9 +316,6 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Mark as a toggleable boolean column.
-     */
     public function toggleable(bool $toggleable = true): self
     {
         $this->toggleable = $toggleable;
@@ -333,12 +323,165 @@ class ColumnBuilder
         return $this;
     }
 
-    /**
-     * Set the responsive priority (lower = hidden first on small screens).
-     */
     public function responsivePriority(int $priority): self
     {
         $this->responsivePriority = $priority;
+
+        return $this;
+    }
+
+    public function internalName(string $name): self
+    {
+        $this->internalName = $name;
+
+        return $this;
+    }
+
+    public function relation(string $relation): self
+    {
+        $this->relation = $relation;
+
+        return $this;
+    }
+
+    public function belongsTo(string $relation, string $attribute): self
+    {
+        $this->relation = $relation;
+        $this->internalName = $relation . '.' . $attribute;
+
+        return $this;
+    }
+
+    // ─── New Filament-inspired setters ───────────────────────
+
+    /**
+     * Add text before the cell value (e.g., '$', '€', '#').
+     */
+    public function prefix(string $prefix): self
+    {
+        $this->prefix = $prefix;
+
+        return $this;
+    }
+
+    /**
+     * Add text after the cell value (e.g., 'kg', '%', ' items').
+     */
+    public function suffix(string $suffix): self
+    {
+        $this->suffix = $suffix;
+
+        return $this;
+    }
+
+    /**
+     * Set hover tooltip text. Pass a column ID to read from the row dynamically.
+     */
+    public function tooltip(string $tooltip): self
+    {
+        $this->tooltip = $tooltip;
+
+        return $this;
+    }
+
+    /**
+     * Add description text below the column header label.
+     */
+    public function description(string $description): self
+    {
+        $this->description = $description;
+
+        return $this;
+    }
+
+    /**
+     * Limit visible text lines via CSS line-clamp.
+     */
+    public function lineClamp(int $lines): self
+    {
+        $this->lineClamp = $lines;
+
+        return $this;
+    }
+
+    /**
+     * Map values to icon names for display.
+     */
+    public function iconMap(array $map): self
+    {
+        $this->iconMap = $map;
+
+        return $this;
+    }
+
+    /**
+     * Map values to Tailwind color classes for conditional cell coloring.
+     */
+    public function colorMap(array $map): self
+    {
+        $this->colorMap = $map;
+
+        return $this;
+    }
+
+    /**
+     * Set options for inline select dropdown editing.
+     */
+    public function selectOptions(array $options): self
+    {
+        $this->selectOptions = $options;
+
+        return $this;
+    }
+
+    /**
+     * Render cell value as sanitized HTML.
+     */
+    public function html(bool $html = true): self
+    {
+        $this->html = $html;
+
+        return $this;
+    }
+
+    /**
+     * Render cell value as Markdown.
+     */
+    public function markdown(bool $markdown = true): self
+    {
+        $this->markdown = $markdown;
+
+        return $this;
+    }
+
+    /**
+     * Display array values as a bulleted list.
+     */
+    public function bulleted(bool $bulleted = true): self
+    {
+        $this->bulleted = $bulleted;
+
+        return $this;
+    }
+
+    /**
+     * Stack multiple column values vertically in this cell.
+     *
+     * @param  array<string>  $columnIds  IDs of other columns to stack
+     */
+    public function stacked(array $columnIds): self
+    {
+        $this->stacked = $columnIds;
+
+        return $this;
+    }
+
+    /**
+     * Make this a row index column (auto-incrementing row number).
+     */
+    public function rowIndex(bool $rowIndex = true): self
+    {
+        $this->rowIndex = $rowIndex;
 
         return $this;
     }
@@ -367,6 +510,21 @@ class ColumnBuilder
             summary: $this->summaryType,
             toggleable: $this->toggleable,
             responsivePriority: $this->responsivePriority,
+            internalName: $this->internalName,
+            relation: $this->relation,
+            prefix: $this->prefix,
+            suffix: $this->suffix,
+            tooltip: $this->tooltip,
+            description: $this->description,
+            lineClamp: $this->lineClamp,
+            iconMap: $this->iconMap,
+            colorMap: $this->colorMap,
+            selectOptions: $this->selectOptions,
+            html: $this->html,
+            markdown: $this->markdown,
+            bulleted: $this->bulleted,
+            stacked: $this->stacked,
+            rowIndex: $this->rowIndex,
         );
     }
 }

@@ -3,7 +3,7 @@ import type { DataTableTranslations } from "./i18n";
 export interface DataTableColumnDef {
     id: string;
     label: string;
-    type: "text" | "number" | "date" | "option" | "multiOption" | "boolean" | "image" | "badge" | "currency" | "percentage" | "link" | "email" | "phone";
+    type: "text" | "number" | "date" | "option" | "multiOption" | "boolean" | "image" | "badge" | "currency" | "percentage" | "link" | "email" | "phone" | "icon" | "color" | "select";
     sortable: boolean;
     filterable: boolean;
     visible: boolean;
@@ -16,12 +16,42 @@ export interface DataTableColumnDef {
     editable?: boolean;
     currency?: string | null;
     locale?: string | null;
-    /** Summary aggregation type: 'sum' | 'count' | 'avg' | 'min' | 'max' */
+    /** Summary aggregation type: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'range' */
     summary?: string | null;
     /** Whether this column supports boolean toggle switch */
     toggleable?: boolean;
     /** Responsive priority (lower = hidden first on small screens). null = always visible */
     responsivePriority?: number | null;
+    /** Internal database column name or dot-notation relation path (e.g., 'user.name') */
+    internalName?: string | null;
+    /** Relationship name for eager loading (e.g., 'user', 'category.parent') */
+    relation?: string | null;
+    /** Text displayed before the cell value (e.g., '$', '#') */
+    prefix?: string | null;
+    /** Text displayed after the cell value (e.g., 'kg', '%', ' items') */
+    suffix?: string | null;
+    /** Tooltip text on hover. Can be a static string or a column ID to read from the row */
+    tooltip?: string | null;
+    /** Description text below the column header label */
+    description?: string | null;
+    /** CSS line-clamp value to truncate long text (e.g., 2 = max 2 lines) */
+    lineClamp?: number | null;
+    /** Map of values to icon names for icon columns */
+    iconMap?: Record<string, string> | null;
+    /** Map of values to color classes for conditional cell coloring */
+    colorMap?: Record<string, string> | null;
+    /** Options for inline select dropdown editing */
+    selectOptions?: { label: string; value: string }[] | null;
+    /** Whether to render the cell value as HTML (sanitized) */
+    html?: boolean;
+    /** Whether to render the cell value as Markdown */
+    markdown?: boolean;
+    /** Display array values as a bulleted list */
+    bulleted?: boolean;
+    /** Array of column IDs to display vertically (stacked) in this cell */
+    stacked?: string[] | null;
+    /** Whether this is a row index column (auto-incrementing row number) */
+    rowIndex?: boolean;
 }
 
 export interface DataTableQuickView {
@@ -53,6 +83,8 @@ export interface DataTableMeta {
 /** Server-side table configuration passed from backend */
 export interface DataTableConfig {
     detailRowEnabled?: boolean;
+    /** Display mode for detail rows: 'inline' (expandable row), 'modal' (dialog), or 'drawer' (side sheet) */
+    detailDisplay?: "inline" | "modal" | "drawer";
     softDeletesEnabled?: boolean;
     pollingInterval?: number;
     persistState?: boolean;
@@ -142,6 +174,29 @@ export interface DataTableAction<TData> {
     variant?: "default" | "destructive";
     visible?: (row: TData) => boolean;
     confirm?: boolean | DataTableConfirmOptions;
+    /** Nested actions displayed as a submenu group */
+    group?: DataTableAction<TData>[];
+    /** Form fields for a modal form action */
+    form?: DataTableFormField[];
+}
+
+/** Form field definition for forms-in-actions */
+export interface DataTableFormField {
+    name: string;
+    label: string;
+    type: "text" | "number" | "select" | "textarea" | "checkbox";
+    options?: { label: string; value: string }[];
+    required?: boolean;
+    placeholder?: string;
+    defaultValue?: unknown;
+}
+
+/** Header action button displayed in the table toolbar */
+export interface DataTableHeaderAction {
+    label: string;
+    icon?: React.ComponentType<{ className?: string }>;
+    onClick: () => void;
+    variant?: "default" | "outline" | "destructive" | "ghost";
 }
 
 export interface DataTableBulkAction<TData> {
@@ -206,4 +261,18 @@ export interface DataTableProps<TData extends object> {
         afterTable?: React.ReactNode;
         pagination?: React.ReactNode;
     };
+    /** Called whenever table state changes (sorting, filtering, pagination, visibility, etc.) */
+    onStateChange?: (state: import("./use-data-table").DataTableState) => void;
+    /** Called when a new row is created inline */
+    onRowCreate?: (data: Record<string, unknown>) => Promise<void> | void;
+    /** Breakpoint in px below which the mobile card layout is shown (0 = disabled) */
+    mobileBreakpoint?: number;
+    /** JSX children — use <DataTable.Column> for declarative column configuration */
+    children?: React.ReactNode;
+    /** Header action buttons displayed in the table toolbar */
+    headerActions?: DataTableHeaderAction[];
+    /** Column IDs available for user-selectable grouping */
+    groupByOptions?: string[];
+    /** Callback when user changes the group-by column */
+    onGroupByChange?: (columnId: string | null) => void;
 }

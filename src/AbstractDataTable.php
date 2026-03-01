@@ -112,6 +112,14 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Detail row display mode: 'inline' (expandable row), 'modal' (centered dialog), or 'drawer' (side sheet).
+     */
+    public static function tableDetailDisplay(): string
+    {
+        return 'inline';
+    }
+
+    /**
      * Return the detail data for a given model row.
      *
      * @param  mixed  $model
@@ -163,7 +171,16 @@ abstract class AbstractDataTable extends Data
         }
 
         $selects = [];
+        $rangeColumns = [];
         foreach ($columns as $col) {
+            if ($col->summary === 'range') {
+                // Range needs both MIN and MAX
+                $selects[] = DB::raw("MIN({$col->id}) as summary_{$col->id}_min");
+                $selects[] = DB::raw("MAX({$col->id}) as summary_{$col->id}_max");
+                $rangeColumns[] = $col->id;
+
+                continue;
+            }
             $fn = match ($col->summary) {
                 'sum' => "SUM({$col->id})",
                 'avg' => "AVG({$col->id})",
@@ -189,7 +206,13 @@ abstract class AbstractDataTable extends Data
 
         $summary = [];
         foreach ($columns as $col) {
-            $summary[$col->id] = $result->{"summary_{$col->id}"};
+            if (in_array($col->id, $rangeColumns, true)) {
+                $min = $result->{"summary_{$col->id}_min"};
+                $max = $result->{"summary_{$col->id}_max"};
+                $summary[$col->id] = "{$min} – {$max}";
+            } else {
+                $summary[$col->id] = $result->{"summary_{$col->id}"};
+            }
         }
 
         return $summary;
@@ -271,13 +294,29 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Return relationships to eager load, auto-derived from columns with `relation` set.
+     * Override to add additional relationships.
+     *
+     * @return array<int, string>
+     */
+    public static function tableEagerLoad(): array
+    {
+        return collect(static::tableColumns())
+            ->filter(fn (Column $col) => $col->relation !== null)
+            ->map(fn (Column $col) => $col->relation)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<int, AllowedFilter|string>
      */
     public static function tableAllowedFilters(): array
     {
         return collect(static::tableColumns())
             ->filter(fn (Column $col) => $col->filterable)
-            ->map(fn (Column $col) => $col->id)
+            ->map(fn (Column $col) => $col->internalName ?? $col->id)
             ->values()
             ->all();
     }
@@ -289,7 +328,7 @@ abstract class AbstractDataTable extends Data
     {
         return collect(static::tableColumns())
             ->filter(fn (Column $col) => $col->sortable)
-            ->map(fn (Column $col) => $col->id)
+            ->map(fn (Column $col) => $col->internalName ?? $col->id)
             ->values()
             ->all();
     }
@@ -305,6 +344,12 @@ abstract class AbstractDataTable extends Data
         $searchKey = "{$paramPrefix}search";
 
         $baseQuery = static::tableBaseQuery();
+
+        // Auto eager load relationships from column definitions
+        $eagerLoad = static::tableEagerLoad();
+        if (! empty($eagerLoad)) {
+            $baseQuery = $baseQuery->with($eagerLoad);
+        }
 
         // Soft deletes toggle
         if (static::tableSoftDeletesEnabled()) {
@@ -457,6 +502,7 @@ abstract class AbstractDataTable extends Data
         // Build table config for frontend
         $tableConfig = [
             'detailRowEnabled' => static::tableDetailRowEnabled(),
+            'detailDisplay' => static::tableDetailDisplay(),
             'softDeletesEnabled' => static::tableSoftDeletesEnabled(),
             'pollingInterval' => static::tablePollingInterval(),
             'persistState' => static::tablePersistState(),
@@ -468,7 +514,7 @@ abstract class AbstractDataTable extends Data
 
         // Toggle URL
         $toggleUrl = null;
-        if (collect(static::tableColumns())->contains(fn (Column $col) => $col->toggleable)) {
+        if (method_exists(static::class, 'resolveToggleUrl') && collect(static::tableColumns())->contains(fn (Column $col) => $col->toggleable)) {
             $toggleUrl = static::resolveToggleUrl();
         }
 

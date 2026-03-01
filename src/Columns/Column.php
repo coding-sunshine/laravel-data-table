@@ -27,11 +27,41 @@ class Column extends Data
         public ?string $currency = null,
         /** Locale for number/currency formatting (e.g., 'en-US') */
         public ?string $locale = null,
-        /** Summary aggregation: 'sum', 'count', 'avg', 'min', 'max', or null */
+        /** Summary aggregation: 'sum', 'count', 'avg', 'min', 'max', 'range', or null */
         public ?string $summary = null,
         /** Whether this column is toggleable (boolean switch) */
         public bool $toggleable = false,
         /** Column priority for responsive collapse (lower = hidden first on small screens). null = always visible */
         public ?int $responsivePriority = null,
+        /** Internal database column name or dot-notation relation path (e.g., 'user.name', 'category.title'). If null, uses $id. */
+        public ?string $internalName = null,
+        /** Relationship to eager load for this column (e.g., 'user', 'category.parent'). Used for automatic eager loading. */
+        public ?string $relation = null,
+        /** Text to display before the cell value (e.g., '$', '€') */
+        public ?string $prefix = null,
+        /** Text to display after the cell value (e.g., 'kg', '%', ' items') */
+        public ?string $suffix = null,
+        /** Tooltip text shown on hover. Can be a static string or a column ID to read from the row. */
+        public ?string $tooltip = null,
+        /** Description text displayed below the column header label */
+        public ?string $description = null,
+        /** CSS line-clamp value to truncate long text (e.g., 2 = max 2 lines) */
+        public ?int $lineClamp = null,
+        /** Map of values to icon names for icon columns (e.g., ['active' => 'check-circle', 'inactive' => 'x-circle']) */
+        public ?array $iconMap = null,
+        /** Map of values to color classes for conditional cell coloring (e.g., ['active' => 'text-emerald-600', 'overdue' => 'text-red-600']) */
+        public ?array $colorMap = null,
+        /** Options for inline select dropdown editing (e.g., [['label' => 'Active', 'value' => 'active'], ...]) */
+        public ?array $selectOptions = null,
+        /** Whether to render the cell value as HTML (sanitized) */
+        public bool $html = false,
+        /** Whether to render the cell value as Markdown */
+        public bool $markdown = false,
+        /** Display array values as a bulleted list */
+        public bool $bulleted = false,
+        /** Show stacked content: array of column IDs to display vertically in this cell */
+        public ?array $stacked = null,
+        /** Whether this is a row index column (auto-incrementing row number) */
+        public bool $rowIndex = false,
     ) {}
 }

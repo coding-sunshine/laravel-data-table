@@ -186,6 +186,26 @@ export interface DataTableTranslations {
     // Empty state
     emptyTitle: string;
     emptyDescription: string;
+
+    // Inline row creation
+    addRow: string;
+
+    // Filter chips
+    activeFilters: string;
+
+    // Summary range
+    summaryRange: string;
+
+    // Replicate / Force-delete / Restore
+    replicate: string;
+    forceDelete: string;
+    restore: string;
+
+    // Date grouping
+    dateGroupDay: string;
+    dateGroupWeek: string;
+    dateGroupMonth: string;
+    dateGroupYear: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -376,6 +396,26 @@ export const defaultTranslations: DataTableTranslations = {
     // Empty state
     emptyTitle: "No data yet",
     emptyDescription: "There are no records to display. Try adjusting your filters or adding new data.",
+
+    // Inline row creation
+    addRow: "Add row",
+
+    // Filter chips
+    activeFilters: "Active filters",
+
+    // Summary range
+    summaryRange: "Range",
+
+    // Replicate / Force-delete / Restore
+    replicate: "Duplicate",
+    forceDelete: "Permanently delete",
+    restore: "Restore",
+
+    // Date grouping
+    dateGroupDay: "Day",
+    dateGroupWeek: "Week",
+    dateGroupMonth: "Month",
+    dateGroupYear: "Year",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -537,4 +577,24 @@ export const frTranslations: DataTableTranslations = {
     // Empty state
     emptyTitle: "Aucune donnée",
     emptyDescription: "Il n'y a aucun enregistrement à afficher. Essayez de modifier vos filtres ou d'ajouter des données.",
+
+    // Inline row creation
+    addRow: "Ajouter une ligne",
+
+    // Filter chips
+    activeFilters: "Filtres actifs",
+
+    // Summary range
+    summaryRange: "Plage",
+
+    // Replicate / Force-delete / Restore
+    replicate: "Dupliquer",
+    forceDelete: "Supprimer définitivement",
+    restore: "Restaurer",
+
+    // Date grouping
+    dateGroupDay: "Jour",
+    dateGroupWeek: "Semaine",
+    dateGroupMonth: "Mois",
+    dateGroupYear: "Année",
 };
