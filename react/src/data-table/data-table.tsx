@@ -245,7 +245,7 @@ class DataTableErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
     render() {
         if (this.state.hasError) {
             return this.props.fallback ?? (
-                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 p-8 text-center">
+                <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-8 text-center shadow-sm">
                     <p className="text-sm font-medium text-destructive">Something went wrong rendering the table.</p>
                     <p className="text-xs text-muted-foreground">{this.state.error?.message}</p>
                     <Button variant="outline" size="sm" onClick={() => this.setState({ hasError: false })}>
@@ -292,12 +292,12 @@ function getColumnPinningProps<T>(column: Column<T, unknown>) {
 }
 
 const BADGE_VARIANTS: Record<string, string> = {
-    default: "bg-primary/10 text-primary dark:bg-primary/20",
-    success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-    warning: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    danger: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    info: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-    secondary: "bg-muted text-muted-foreground",
+    default: "bg-primary/10 text-primary ring-1 ring-inset ring-primary/20 dark:bg-primary/20",
+    success: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20",
+    warning: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20",
+    danger: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/20",
+    info: "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-500/10 dark:text-blue-400 dark:ring-blue-500/20",
+    secondary: "bg-muted text-muted-foreground ring-1 ring-inset ring-border",
 };
 
 // ─── Density configuration ──────────────────────────────────────────────────
@@ -384,7 +384,7 @@ function ColumnContextMenu({ columnId, sortable, isPinned, showPinning, onSort, 
             {open && (
                 <>
                     <div className="fixed inset-0 z-50" onClick={() => setOpen(false)} />
-                    <div className="fixed z-50 min-w-[160px] rounded-md border bg-popover p-1 shadow-md"
+                    <div className="fixed z-50 min-w-[160px] rounded-lg border bg-popover p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
                         style={{ left: pos.x, top: pos.y }}>
                         {sortable && (
                             <>
@@ -891,7 +891,7 @@ function ToggleCell({ value, row, columnId, toggleUrl }: {
     }, [row.id, toggleUrl, columnId]);
 
     return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving}
-        className="data-[state=checked]:bg-emerald-600"
+        className="data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-muted-foreground/20"
         aria-label={`Toggle ${columnId}`} role="switch" aria-checked={checked} />;
 }
 
@@ -1185,7 +1185,7 @@ function MobileCardLayout<TData>({ rows, columns, renderCell, actions, onRowClic
                 return (
                     <div key={rowData.id != null ? String(rowData.id) : idx}
                         className={cn("rounded-lg border bg-card p-4 space-y-2",
-                            isClickable && "cursor-pointer hover:bg-accent/50 transition-colors",
+                            isClickable && "cursor-pointer hover:bg-accent/50 hover:shadow-md transition-all",
                             density === "compact" && "p-2.5 space-y-1",
                             density === "spacious" && "p-5 space-y-3")}
                         onClick={isClickable ? handleClick : undefined}>
@@ -1233,7 +1233,7 @@ function FilterChips({ filters, columns, onClear, onClearAll, t }: {
                 const label = col?.label ?? key;
                 const displayValue = String(value).replace(/^[a-z_]+:/i, "").replace(/,/g, ", ");
                 return (
-                    <span key={key} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                    <span key={key} className="inline-flex items-center gap-1 rounded-full bg-primary/10 ring-1 ring-inset ring-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary">
                         <span className="text-primary/60">{label}:</span> {displayValue}
                         <button type="button" onClick={() => onClear(key)}
                             className="ml-0.5 rounded-full p-0.5 hover:bg-primary/20 transition-colors">
@@ -1736,7 +1736,7 @@ function DataTableInner<TData extends object>({
                     }
 
                     if (col.type === "image" && typeof value === "string") {
-                        return <img src={value} alt={col.label} className="h-8 w-8 rounded-md object-cover" />;
+                        return <img src={value} alt={col.label} className="h-8 w-8 rounded-full object-cover ring-1 ring-border/50" />;
                     }
                     if (col.type === "badge") {
                         const strValue = String(value);
@@ -2129,7 +2129,7 @@ function DataTableInner<TData extends object>({
     }, [onBatchEdit, selectedRows]);
 
     return (
-        <div className="space-y-3 dt-root">
+        <div className="space-y-4 dt-root">
             {slots?.beforeTable}
 
             {/* ── Toolbar ── */}
@@ -2137,9 +2137,9 @@ function DataTableInner<TData extends object>({
                 <div className="flex flex-1 items-center gap-2 min-w-0">
                     {resolvedOptions.globalSearch && (
                         <div className="relative w-56 lg:w-64">
-                            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+                            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground/60" />
                             <Input ref={searchInputRef} placeholder={t.search} value={globalSearchValue} onChange={handleGlobalSearchChange}
-                                className="h-8 pl-8 text-sm" aria-label={t.search} />
+                                className="h-8 pl-8 text-sm rounded-lg border-border/60 focus-visible:ring-primary/30" aria-label={t.search} />
                         </div>
                     )}
                     {resolvedOptions.filters && (
@@ -2194,7 +2194,7 @@ function DataTableInner<TData extends object>({
 
             {/* ── Bulk actions bar ── */}
             {hasBulkActions && selectedRows.length > 0 && (
-                <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm print:hidden">
+                <div className="flex items-center gap-2 rounded-lg border bg-primary/5 border-primary/20 px-3 py-2 text-sm print:hidden">
                     <span className="font-medium tabular-nums">{serverSelectAll ? t.selected(serverSelectedIds.length) : t.selected(selectedRows.length)}</span>
                     {!serverSelectAll && tableData.selectAllUrl && meta.total > tableData.data.length && table.getIsAllPageRowsSelected() && (
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={handleSelectAllMatching}>{t.selectAllMatching(meta.total)}</Button>
@@ -2225,7 +2225,7 @@ function DataTableInner<TData extends object>({
 
             {/* ── Loading indicator ── */}
             {resolvedOptions.loading && isNavigating && (
-                <div className="flex items-center justify-center gap-2 py-1 text-xs text-muted-foreground print:hidden">
+                <div className="flex items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground/70 print:hidden">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />{t.loading}
                 </div>
             )}
@@ -2246,13 +2246,13 @@ function DataTableInner<TData extends object>({
 
             {/* ── Table ── */}
             {!isMobile && (!config?.deferLoading || deferLoaded) && (
-                <div className={cn("rounded-lg border overflow-hidden", className)}
+                <div className={cn("rounded-xl border shadow-sm overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
                     <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}>
                         <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
                             role="grid" aria-rowcount={meta.total} aria-colcount={table.getVisibleLeafColumns().length}>
-                            <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
+                            <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background shadow-[0_1px_3px_-1px_rgba(0,0,0,0.1)]")}>
                                 {table.getHeaderGroups().map((headerGroup, groupIdx) => {
                                     const isGroupRow = groupIdx < table.getHeaderGroups().length - 1;
                                     return (
@@ -2264,7 +2264,7 @@ function DataTableInner<TData extends object>({
                                                     return (
                                                         <TableHead key={header.id} colSpan={header.colSpan} style={pin.style}
                                                             className={cn("h-8",
-                                                                isActualGroup && "text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted/30 border-b",
+                                                                isActualGroup && "text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/80 bg-muted/50 border-b border-border/60",
                                                                 isActualGroup && groupClassName?.[header.column.columnDef.header as string],
                                                                 pin.className)}>
                                                             {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
@@ -2310,7 +2310,7 @@ function DataTableInner<TData extends object>({
                                                 return (
                                                     <TableHead key={header.id} colSpan={header.colSpan}
                                                         style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: header.getSize() } : {}) }}
-                                                        className={cn("h-9", isNumber && "text-right",
+                                                        className={cn("h-10 text-xs font-semibold text-muted-foreground bg-muted/20 border-b-2 border-border/60", isNumber && "text-right",
                                                             leafGroup && groupClassName?.[leafGroup],
                                                             pin.className, "relative")}
                                                         aria-sort={ariaSort} role="columnheader">
@@ -2347,9 +2347,11 @@ function DataTableInner<TData extends object>({
                                                         role="row" aria-rowindex={(meta.currentPage - 1) * meta.perPage + index + 1}
                                                         aria-selected={row.getIsSelected() || undefined}
                                                         className={cn(
-                                                            "transition-colors",
+                                                            "transition-colors border-b border-border/40",
                                                             densityClasses.row,
-                                                            row.getIsSelected() && "bg-primary/5",
+                                                            index % 2 === 1 && "bg-muted/30",
+                                                            "hover:bg-muted/50",
+                                                            row.getIsSelected() && "bg-primary/8 hover:bg-primary/12",
                                                             isClickable && "cursor-pointer",
                                                             focusedRowIndex === index && "ring-2 ring-inset ring-primary",
                                                             isDragOver && "border-t-2 border-t-primary",
@@ -2386,7 +2388,7 @@ function DataTableInner<TData extends object>({
                                                         })}
                                                     </TableRow>
                                                     {isExpanded && renderDetailRow && detailDisplay === "inline" && (
-                                                        <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30">
+                                                        <TableRow key={`${row.id}-detail`} className="bg-muted/20 hover:bg-muted/30 border-b border-border/30">
                                                             <TableCell colSpan={table.getVisibleLeafColumns().length} className="p-4">
                                                                 {renderDetailRow(row.original)}
                                                             </TableCell>
@@ -2406,7 +2408,7 @@ function DataTableInner<TData extends object>({
                                                 return (
                                                     <>{/* group fragment */}
                                                         <TableRow key={`group-${groupName}`}
-                                                            className="bg-muted/30 hover:bg-muted/40 cursor-pointer"
+                                                            className="bg-muted/40 hover:bg-muted/50 cursor-pointer border-b border-border/40 font-medium"
                                                             onClick={() => setCollapsedGroups((prev) => {
                                                                 const next = new Set(prev);
                                                                 if (next.has(groupName)) next.delete(groupName); else next.add(groupName);
@@ -2443,7 +2445,7 @@ function DataTableInner<TData extends object>({
                                     })()
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-40 text-center text-muted-foreground">
+                                        <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-48 text-center text-muted-foreground/70">
                                             <EmptyState customEmpty={emptyState} illustration={emptyStateIllustration}
                                                 showIllustration={resolvedOptions.emptyStateIllustration} t={t} />
                                         </TableCell>
@@ -2454,7 +2456,7 @@ function DataTableInner<TData extends object>({
                             {/* Per-page footer */}
                             {tableData.footer && (
                                 <TableFooter>
-                                    <TableRow className="bg-muted/20 font-medium">
+                                    <TableRow className="bg-muted/40 font-medium border-t-2 border-border/60">
                                         {visibleLeafColumns.map((col) => {
                                             const footerValue = tableData.footer?.[col.id];
                                             const colMeta = col.columnDef.meta as ColumnMeta | undefined;
@@ -2483,7 +2485,7 @@ function DataTableInner<TData extends object>({
                             {/* Full-dataset summary row */}
                             {tableData.summary && (
                                 <TableFooter>
-                                    <TableRow className="bg-muted/10 border-t-2">
+                                    <TableRow className="bg-muted/20 border-t-2 border-border/60">
                                         {visibleLeafColumns.map((col) => {
                                             const summaryValue = tableData.summary?.[col.id];
                                             const colDef = mergedColumns.find((c) => c.id === col.id);
@@ -2517,7 +2519,7 @@ function DataTableInner<TData extends object>({
             )}
 
             {/* ── Pagination + Auto-refresh ── */}
-            <div className="flex items-center justify-between print:hidden">
+            <div className="flex items-center justify-between pt-1 print:hidden">
                 <div className="flex-1">
                     {(config?.pollingInterval ?? 0) > 0 && (
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
