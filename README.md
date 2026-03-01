@@ -894,6 +894,25 @@ class ProductDataTable extends AbstractDataTable
 DataTableImportController::register('products', ProductDataTable::class);
 ```
 
+#### Controller Registration Summary
+
+Every feature that uses a controller needs to be registered. Here's the full list:
+
+```php
+use Machour\DataTable\Http\Controllers\*;
+
+// In a service provider or routes file:
+DataTableExportController::register('products', ProductDataTable::class);
+DataTableInlineEditController::register('products', ProductDataTable::class);
+DataTableToggleController::register('products', ProductDataTable::class);
+DataTableSelectAllController::register('products', ProductDataTable::class);
+DataTableReorderController::register('products', ProductDataTable::class);
+DataTableImportController::register('products', ProductDataTable::class);
+DataTableDetailRowController::register('products', ProductDataTable::class);
+DataTableAsyncFilterController::register('products', ProductDataTable::class);
+DataTableCascadingFilterController::register('products', ProductDataTable::class);
+```
+
 #### HasAuditLog
 
 Record all data mutations to a changelog table:
@@ -927,6 +946,120 @@ $rowHistory = ProductDataTable::getRowAuditLog(rowId: 42);
 ```
 
 Each entry records: table name, action type, row ID, column, old/new values, user ID, IP address, and timestamp.
+
+#### Trait Method Reference
+
+Each trait provides these public methods (most are auto-derived; override for customization):
+
+**HasExport:**
+
+| Method | Description |
+|--------|-------------|
+| `tableExportEnabled(): bool` | *Abstract.* Whether export is enabled |
+| `tableExportName(): string` | *Abstract.* Table name for routing |
+| `tableExportFilename(): string\|Closure` | *Abstract.* Filename (or closure receiving filters) |
+| `tableExportColumns(): array` | Returns `[id, label]` pairs. Auto-filters out `image` columns. Override to customize |
+| `resolveExportUrl(): string` | Full URL to export endpoint (used by `makeTable()`) |
+| `resolveExportFilename(?Request): string` | Resolves and sanitizes the export filename |
+| `downloadExport(string $format, ?Request): BinaryFileResponse` | Core method: builds query, resolves columns, returns download |
+| `makeExportQuery(?Request): QueryBuilder` | Builds the filtered query for export |
+
+**HasInlineEdit:**
+
+| Method | Description |
+|--------|-------------|
+| `tableInlineEditModel(): string` | *Abstract.* Model class for editing |
+| `tableEditableColumns(): array` | Returns editable column IDs. Auto-derived from `editable: true` columns |
+| `tableInlineEditRules(string $columnId): array` | Validation rules. Auto-generated from column type (override to customize) |
+| `handleInlineEdit(Request, int\|string $id): JsonResponse` | Core handler: validates, checks soft deletes, updates model |
+
+**HasSelectAll:**
+
+| Method | Description |
+|--------|-------------|
+| `tableSelectAllName(): string` | *Abstract.* Table name for routing |
+| `tableSelectAllKey(): string` | Primary key column for select-all. Default: `'id'` |
+| `resolveSelectAllUrl(): string` | Full URL to select-all endpoint |
+| `handleSelectAll(?Request): JsonResponse` | Returns all matching IDs as JSON |
+
+**HasReorder:**
+
+| Method | Description |
+|--------|-------------|
+| `tableReorderModel(): string` | *Abstract.* Model class for reordering |
+| `tableReorderName(): string` | *Abstract.* Table name for routing |
+| `tableReorderColumn(): string` | Database column for sort order. Default: `'position'` |
+| `resolveReorderUrl(): string` | Full URL to reorder endpoint |
+| `handleReorder(Request): JsonResponse` | Receives `ids` array and bulk-updates positions |
+
+**HasImport:**
+
+| Method | Description |
+|--------|-------------|
+| `tableImportName(): string` | *Abstract.* Table name for routing |
+| `tableImportEnabled(): bool` | Whether import is enabled. Default: `true` |
+| `tableImportRules(): array` | File validation rules (auto-derived from config) |
+| `processImport(string $filePath, string $extension): array` | Custom import logic. Override this |
+| `resolveImportUrl(): string` | Full URL to import endpoint |
+| `handleImport(Request): JsonResponse` | Core handler: validates upload, calls `processImport()`, returns JSON |
+
+**HasToggle:**
+
+| Method | Description |
+|--------|-------------|
+| `tableToggleModel(): string` | *Abstract.* Model class for toggle |
+| `tableToggleName(): string` | *Abstract.* Table name for routing |
+| `resolveToggleUrl(): string` | Full URL to toggle endpoint |
+| `handleToggle(Model, string $columnId, bool $value): void` | Updates the boolean column on the model |
+
+**HasAuditLog:**
+
+| Method | Description |
+|--------|-------------|
+| `tableAuditLogName(): string` | *Abstract.* Table name for audit entries |
+| `tableAuditLogTable(): string` | Database table name. Default: `'data_table_audit_log'` |
+| `tableAuditLogEnabled(): bool` | Whether logging is enabled. Default: `true` |
+
+### PHP Data Transfer Objects
+
+**`DataTableResponse`** — The Spatie Data DTO returned by `makeTable()`:
+
+```php
+class DataTableResponse extends Data {
+    public array $data;                  // Paginated row data
+    public array $columns;               // Column[] definitions
+    public array $quickViews;            // QuickView[] with active flags
+    public DataTableMeta $meta;          // Pagination metadata
+    public ?string $exportUrl;           // Export endpoint URL
+    public ?array $footer;               // Per-page footer aggregations
+    public ?string $selectAllUrl;        // Select-all endpoint URL
+    public ?array $summary;              // Full-dataset summary aggregations
+    public ?array $config;               // Frontend feature config (detail rows, soft deletes, etc.)
+    public ?string $toggleUrl;           // Toggle endpoint URL
+    public ?array $enumOptions;          // Enum filter options resolved from PHP BackedEnum classes
+    public ?string $reorderUrl;          // Reorder endpoint URL
+    public ?string $importUrl;           // Import endpoint URL
+    public ?string $groupByColumn;       // Column ID to group rows by
+}
+```
+
+**`DataTableMeta`** — Pagination metadata:
+
+```php
+class DataTableMeta extends Data {
+    public int $currentPage;
+    public int $lastPage;
+    public int $perPage;
+    public int $total;
+    public array $sorts;                 // DataTableSort[] {id, direction}
+    public array $filters;               // Active filter state
+    public string $paginationType;       // 'standard', 'simple', 'cursor'
+    public ?string $nextCursor;
+    public ?string $prevCursor;
+}
+```
+
+**`DataTableExport`** — Maatwebsite Excel export class (implements `FromQuery`, `WithHeadings`, `WithMapping`). Receives a Builder and column definitions. Override or extend for custom export formatting.
 
 ### Pagination Types
 
@@ -1309,31 +1442,40 @@ import { esTranslations } from "./data-table/i18n-es";
 
 #### All Translation Keys
 
-The `DataTableTranslations` interface has **80+ keys** covering every UI string. Key categories:
+The `DataTableTranslations` interface has **100+ keys** covering every UI string:
 
 | Category | Keys | Description |
 |----------|------|-------------|
-| Pagination | `totalResults`, `rowsPerPage`, `pageOf`, `first`, `last`, `next`, `previous` | Pagination controls |
-| Table chrome | `columns`, `reorder`, `search`, `noData`, `loading`, `actions` | Core UI |
-| Selection | `selectAll`, `selectRow`, `selectAllMatching`, `clearSelection`, `selected` | Row selection |
-| Filters | `filtersTitle`, `addFilter`, `clearAllFilters`, `apply`, `activeFilters` | Filter panel |
-| Operators | `opContains`, `opEquals`, `opGreaterThan`, `opBetween`, `opBefore`, `opAfter`, ... | 14 filter operators |
+| Pagination | `totalResults(count)`, `rowsPerPage`, `pageOf(current, last)` | Pagination controls |
+| Table chrome | `columns`, `reorder`, `done`, `noData`, `loading`, `actions` | Core UI |
+| Selection | `selectAll`, `selectRow`, `selectAllMatching(count)`, `clearSelection`, `selected(count)` | Row selection |
+| Export | `export`, `exportFormat`, `exporting`, `exportReady`, `exportDownload` | Export UI |
+| Filters | `filter`, `search`, `operators`, `clearAllFilters`, `noResults`, `pressEnterToFilter`, `activeFilters` | Filter panel |
+| Operators | `opContains`, `opExact`, `opEquals`, `opNotEquals`, `opGreaterThan`, `opGreaterOrEqual`, `opLessThan`, `opLessOrEqual`, `opBetween`, `opIs`, `opIsNot`, `opOnDate`, `opBefore`, `opAfter` | 14 filter operators |
+| Boolean | `yes`, `no` | Boolean display |
+| Number | `min`, `max`, `value` | Number range inputs |
 | Editing | `editSave`, `editCancel`, `editSaving`, `save`, `cancel` | Inline editing |
 | Confirmation | `confirmTitle`, `confirmDescription`, `confirmAction`, `confirmCancel` | Dialogs |
-| Export | `exportXlsx`, `exportCsv`, `exportPdf`, `exporting`, `exportReady`, `exportDownload` | Export UI |
 | Import | `importData`, `importFile`, `importUploading`, `importSuccess`, `importError` | Import dialog |
-| Grouping | `groupBy`, `ungrouped`, `none` | Row grouping |
+| Views | `view`, `quickViews`, `savedViews`, `saveFilters`, `manageViews`, `viewName`, `viewNamePlaceholder`, `filtersWillBeSavedLocally`, `filtersLabel`, `none`, `sortLabel`, `columnsCount(visible, total)` | Quick/saved views |
+| Grouping | `groupBy`, `ungrouped` | Row grouping |
 | Date grouping | `dateGroupDay`, `dateGroupWeek`, `dateGroupMonth`, `dateGroupYear` | Date grouping labels |
 | Summary | `summarySum`, `summaryAvg`, `summaryMin`, `summaryMax`, `summaryCount`, `summaryRange` | Footer aggregations |
-| Views | `view`, `quickViews`, `savedViews`, `saveFilters`, `viewName` | Quick/saved views |
-| Context menu | `sortAscending`, `sortDescending`, `hideColumn`, `pinLeft`, `pinRight`, `unpin` | Column context menu |
+| Toggle | `toggleOn`, `toggleOff` | Boolean toggle |
+| Density | `density`, `densityCompact`, `densityComfortable`, `densitySpacious` | Density toggle |
+| Copy | `copied`, `copyToClipboard` | Copy cell |
+| Context menu | `sortAscending`, `sortDescending`, `hideColumn`, `pinLeft`, `pinRight`, `unpin`, `pinColumn` | Column context menu |
+| Reorder | `reorderRows` | Row drag-and-drop |
 | Undo/Redo | `undo`, `redo`, `editUndone`, `editRedone` | Undo/redo stack |
-| Keyboard | `keyboardShortcuts`, `shortcutNavigation`, `shortcutSelect`, `shortcutHelp` | Shortcuts overlay |
 | Batch edit | `batchEdit`, `batchEditApply`, `batchEditColumn`, `batchEditValue` | Batch editing |
+| Search | `matches(count)` | Search highlight match count |
+| Keyboard | `keyboardShortcuts`, `shortcutNavigation`, `shortcutSelect`, `shortcutExpand`, `shortcutEscape`, `shortcutSearch`, `shortcutHelp`, `close` | Shortcuts overlay |
+| Detail row | `expand`, `collapse` | Expandable rows |
 | Soft deletes | `showTrashed`, `hideTrashed`, `replicate`, `forceDelete`, `restore` | Soft delete management |
+| Polling | `autoRefresh` | Auto-refresh |
+| Print | `print` | Print button |
 | Row creation | `addRow` | Inline row creation |
 | Empty state | `emptyTitle`, `emptyDescription` | Empty table |
-| Misc | `expand`, `collapse`, `copied`, `autoRefresh`, `reorderRows`, `matches` | Other UI strings |
 
 ### `SavedView` Model
 
@@ -1357,6 +1499,47 @@ The `SavedView` Eloquent model stores user-saved views in the `data_table_saved_
 ### TypeScript Type Reference
 
 ```tsx
+// Sort descriptor (used in DataTableMeta.sorts)
+interface DataTableSort {
+    id: string;
+    direction: "asc" | "desc";
+}
+
+// Density mode
+type DataTableDensity = "compact" | "comfortable" | "spacious";
+
+// Conditional row/cell styling rule (from tableRules())
+interface DataTableRule {
+    column: string;
+    operator: string;
+    value: unknown;
+    row?: { class?: string };
+    cell?: { class?: string };
+}
+
+// Server-side table config (from DataTableResponse.config)
+interface DataTableConfig {
+    detailRowEnabled?: boolean;
+    detailDisplay?: "inline" | "modal" | "drawer";
+    softDeletesEnabled?: boolean;
+    pollingInterval?: number;
+    persistState?: boolean;
+    deferLoading?: boolean;
+    asyncFilterColumns?: string[];
+    cascadingFilters?: Record<string, string>;
+    rules?: DataTableRule[];
+}
+
+// Quick view (frontend version — includes computed `active` boolean)
+interface DataTableQuickView {
+    id: string;
+    label: string;
+    params: Record<string, unknown>;
+    icon?: string | null;
+    active: boolean;
+    columns?: string[] | null;
+}
+
 // Confirm dialog options (used in actions and bulk actions)
 interface DataTableConfirmOptions {
     title?: string;
@@ -1364,6 +1547,29 @@ interface DataTableConfirmOptions {
     confirmLabel?: string;
     cancelLabel?: string;
     variant?: "default" | "destructive";
+}
+
+// Row action
+interface DataTableAction<TData> {
+    label: string;
+    icon?: string;                        // Lucide icon name
+    onClick: (row: TData) => void;
+    variant?: "default" | "destructive";
+    visible?: (row: TData) => boolean;
+    confirm?: boolean | DataTableConfirmOptions;
+    group?: DataTableAction<TData>[];     // Nested submenu
+    form?: DataTableFormField[];          // Modal form fields
+}
+
+// Bulk action
+interface DataTableBulkAction<TData> {
+    id: string;
+    label: string;
+    icon?: React.ComponentType<{ className?: string }>;
+    variant?: "default" | "destructive";
+    disabled?: (rows: TData[]) => boolean; // Function, not simple boolean
+    onClick: (rows: TData[]) => void;
+    confirm?: boolean | DataTableConfirmOptions;
 }
 
 // Form field for forms-in-actions
@@ -1383,6 +1589,75 @@ interface DataTableHeaderAction {
     icon?: React.ComponentType<{ className?: string }>;
     onClick: () => void;
     variant?: "default" | "outline" | "destructive" | "ghost";
+}
+
+// Filter value (from useDataTableFilters hook)
+interface FilterValue {
+    operator: string;
+    values: string[];
+}
+type ActiveFilters = Record<string, FilterValue>;
+```
+
+### Sub-Component Props
+
+These sub-components are exported for custom layouts:
+
+**`DataTablePagination`:**
+
+```tsx
+interface DataTablePaginationProps {
+    meta: DataTableMeta;
+    onPageChange: (page: number) => void;
+    onPerPageChange: (perPage: number) => void;
+    onCursorChange?: (cursor: string | null) => void;
+    t: DataTableTranslations;
+    prefix?: string;
+    partialReloadKey?: string;
+    prefetch?: boolean;                   // Inertia v2 prefetch on hover (default: true)
+}
+```
+
+**`DataTableColumnHeader`:**
+
+```tsx
+interface DataTableColumnHeaderProps {
+    label: string;
+    children?: React.ReactNode;           // Custom header content
+    sortable: boolean;
+    sorts: DataTableSort[];
+    columnId: string;
+    onSort: (columnId: string, multi: boolean) => void;
+    align?: "left" | "right";            // Right-align for number columns
+}
+```
+
+**`DataTableRowActions`:**
+
+```tsx
+interface DataTableRowActionsProps<TData> {
+    row: TData;
+    actions: DataTableAction<TData>[];
+    t: DataTableTranslations;
+    onFormAction?: (action: DataTableAction<TData>, row: TData) => void;
+}
+```
+
+**`DataTableQuickViews`:**
+
+```tsx
+interface DataTableQuickViewsProps {
+    quickViews: DataTableQuickView[];
+    tableName: string;
+    columnVisibility: VisibilityState;
+    columnOrder: ColumnOrderState;
+    allColumns: DataTableColumnDef[];
+    onSelect: (params: Record<string, unknown>) => void;
+    onApplyCustom: (search: string) => void;
+    onApplyColumns: (columnIds: string[]) => void;
+    onApplyColumnOrder: (order: ColumnOrderState) => void;
+    enableCustom?: boolean;               // Enable "Save filters" option
+    t: DataTableTranslations;
 }
 ```
 
@@ -1573,6 +1848,7 @@ php artisan data-table:translations --lang=es     # Spanish
 php artisan data-table:translations --lang=de     # German
 php artisan data-table:translations --lang=ar     # Arabic
 php artisan data-table:translations --all          # All 8 languages
+php artisan data-table:translations --lang=es --output=resources/js/i18n/es.ts  # Custom path
 ```
 
 Supported languages: English, French, Spanish, German, Portuguese, Arabic, Chinese, Japanese.
@@ -1750,6 +2026,11 @@ import {
     type UseDataTableReturn,
     type UseDataTableFiltersOptions,
     type UseDataTableFiltersReturn,
+    type DataTableSort,
+    type DataTableDensity,
+    type DataTableRule,
+    type DataTableConfig,
+    type DataTableQuickView,
     // i18n
     defaultTranslations,
     frTranslations,
@@ -2065,12 +2346,14 @@ php artisan data-table:audit-report
 # Filter by table, action, or user
 php artisan data-table:audit-report --table=products --action=inline_edit --user=1
 
-# Last 30 days in JSON format
-php artisan data-table:audit-report --days=30 --format=json
+# Last 30 days in JSON format, limited to 50 entries
+php artisan data-table:audit-report --days=30 --limit=50 --format=json
 
 # Export as CSV
 php artisan data-table:audit-report --format=csv > audit.csv
 ```
+
+**Options:** `--table`, `--action`, `--user`, `--days` (default: 7), `--limit` (default: 100), `--format` (table/json/csv)
 
 The report includes:
 - Summary statistics: actions breakdown, tables breakdown, users breakdown
