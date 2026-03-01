@@ -95,7 +95,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { router } from "@inertiajs/react";
 import { DataTableColumnHeader } from "./data-table-column-header";
 import { defaultTranslations, type DataTableTranslations } from "./i18n";
@@ -113,6 +113,76 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+
+// ─── HTML sanitization ──────────────────────────────────────────────────────
+
+/** Strip dangerous HTML tags/attributes. Uses DOMPurify if available, falls back to tag stripping. */
+function sanitizeHtml(html: string): string {
+    // Use DOMPurify if available (recommended: npm install dompurify)
+    if (typeof window !== "undefined" && (window as unknown as Record<string, unknown>).DOMPurify) {
+        return ((window as unknown as Record<string, { sanitize: (html: string) => string }>).DOMPurify).sanitize(html);
+    }
+    // Fallback: strip <script>, <iframe>, <object>, <embed>, on* attributes
+    return html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
+        .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, "")
+        .replace(/<embed\b[^>]*\/?>/gi, "")
+        .replace(/\bon\w+\s*=\s*"[^"]*"/gi, "")
+        .replace(/\bon\w+\s*=\s*'[^']*'/gi, "")
+        .replace(/javascript\s*:/gi, "");
+}
+
+// ─── Toast notification helper ──────────────────────────────────────────────
+
+let toastContainer: HTMLDivElement | null = null;
+
+function showToast(message: string, variant: "success" | "error" | "info" = "info") {
+    if (typeof document === "undefined") return;
+    if (!toastContainer) {
+        toastContainer = document.createElement("div");
+        toastContainer.className = "fixed bottom-4 right-4 z-[9999] flex flex-col gap-2";
+        toastContainer.setAttribute("aria-live", "polite");
+        toastContainer.setAttribute("role", "status");
+        document.body.appendChild(toastContainer);
+    }
+    const toast = document.createElement("div");
+    const bgClass = variant === "error" ? "bg-destructive text-destructive-foreground" : variant === "success" ? "bg-emerald-600 text-white" : "bg-primary text-primary-foreground";
+    toast.className = `${bgClass} px-4 py-2 rounded-lg shadow-lg text-sm animate-in slide-in-from-bottom-2 max-w-sm`;
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
+    setTimeout(() => { toast.classList.add("opacity-0", "transition-opacity"); setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+// ─── Lightweight row virtualization ──────────────────────────────────────────
+
+function useVirtualRows(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, rowCount: number, estimateRowHeight = 40) {
+    const [scrollTop, setScrollTop] = useState(0);
+    const [containerHeight, setContainerHeight] = useState(600);
+
+    useEffect(() => {
+        if (!enabled || !containerRef.current) return;
+        const el = containerRef.current;
+        setContainerHeight(el.clientHeight);
+        const handleScroll = () => setScrollTop(el.scrollTop);
+        const handleResize = () => setContainerHeight(el.clientHeight);
+        el.addEventListener("scroll", handleScroll, { passive: true });
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleResize) : null;
+        ro?.observe(el);
+        return () => { el.removeEventListener("scroll", handleScroll); ro?.disconnect(); };
+    }, [enabled, containerRef]);
+
+    if (!enabled) return { virtualRows: null, totalHeight: 0, offsetTop: 0 };
+
+    const overscan = 5;
+    const totalHeight = rowCount * estimateRowHeight;
+    const startIndex = Math.max(0, Math.floor(scrollTop / estimateRowHeight) - overscan);
+    const endIndex = Math.min(rowCount, Math.ceil((scrollTop + containerHeight) / estimateRowHeight) + overscan);
+    const virtualRows = { startIndex, endIndex };
+    const offsetTop = startIndex * estimateRowHeight;
+
+    return { virtualRows, totalHeight, offsetTop };
+}
 
 // ─── Safe localStorage helpers ──────────────────────────────────────────────
 
@@ -497,6 +567,11 @@ function useUndoRedo(enabled: boolean) {
         return action;
     }, [redoStack]);
 
+    // Cleanup on unmount to prevent memory leaks
+    useEffect(() => {
+        return () => { setUndoStack([]); setRedoStack([]); };
+    }, []);
+
     return { pushEdit, undo, redo, canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 };
 }
 
@@ -762,6 +837,9 @@ function InlineEditCell({ value: initialValue, columnId, columnType, onSave, t }
                 ? Number(editValue) : editValue;
             await onSave(parsed);
             setEditing(false);
+            showToast("Saved", "success");
+        } catch (e) {
+            showToast(e instanceof Error ? e.message : "Save failed", "error");
         } finally { setSaving(false); }
     }, [editValue, columnType, onSave]);
 
@@ -803,12 +881,18 @@ function ToggleCell({ value, row, columnId, toggleUrl }: {
         router.patch(url, { column: columnId, value: newValue } as Record<string, unknown>, {
             preserveScroll: true,
             preserveState: true,
-            onError: () => setChecked(!newValue),
+            onError: (errors) => {
+                setChecked(!newValue);
+                const msg = typeof errors === "object" && errors !== null ? Object.values(errors)[0] : "Toggle failed";
+                showToast(String(msg), "error");
+            },
             onFinish: () => setSaving(false),
         });
     }, [row.id, toggleUrl, columnId]);
 
-    return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving} className="data-[state=checked]:bg-emerald-600" />;
+    return <Switch checked={checked} onCheckedChange={handleToggle} disabled={saving}
+        className="data-[state=checked]:bg-emerald-600"
+        aria-label={`Toggle ${columnId}`} role="switch" aria-checked={checked} />;
 }
 
 function DensityToggle({ density, onChange, t }: {
@@ -973,7 +1057,7 @@ function ColumnsDropdown<TData>({ table, tableColumns, columnOrder, onReorder, s
                 onDragStart={() => handleDragStart(column.id)}
                 onDragOver={(e) => { e.preventDefault(); dragOverRef.current = column.id; setDragOverId(column.id); }}
                 onDragEnd={handleDragEnd}>
-                {isReorderActive && <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/50" />}
+                {isReorderActive && <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/50" aria-label="Drag to reorder" role="img" />}
                 {showVisibility ? (
                     <label className="flex flex-1 cursor-pointer items-center gap-2">
                         <Checkbox checked={column.getIsVisible()} onCheckedChange={(value) => column.toggleVisibility(!!value)} />
@@ -1459,6 +1543,12 @@ function DataTableInner<TData extends object>({
     const lastSelectedIndex = useRef<number | null>(null);
     const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
     const tableBodyRef = useRef<HTMLTableSectionElement>(null);
+    const virtualContainerRef = useRef<HTMLDivElement>(null);
+    const allRows = table.getRowModel().rows;
+    const { virtualRows, totalHeight, offsetTop } = useVirtualRows(
+        resolvedOptions.virtualScrolling, virtualContainerRef, allRows.length,
+        density === "compact" ? 32 : density === "spacious" ? 52 : 40
+    );
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [showTrashed, setShowTrashed] = useState(false);
 
@@ -1680,19 +1770,19 @@ function DataTableInner<TData extends object>({
                             : <X className="h-4 w-4 text-muted-foreground/40" />;
                     }
 
-                    // HTML rendering
+                    // HTML rendering (sanitized)
                     if (col.html && typeof value === "string") {
-                        return wrapCell(<span dangerouslySetInnerHTML={{ __html: value }} />);
+                        return wrapCell(<span dangerouslySetInnerHTML={{ __html: sanitizeHtml(value) }} />);
                     }
 
-                    // Markdown rendering (simplified — bold, italic, code, links)
+                    // Markdown rendering (simplified — bold, italic, code, links — sanitized)
                     if (col.markdown && typeof value === "string") {
                         const rendered = value
                             .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
                             .replace(/\*(.+?)\*/g, "<em>$1</em>")
                             .replace(/`(.+?)`/g, "<code class='rounded bg-muted px-1 py-0.5 text-xs'>$1</code>")
                             .replace(/\[(.+?)\]\((.+?)\)/g, "<a href='$2' class='text-primary hover:underline'>$1</a>");
-                        return wrapCell(<span dangerouslySetInnerHTML={{ __html: rendered }} />);
+                        return wrapCell(<span dangerouslySetInnerHTML={{ __html: sanitizeHtml(rendered) }} />);
                     }
 
                     // Bulleted list
@@ -1936,11 +2026,18 @@ function DataTableInner<TData extends object>({
     }, [table]);
 
     // Keyboard shortcut: ? to show shortcuts overlay
+    const searchInputRef = useRef<HTMLInputElement>(null);
+
     useEffect(() => {
         if (!resolvedOptions.shortcutsOverlay) return;
         const handler = (e: KeyboardEvent) => {
             if (e.key === "?" && !e.ctrlKey && !e.metaKey && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
                 setShortcutsOpen(true);
+            }
+            // Ctrl+F: focus global search input
+            if (resolvedOptions.globalSearch && (e.ctrlKey || e.metaKey) && e.key === "f" && !(e.target instanceof HTMLInputElement)) {
+                e.preventDefault();
+                searchInputRef.current?.focus();
             }
             // Ctrl+Z / Ctrl+Y for undo/redo
             if (resolvedOptions.undoRedo && e.ctrlKey && !e.shiftKey && e.key === "z") {
@@ -1952,7 +2049,7 @@ function DataTableInner<TData extends object>({
         };
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
-    }, [resolvedOptions.shortcutsOverlay, resolvedOptions.undoRedo, handleUndo, handleRedo]);
+    }, [resolvedOptions.shortcutsOverlay, resolvedOptions.undoRedo, resolvedOptions.globalSearch, handleUndo, handleRedo]);
 
     // Selection persistence: sync with TanStack row selection
     useEffect(() => {
@@ -2036,12 +2133,13 @@ function DataTableInner<TData extends object>({
             {slots?.beforeTable}
 
             {/* ── Toolbar ── */}
-            <div className="flex items-center justify-between gap-3 print:hidden">
-                <div className="flex flex-1 items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 print:hidden">
+                <div className="flex flex-1 items-center gap-2 min-w-0">
                     {resolvedOptions.globalSearch && (
                         <div className="relative w-56 lg:w-64">
                             <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-                            <Input placeholder={t.search} value={globalSearchValue} onChange={handleGlobalSearchChange} className="h-8 pl-8 text-sm" />
+                            <Input ref={searchInputRef} placeholder={t.search} value={globalSearchValue} onChange={handleGlobalSearchChange}
+                                className="h-8 pl-8 text-sm" aria-label={t.search} />
                         </div>
                     )}
                     {resolvedOptions.filters && (
@@ -2151,7 +2249,7 @@ function DataTableInner<TData extends object>({
                 <div className={cn("rounded-lg border overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
-                    <div className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}>
+                    <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}>
                         <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
                             role="grid" aria-rowcount={meta.total} aria-colcount={table.getVisibleLeafColumns().length}>
                             <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background")}>
@@ -2328,8 +2426,20 @@ function DataTableInner<TData extends object>({
                                             });
                                         }
 
-                                        // Normal (non-grouped) mode
-                                        return table.getRowModel().rows.map((row, index) => renderRow(row, index));
+                                        // Normal mode — with optional virtual scrolling
+                                        if (virtualRows) {
+                                            const rows = allRows.slice(virtualRows.startIndex, virtualRows.endIndex);
+                                            return (
+                                                <>
+                                                    {offsetTop > 0 && <tr style={{ height: offsetTop }} />}
+                                                    {rows.map((row, i) => renderRow(row, virtualRows.startIndex + i))}
+                                                    {(totalHeight - offsetTop - rows.length * (density === "compact" ? 32 : density === "spacious" ? 52 : 40)) > 0 && (
+                                                        <tr style={{ height: totalHeight - offsetTop - rows.length * (density === "compact" ? 32 : density === "spacious" ? 52 : 40) }} />
+                                                    )}
+                                                </>
+                                            );
+                                        }
+                                        return allRows.map((row, index) => renderRow(row, index));
                                     })()
                                 ) : (
                                     <TableRow>

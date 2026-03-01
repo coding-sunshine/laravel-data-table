@@ -59,6 +59,19 @@ abstract class AbstractDataTable extends Data
 
     abstract public static function tableBaseQuery(): Builder;
 
+    /**
+     * Authorization hook for controller actions.
+     * Override to implement row-level access control via gates/policies.
+     *
+     * @param  string  $action  The action: 'export', 'import', 'inline_edit', 'toggle', 'reorder'
+     * @param  Request  $request
+     * @return bool
+     */
+    public static function tableAuthorize(string $action, Request $request): bool
+    {
+        return true;
+    }
+
     public static function tableDefaultSort(): string
     {
         return '-id';

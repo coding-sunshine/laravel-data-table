@@ -31,6 +31,11 @@ class DataTableInlineEditController
             abort(404, 'Inline editing is not enabled for this table.');
         }
 
+        // Authorization check
+        if (method_exists($class, 'tableAuthorize')) {
+            abort_unless($class::tableAuthorize('inline_edit', $request), 403, 'You are not authorized to edit this table.');
+        }
+
         // Rate limiting: configurable via data-table.rate_limit.inline_edit (default: 60 per minute)
         $maxAttempts = config('data-table.rate_limit.inline_edit', 60);
         if ($maxAttempts > 0) {

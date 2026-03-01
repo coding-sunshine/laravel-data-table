@@ -117,6 +117,8 @@ return [
     'rate_limit' => [
         'inline_edit' => 60,
         'toggle' => 60,
+        'export' => 10,
+        'import' => 5,
     ],
 
     /*
