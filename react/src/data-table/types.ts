@@ -253,6 +253,12 @@ export interface DataTableOptions {
     spreadsheetMode: boolean;
     /** Enable kanban board view */
     kanbanView: boolean;
+    /** Enable master/detail nested sub-tables */
+    masterDetail: boolean;
+    /** Enable integrated charts (chart from column/selection) */
+    integratedCharts: boolean;
+    /** Enable find & replace (Ctrl+F with match highlighting) */
+    findReplace: boolean;
 }
 
 /** Server-driven action visibility rule */
@@ -475,6 +481,12 @@ export interface DataTableProps<TData extends object> {
     cardTitleColumn?: string;
     /** Column ID to use as card subtitle in grid/card layouts */
     cardSubtitleColumn?: string;
+    /** Render function for master/detail nested sub-table content */
+    renderMasterDetail?: (row: TData) => React.ReactNode;
+    /** Called when find & replace executes a replacement */
+    onFindReplace?: (rowId: unknown, columnId: string, oldValue: unknown, newValue: unknown) => Promise<void> | void;
+    /** Chart types available for integrated charts (default: ['bar', 'line', 'pie']) */
+    chartTypes?: ("bar" | "line" | "pie" | "doughnut")[];
 }
 
 /** Imperative API ref for programmatic grid control */

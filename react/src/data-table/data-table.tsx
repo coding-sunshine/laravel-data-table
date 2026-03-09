@@ -2634,6 +2634,299 @@ function GroupBySelector({ options, columns, currentGroupBy, onChange, t }: {
     );
 }
 
+// ─── Master/Detail nested sub-table ──────────────────────────────────────────
+
+function MasterDetailRow<TData>({ row, colSpan, renderContent, t }: {
+    row: TData; colSpan: number;
+    renderContent: (row: TData) => React.ReactNode;
+    t: DataTableTranslations;
+}) {
+    const [loaded, setLoaded] = useState(false);
+    useEffect(() => { const timer = setTimeout(() => setLoaded(true), 0); return () => clearTimeout(timer); }, []);
+    return (
+        <TableRow className="bg-muted/10 hover:bg-muted/20 border-b border-border/30">
+            <TableCell colSpan={colSpan} className="p-0">
+                <div className="border-l-4 border-primary/30 pl-4 py-3 pr-3">
+                    {loaded ? renderContent(row) : (
+                        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />{t.masterDetailLoading}
+                        </div>
+                    )}
+                </div>
+            </TableCell>
+        </TableRow>
+    );
+}
+
+// ─── Integrated Charts ───────────────────────────────────────────────────────
+
+type ChartKind = "bar" | "line" | "pie" | "doughnut";
+
+interface IntegratedChartState {
+    columnId: string;
+    chartType: ChartKind;
+}
+
+/** Minimal SVG-based chart renderer — zero external dependencies */
+function IntegratedChartPanel({ data, columns, chartState, onClose, onChangeColumn, onChangeType, availableTypes, t }: {
+    data: Record<string, unknown>[];
+    columns: DataTableColumnDef[];
+    chartState: IntegratedChartState;
+    onClose: () => void;
+    onChangeColumn: (colId: string) => void;
+    onChangeType: (type: ChartKind) => void;
+    availableTypes: ChartKind[];
+    t: DataTableTranslations;
+}) {
+    const numericColumns = useMemo(() => columns.filter(c => c.type === "number" || c.type === "currency" || c.type === "percentage"), [columns]);
+    const labelColumns = useMemo(() => columns.filter(c => c.type === "text" || c.type === "option" || c.type === "badge"), [columns]);
+
+    const chartData = useMemo(() => {
+        const values: { label: string; value: number }[] = [];
+        const labelCol = labelColumns[0];
+        for (const row of data) {
+            const rawVal = row[chartState.columnId];
+            const num = typeof rawVal === "number" ? rawVal : Number(rawVal);
+            if (isNaN(num)) continue;
+            const label = labelCol ? String(row[labelCol.id] ?? "") : `Row ${values.length + 1}`;
+            values.push({ label, value: num });
+        }
+        return values.slice(0, 50); // limit for readability
+    }, [data, chartState.columnId, labelColumns]);
+
+    const maxVal = useMemo(() => Math.max(...chartData.map(d => Math.abs(d.value)), 1), [chartData]);
+    const total = useMemo(() => chartData.reduce((s, d) => s + Math.abs(d.value), 0), [chartData]);
+
+    // Color palette
+    const colors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316", "#6366f1", "#14b8a6",
+        "#e11d48", "#84cc16", "#7c3aed", "#0ea5e9", "#d946ef", "#10b981", "#f43f5e", "#a855f7", "#0891b2", "#65a30d"];
+
+    const chartTypeLabels: Record<ChartKind, string> = { bar: t.chartBar, line: t.chartLine, pie: t.chartPie, doughnut: t.chartDoughnut };
+
+    const renderBarChart = () => {
+        if (chartData.length === 0) return <text x="200" y="100" textAnchor="middle" className="fill-muted-foreground text-sm">{t.chartNoData}</text>;
+        const barWidth = Math.max(8, Math.min(40, 380 / chartData.length - 4));
+        const chartWidth = chartData.length * (barWidth + 4);
+        return (
+            <svg viewBox={`0 0 ${Math.max(400, chartWidth + 40)} 220`} className="w-full h-48">
+                {chartData.map((d, i) => {
+                    const barH = (Math.abs(d.value) / maxVal) * 180;
+                    const x = 20 + i * (barWidth + 4);
+                    return (
+                        <g key={i}>
+                            <rect x={x} y={200 - barH} width={barWidth} height={barH} fill={colors[i % colors.length]} rx="2" opacity="0.85">
+                                <title>{`${d.label}: ${d.value}`}</title>
+                            </rect>
+                            {chartData.length <= 20 && (
+                                <text x={x + barWidth / 2} y={215} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: "8px" }}>
+                                    {d.label.length > 6 ? d.label.slice(0, 5) + "…" : d.label}
+                                </text>
+                            )}
+                        </g>
+                    );
+                })}
+            </svg>
+        );
+    };
+
+    const renderLineChart = () => {
+        if (chartData.length < 2) return <text x="200" y="100" textAnchor="middle" className="fill-muted-foreground text-sm">{t.chartNoData}</text>;
+        const w = 400, h = 200, px = 20, py = 10;
+        const points = chartData.map((d, i) => ({
+            x: px + (i / (chartData.length - 1)) * (w - 2 * px),
+            y: py + (1 - Math.abs(d.value) / maxVal) * (h - 2 * py),
+        }));
+        const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+        return (
+            <svg viewBox={`0 0 ${w} ${h + 20}`} className="w-full h-48">
+                <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
+                {points.map((p, i) => (
+                    <circle key={i} cx={p.x} cy={p.y} r="3" fill="#3b82f6">
+                        <title>{`${chartData[i].label}: ${chartData[i].value}`}</title>
+                    </circle>
+                ))}
+            </svg>
+        );
+    };
+
+    const renderPieChart = (isDoughnut: boolean) => {
+        if (chartData.length === 0 || total === 0) return <text x="150" y="100" textAnchor="middle" className="fill-muted-foreground text-sm">{t.chartNoData}</text>;
+        const cx = 150, cy = 100, r = 80, innerR = isDoughnut ? 45 : 0;
+        let startAngle = -Math.PI / 2;
+        const slices = chartData.slice(0, 20).map((d, i) => {
+            const sliceAngle = (Math.abs(d.value) / total) * 2 * Math.PI;
+            const endAngle = startAngle + sliceAngle;
+            const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+            const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
+            const ix1 = cx + innerR * Math.cos(startAngle), iy1 = cy + innerR * Math.sin(startAngle);
+            const ix2 = cx + innerR * Math.cos(endAngle), iy2 = cy + innerR * Math.sin(endAngle);
+            const largeArc = sliceAngle > Math.PI ? 1 : 0;
+            const pathD = isDoughnut
+                ? `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix1} ${iy1} Z`
+                : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+            startAngle = endAngle;
+            return <path key={i} d={pathD} fill={colors[i % colors.length]} opacity="0.85"><title>{`${d.label}: ${d.value}`}</title></path>;
+        });
+        return (
+            <svg viewBox="0 0 300 200" className="w-full h-48">
+                {slices}
+            </svg>
+        );
+    };
+
+    return (
+        <div className="rounded-lg border bg-card shadow-sm p-4 print:hidden">
+            <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">{t.chartTitle}</h3>
+                <div className="flex items-center gap-2">
+                    <Select value={chartState.columnId} onValueChange={onChangeColumn}>
+                        <SelectTrigger className="h-7 w-[140px] text-xs">
+                            <SelectValue placeholder={t.chartColumn} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {numericColumns.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Select value={chartState.chartType} onValueChange={(v) => onChangeType(v as ChartKind)}>
+                        <SelectTrigger className="h-7 w-[100px] text-xs">
+                            <SelectValue placeholder={t.chartType} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {availableTypes.map(type => <SelectItem key={type} value={type}>{chartTypeLabels[type]}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}><X className="h-3.5 w-3.5" /></Button>
+                </div>
+            </div>
+            <div className="bg-muted/20 rounded-md p-2">
+                <svg width="0" height="0"><defs /></svg>
+                {chartState.chartType === "bar" && renderBarChart()}
+                {chartState.chartType === "line" && renderLineChart()}
+                {chartState.chartType === "pie" && renderPieChart(false)}
+                {chartState.chartType === "doughnut" && renderPieChart(true)}
+            </div>
+            {/* Legend */}
+            {(chartState.chartType === "pie" || chartState.chartType === "doughnut") && chartData.length > 0 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+                    {chartData.slice(0, 20).map((d, i) => (
+                        <div key={i} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: colors[i % colors.length] }} />
+                            {d.label}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Find & Replace ──────────────────────────────────────────────────────────
+
+interface FindReplaceMatch {
+    rowIndex: number;
+    columnId: string;
+    rowId: unknown;
+    value: string;
+}
+
+function useFindReplace(enabled: boolean, data: Record<string, unknown>[], columns: DataTableColumnDef[]) {
+    const [query, setQuery] = useState("");
+    const [replacement, setReplacement] = useState("");
+    const [caseSensitive, setCaseSensitive] = useState(false);
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    const matches = useMemo<FindReplaceMatch[]>(() => {
+        if (!enabled || !query) return [];
+        const q = caseSensitive ? query : query.toLowerCase();
+        const result: FindReplaceMatch[] = [];
+        const searchableCols = columns.filter(c => c.type === "text" || c.type === "option" || c.type === "badge" || c.type === "email" || c.type === "link" || c.type === "phone");
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const rowId = row.id ?? i;
+            for (const col of searchableCols) {
+                const val = String(row[col.id] ?? "");
+                const compareVal = caseSensitive ? val : val.toLowerCase();
+                if (compareVal.includes(q)) {
+                    result.push({ rowIndex: i, columnId: col.id, rowId, value: val });
+                }
+            }
+        }
+        return result;
+    }, [enabled, query, caseSensitive, data, columns]);
+
+    const goToNext = useCallback(() => {
+        if (matches.length === 0) return;
+        setCurrentIndex(prev => (prev + 1) % matches.length);
+    }, [matches.length]);
+
+    const goToPrevious = useCallback(() => {
+        if (matches.length === 0) return;
+        setCurrentIndex(prev => (prev - 1 + matches.length) % matches.length);
+    }, [matches.length]);
+
+    // Reset index when matches change
+    useEffect(() => { setCurrentIndex(0); }, [matches.length]);
+
+    return { query, setQuery, replacement, setReplacement, caseSensitive, setCaseSensitive, matches, currentIndex, setCurrentIndex, goToNext, goToPrevious };
+}
+
+function FindReplaceBar({ state, onReplace, onReplaceAll, onClose, t }: {
+    state: ReturnType<typeof useFindReplace>;
+    onReplace: (match: FindReplaceMatch, newValue: string) => void;
+    onReplaceAll: (matches: FindReplaceMatch[], replacement: string) => void;
+    onClose: () => void;
+    t: DataTableTranslations;
+}) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    useEffect(() => { inputRef.current?.focus(); }, []);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Escape") { onClose(); return; }
+        if (e.key === "Enter") {
+            if (e.shiftKey) state.goToPrevious();
+            else state.goToNext();
+        }
+    };
+
+    const currentMatch = state.matches[state.currentIndex] ?? null;
+
+    return (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card shadow-sm px-3 py-2 print:hidden">
+            <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Input ref={inputRef} value={state.query} onChange={(e) => state.setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t.findPlaceholder} className="h-7 w-40 text-xs" />
+            <Input value={state.replacement} onChange={(e) => state.setReplacement(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t.replacePlaceholder} className="h-7 w-40 text-xs" />
+            <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={state.goToPrevious} disabled={state.matches.length === 0}>{t.findPrevious}</Button>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={state.goToNext} disabled={state.matches.length === 0}>{t.findNext}</Button>
+            </div>
+            <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                    disabled={!currentMatch || !state.replacement}
+                    onClick={() => { if (currentMatch && state.replacement) onReplace(currentMatch, state.replacement); }}>
+                    {t.replaceOne}
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                    disabled={state.matches.length === 0 || !state.replacement}
+                    onClick={() => { if (state.matches.length > 0 && state.replacement) onReplaceAll(state.matches, state.replacement); }}>
+                    {t.replaceAll}
+                </Button>
+            </div>
+            <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                <Checkbox checked={state.caseSensitive} onCheckedChange={(v) => state.setCaseSensitive(!!v)} className="h-3.5 w-3.5" />
+                {t.findCaseSensitive}
+            </label>
+            <span className="text-xs text-muted-foreground tabular-nums">
+                {state.query ? (state.matches.length > 0 ? t.findMatchesCount(state.currentIndex + 1, state.matches.length) : t.findNoMatches) : ""}
+            </span>
+            <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto" onClick={onClose}><X className="h-3.5 w-3.5" /></Button>
+        </div>
+    );
+}
+
 // ─── Main DataTable component ───────────────────────────────────────────────
 
 function DataTableInner<TData extends object>({
@@ -2654,6 +2947,7 @@ function DataTableInner<TData extends object>({
     kanbanColumnId, onKanbanMove, facetedCounts: facetedCountsProp,
     presenceChannel, currentUser,
     cardImageColumn, cardTitleColumn, cardSubtitleColumn,
+    renderMasterDetail, onFindReplace, chartTypes,
 }: DataTableProps<TData>) {
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
@@ -2687,6 +2981,7 @@ function DataTableInner<TData extends object>({
         layoutSwitcher: false, columnStatistics: false,
         conditionalFormatting: false, facetedFilters: false,
         presence: false, spreadsheetMode: false, kanbanView: false,
+        masterDetail: false, integratedCharts: false, findReplace: false,
         ...optionsOverride,
     }), [optionsOverride]);
 
@@ -2817,6 +3112,83 @@ function DataTableInner<TData extends object>({
         resolvedOptions.presence ? presenceChannel : undefined,
         resolvedOptions.presence ? currentUser : undefined,
     );
+
+    // Master/Detail expanded rows (separate from regular detail rows)
+    const [masterDetailExpanded, setMasterDetailExpanded] = useState<Set<string | number>>(new Set());
+    const hasMasterDetail = resolvedOptions.masterDetail && !!renderMasterDetail;
+    const toggleMasterDetail = useCallback((rowId: string | number) => {
+        setMasterDetailExpanded(prev => {
+            const next = new Set(prev);
+            if (next.has(rowId)) next.delete(rowId); else next.add(rowId);
+            return next;
+        });
+    }, []);
+
+    // Integrated Charts
+    const [chartState, setChartState] = useState<IntegratedChartState | null>(null);
+    const resolvedChartTypes = chartTypes ?? (["bar", "line", "pie", "doughnut"] as ChartKind[]);
+    const numericCols = useMemo(() => mergedColumns.filter(c => c.type === "number" || c.type === "currency" || c.type === "percentage"), [mergedColumns]);
+    const openChart = useCallback(() => {
+        const firstNumCol = numericCols[0];
+        if (firstNumCol) setChartState({ columnId: firstNumCol.id, chartType: "bar" });
+    }, [numericCols]);
+
+    // Find & Replace
+    const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+    const findReplace = useFindReplace(resolvedOptions.findReplace && findReplaceOpen, tableData.data as Record<string, unknown>[], mergedColumns);
+
+    // Ctrl+F keyboard shortcut for Find & Replace
+    useEffect(() => {
+        if (!resolvedOptions.findReplace) return;
+        const handler = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+                e.preventDefault();
+                setFindReplaceOpen(true);
+            }
+        };
+        document.addEventListener("keydown", handler);
+        return () => document.removeEventListener("keydown", handler);
+    }, [resolvedOptions.findReplace]);
+
+    // Find & Replace highlight set for cell rendering
+    const findReplaceHighlights = useMemo<Set<string>>(() => {
+        if (!findReplaceOpen || findReplace.matches.length === 0) return new Set();
+        return new Set(findReplace.matches.map(m => `${m.rowIndex}:${m.columnId}`));
+    }, [findReplaceOpen, findReplace.matches]);
+
+    const findReplaceCurrentKey = findReplace.matches[findReplace.currentIndex]
+        ? `${findReplace.matches[findReplace.currentIndex].rowIndex}:${findReplace.matches[findReplace.currentIndex].columnId}`
+        : null;
+
+    const handleFindReplace = useCallback((match: FindReplaceMatch, newValue: string) => {
+        if (onFindReplace) {
+            const row = tableData.data[match.rowIndex] as Record<string, unknown>;
+            const oldValue = row[match.columnId];
+            const replaced = String(oldValue ?? "").replace(
+                findReplace.caseSensitive ? match.value : new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+                newValue
+            );
+            onFindReplace(match.rowId, match.columnId, oldValue, replaced);
+            showToast(t.replaceSuccess(1), "success");
+        }
+    }, [onFindReplace, tableData.data, findReplace.caseSensitive, findReplace.query, t]);
+
+    const handleFindReplaceAll = useCallback((matches: FindReplaceMatch[], replacement: string) => {
+        if (onFindReplace) {
+            for (const match of matches) {
+                const row = tableData.data[match.rowIndex] as Record<string, unknown>;
+                const oldValue = row[match.columnId];
+                const replaced = String(oldValue ?? "").replace(
+                    findReplace.caseSensitive
+                        ? new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
+                        : new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+                    replacement
+                );
+                onFindReplace(match.rowId, match.columnId, oldValue, replaced);
+            }
+            showToast(t.replaceSuccess(matches.length), "success");
+        }
+    }, [onFindReplace, tableData.data, findReplace.caseSensitive, findReplace.query, t]);
 
     // Faceted counts: merge from prop and server response
     const facetedCounts = facetedCountsProp ?? tableData.facetedCounts ?? null;
@@ -3339,6 +3711,24 @@ function DataTableInner<TData extends object>({
             });
         }
 
+        // Master/Detail expand column
+        if (hasMasterDetail) {
+            result.push({
+                id: "_masterDetail", header: "", enableHiding: false, enableResizing: false, size: 36,
+                cell: ({ row }) => {
+                    const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
+                    const isMdExpanded = masterDetailExpanded.has(rowId);
+                    return (
+                        <Button variant="ghost" size="icon" className="h-6 w-6"
+                            onClick={(e) => { e.stopPropagation(); toggleMasterDetail(rowId); }}
+                            aria-label={isMdExpanded ? t.masterDetailCollapse : t.masterDetailExpand}>
+                            {isMdExpanded ? <ChevronDown className="h-4 w-4 text-primary" /> : <ChevronRight className="h-4 w-4" />}
+                        </Button>
+                    );
+                },
+            });
+        }
+
         // Selection column (checkbox or radio)
         if (hasBulkActions || selectionMode === "radio") {
             if (selectionMode === "radio") {
@@ -3390,7 +3780,7 @@ function DataTableInner<TData extends object>({
         }
 
         return result;
-    }, [mergedColumns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, resolvedOptions.rowReorder, resolvedOptions.searchHighlight, resolvedOptions.copyCell, columnSizing, hasDetailRows, expandedRows, tableName, selectionMode, responsiveHiddenCols, tableData.toggleUrl, onReorder, handleRowDragStart, handleRowDragOver, handleRowDragEnd, currentSearchTerm]);
+    }, [mergedColumns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, resolvedOptions.rowReorder, resolvedOptions.searchHighlight, resolvedOptions.copyCell, columnSizing, hasDetailRows, expandedRows, tableName, selectionMode, responsiveHiddenCols, tableData.toggleUrl, onReorder, handleRowDragStart, handleRowDragOver, handleRowDragEnd, currentSearchTerm, hasMasterDetail, masterDetailExpanded, toggleMasterDetail]);
 
     const { table, meta, columnVisibility, columnOrder, setColumnOrder, rowSelection, setRowSelection,
         applyColumns, handleSort, handlePageChange, handlePerPageChange, handleCursorChange,
@@ -3711,6 +4101,22 @@ function DataTableInner<TData extends object>({
                         </Button>
                     )}
 
+                    {/* Integrated Charts button */}
+                    {resolvedOptions.integratedCharts && numericCols.length > 0 && (
+                        <Button variant={chartState ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => chartState ? setChartState(null) : openChart()}>
+                            <BarChart3 className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">{t.chartTitle}</span>
+                        </Button>
+                    )}
+
+                    {/* Find & Replace button */}
+                    {resolvedOptions.findReplace && (
+                        <Button variant={findReplaceOpen ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => setFindReplaceOpen(v => !v)}>
+                            <Search className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">{t.findReplace}</span>
+                        </Button>
+                    )}
+
                     {slots?.toolbar ?? (
                         <>
                             <Popover>
@@ -3751,6 +4157,24 @@ function DataTableInner<TData extends object>({
                 <FacetedFilterSection columns={mergedColumns} facetedCounts={facetedCounts}
                     serverFilters={meta.filters as Record<string, unknown>}
                     prefix={prefix} partialReloadKey={partialReloadKey} t={t} />
+            )}
+
+            {/* ── Find & Replace bar ── */}
+            {resolvedOptions.findReplace && findReplaceOpen && (
+                <FindReplaceBar state={findReplace}
+                    onReplace={handleFindReplace} onReplaceAll={handleFindReplaceAll}
+                    onClose={() => { setFindReplaceOpen(false); findReplace.setQuery(""); }}
+                    t={t} />
+            )}
+
+            {/* ── Integrated Charts panel ── */}
+            {resolvedOptions.integratedCharts && chartState && (
+                <IntegratedChartPanel data={tableData.data as Record<string, unknown>[]}
+                    columns={mergedColumns} chartState={chartState}
+                    onClose={() => setChartState(null)}
+                    onChangeColumn={(colId) => setChartState(prev => prev ? { ...prev, columnId: colId } : null)}
+                    onChangeType={(type) => setChartState(prev => prev ? { ...prev, chartType: type } : null)}
+                    availableTypes={resolvedChartTypes} t={t} />
             )}
 
             {/* ── Inline row creation ── */}
@@ -4041,13 +4465,18 @@ function DataTableInner<TData extends object>({
                                                             const isCellInRange = resolvedOptions.cellRangeSelection && cellRange.isCellInRange(index, cell.column.id);
                                                             // Conditional formatting styles
                                                             const condStyle = resolvedOptions.conditionalFormatting ? getCondFormatStyle(row.original, cell.column.id) : {};
+                                                            // Find & Replace highlight
+                                                            const findKey = `${index}:${cell.column.id}`;
+                                                            const isFindMatch = findReplaceHighlights.has(findKey);
+                                                            const isFindCurrent = findKey === findReplaceCurrentKey;
                                                             return (
                                                                 <TableCell key={cell.id} role="gridcell"
                                                                     colSpan={colSpanVal} rowSpan={rowSpanVal}
                                                                     data-editable-cell={cellMeta?.editable ? "" : undefined}
                                                                     data-column-id={cell.column.id}
                                                                     data-row-index={index}
-                                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}), ...condStyle }}
+                                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}), ...condStyle,
+                                                                        ...(isFindCurrent ? { backgroundColor: "hsl(47.9 95.8% 53.1% / 0.4)", outline: "2px solid hsl(47.9 95.8% 53.1%)" } : isFindMatch ? { backgroundColor: "hsl(47.9 95.8% 53.1% / 0.15)" } : {}) }}
                                                                     className={cn(
                                                                         isAutoHeight ? "whitespace-normal" : "whitespace-nowrap",
                                                                         densityClasses.cell,
@@ -4084,6 +4513,13 @@ function DataTableInner<TData extends object>({
                                                                 {renderDetailRow(row.original)}
                                                             </TableCell>
                                                         </TableRow>
+                                                    )}
+                                                    {hasMasterDetail && masterDetailExpanded.has(rowId) && renderMasterDetail && (
+                                                        <MasterDetailRow key={`${row.id}-master-detail`}
+                                                            row={row.original}
+                                                            colSpan={table.getVisibleLeafColumns().length}
+                                                            renderContent={renderMasterDetail}
+                                                            t={t} />
                                                     )}
                                                 </>
                                             );

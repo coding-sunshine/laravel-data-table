@@ -194,6 +194,9 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Faceted filters** — E-commerce style filter chips with counts: `Active (42) | Draft (18)`
 - **Collaborative presence** — Show who else is viewing the table with avatar indicators via Laravel Echo
 - **Spreadsheet mode** — Tab/Enter/Shift+Tab cell navigation for editable cells
+- **Master/Detail** — Nested sub-tables inside expandable rows (e.g., Order → Order Items)
+- **Integrated Charts** — Instantly chart any numeric column with bar/line/pie/doughnut (zero-dependency SVG)
+- **Find & Replace** — Ctrl+F to search within table data with match highlighting and optional replace
 
 ### Internationalization
 
@@ -1372,6 +1375,15 @@ interface DataTableProps<TData extends object> {
     // Collaborative presence
     presenceChannel?: string;               // Laravel Echo presence channel name
     currentUser?: DataTablePresenceUser;    // Current user info for presence tracking
+
+    // Master/Detail
+    renderMasterDetail?: (row: TData) => React.ReactNode; // Render nested content for expanded rows
+
+    // Find & Replace
+    onFindReplace?: (rowId: unknown, columnId: string, oldValue: unknown, newValue: unknown) => Promise<void> | void;
+
+    // Integrated Charts
+    chartTypes?: ("bar" | "line" | "pie" | "doughnut")[]; // Available chart types (default: all four)
 }
 ```
 
@@ -1433,6 +1445,9 @@ All options default to sensible values. Only override what you need:
         presence: true,              // Collaborative presence indicators
         spreadsheetMode: true,       // Tab/Enter cell navigation
         kanbanView: true,            // Kanban board layout option
+        masterDetail: true,          // Nested sub-tables in expandable rows
+        integratedCharts: true,      // Chart any numeric column (bar/line/pie/doughnut)
+        findReplace: true,           // Ctrl+F find & replace with highlighting
 
         // Enabled by default:
         loading: true,               // Skeleton during Inertia navigation
@@ -1615,6 +1630,9 @@ The `DataTableTranslations` interface has **100+ keys** covering every UI string
 | Presence | `presenceViewing`, `presenceEditing`, `presenceUsers(count)` | Collaborative presence indicators |
 | Spreadsheet mode | `spreadsheetMode`, `tabToNext`, `enterToConfirm`, `escapeToCancel` | Spreadsheet navigation hints |
 | Kanban | `kanbanNoColumn`, `kanbanMoveCard`, `kanbanEmpty`, `kanbanLaneCount(count)` | Kanban board labels |
+| Master/Detail | `masterDetailExpand`, `masterDetailCollapse`, `masterDetailLoading` | Nested sub-table expand/collapse |
+| Integrated Charts | `chartColumn`, `chartType`, `chartBar`, `chartLine`, `chartPie`, `chartDoughnut`, `chartClose`, `chartTitle`, `chartNoData` | Chart panel controls |
+| Find & Replace | `findReplace`, `findPlaceholder`, `replacePlaceholder`, `findNext`, `findPrevious`, `replaceOne`, `replaceAll`, `findMatchesCount(current, total)`, `findNoMatches`, `findCaseSensitive`, `replaceSuccess(count)` | Find & replace bar |
 
 ### `SavedView` Model
 
@@ -3861,6 +3879,133 @@ Lanes are derived from the kanban column's `options` (if defined via `->options(
 | `cardTitleColumn` | `string` | Column ID for card title |
 | `cardSubtitleColumn` | `string` | Column ID for card subtitle |
 | `cardImageColumn` | `string` | Column ID for card image (used in Grid layout) |
+
+---
+
+## Master/Detail (Nested Sub-Tables)
+
+Expand a row to reveal a full nested DataTable inside — perfect for parent-child relationships like Orders → Order Items, Users → Addresses, etc.
+
+```tsx
+<DataTable
+    tableData={orders}
+    tableName="orders"
+    options={{ masterDetail: true }}
+    renderMasterDetail={(order) => (
+        <DataTable
+            tableData={order.items}
+            tableName={`order-${order.id}-items`}
+            options={{ filters: false, exports: false, columnVisibility: false }}
+        />
+    )}
+/>
+```
+
+### How It Works
+
+- A chevron column is automatically added when `masterDetail: true` and `renderMasterDetail` is provided
+- Clicking the chevron expands the row to reveal the nested content below
+- The `renderMasterDetail` callback receives the row data and returns any React content
+- Multiple rows can be expanded simultaneously
+- The nested content has a left border accent for visual hierarchy
+- Works independently from the existing `renderDetailRow` (you can use both)
+
+### Props Reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `options.masterDetail` | `boolean` | Enable master/detail expand column (default: `false`) |
+| `renderMasterDetail` | `(row: TData) => ReactNode` | Render function for nested content |
+
+**Pro tip:** Use another `<DataTable>` inside `renderMasterDetail` for full-featured nested grids with their own sorting, filtering, and pagination — just like AG Grid Enterprise.
+
+---
+
+## Integrated Charts
+
+Instantly chart any numeric column with bar, line, pie, or doughnut charts — zero external dependencies, pure SVG rendering.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ integratedCharts: true }}
+    chartTypes={["bar", "line", "pie"]} // optional: limit available chart types
+/>
+```
+
+### How It Works
+
+- A "Chart" button appears in the toolbar when `integratedCharts: true` and the table has at least one numeric column
+- Click it to open the chart panel above the table
+- Select which numeric column to chart and the chart type (bar/line/pie/doughnut)
+- The first text/option/badge column is automatically used as labels
+- Charts are rendered as pure SVG — no Chart.js, Recharts, or any external dependency required
+- Limited to 50 data points for readability
+- Pie/doughnut charts include a color legend
+
+### Available Chart Types
+
+| Type | Description |
+|------|-------------|
+| `bar` | Vertical bar chart with color coding |
+| `line` | Line chart with data points |
+| `pie` | Pie chart with slices |
+| `doughnut` | Donut chart (pie with center hole) |
+
+### Props Reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `options.integratedCharts` | `boolean` | Enable chart button in toolbar (default: `false`) |
+| `chartTypes` | `("bar"\|"line"\|"pie"\|"doughnut")[]` | Limit available chart types (default: all four) |
+
+---
+
+## Find & Replace
+
+Search within visible table data with match highlighting and optional replace — just like Ctrl+F in Excel or Google Sheets.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ findReplace: true }}
+    onFindReplace={async (rowId, columnId, oldValue, newValue) => {
+        await router.patch(`/products/${rowId}`, { [columnId]: newValue });
+    }}
+/>
+```
+
+### How It Works
+
+- Press **Ctrl+F** (or Cmd+F on Mac) to open the find bar, or click the "Find & Replace" toolbar button
+- Type to search — all matching cells are highlighted in yellow
+- The current match is highlighted with a stronger yellow outline
+- Use **Enter** / **Shift+Enter** to cycle through matches (Next / Previous)
+- Type a replacement and click "Replace" (single) or "Replace All"
+- Toggle "Match case" for case-sensitive searching
+- Press **Escape** to close the find bar
+
+### Searchable Column Types
+
+Find & Replace searches through: `text`, `option`, `badge`, `email`, `link`, `phone` columns. Numeric and date columns are excluded.
+
+### Props Reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `options.findReplace` | `boolean` | Enable find & replace (default: `false`) |
+| `onFindReplace` | `(rowId, columnId, oldValue, newValue) => Promise<void>` | Called when a replacement is made |
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+F` / `Cmd+F` | Open find bar |
+| `Enter` | Go to next match |
+| `Shift+Enter` | Go to previous match |
+| `Escape` | Close find bar |
 
 ---
 

@@ -329,6 +329,35 @@ export interface DataTableTranslations {
     kanbanNoColumn: string;
     kanbanMoveCard: string;
     kanbanEmpty: string;
+
+    // Master/Detail
+    masterDetailExpand: string;
+    masterDetailCollapse: string;
+    masterDetailLoading: string;
+
+    // Integrated Charts
+    chartColumn: string;
+    chartType: string;
+    chartBar: string;
+    chartLine: string;
+    chartPie: string;
+    chartDoughnut: string;
+    chartClose: string;
+    chartTitle: string;
+    chartNoData: string;
+
+    // Find & Replace
+    findReplace: string;
+    findPlaceholder: string;
+    replacePlaceholder: string;
+    findNext: string;
+    findPrevious: string;
+    replaceOne: string;
+    replaceAll: string;
+    findMatchesCount: (current: number, total: number) => string;
+    findNoMatches: string;
+    findCaseSensitive: string;
+    replaceSuccess: (count: number) => string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -662,6 +691,35 @@ export const defaultTranslations: DataTableTranslations = {
     kanbanNoColumn: "Select a column for kanban lanes",
     kanbanMoveCard: "Move card",
     kanbanEmpty: "No items",
+
+    // Master/Detail
+    masterDetailExpand: "Show details",
+    masterDetailCollapse: "Hide details",
+    masterDetailLoading: "Loading details...",
+
+    // Integrated Charts
+    chartColumn: "Column",
+    chartType: "Chart type",
+    chartBar: "Bar",
+    chartLine: "Line",
+    chartPie: "Pie",
+    chartDoughnut: "Doughnut",
+    chartClose: "Close chart",
+    chartTitle: "Chart",
+    chartNoData: "No numeric data to chart",
+
+    // Find & Replace
+    findReplace: "Find & Replace",
+    findPlaceholder: "Find...",
+    replacePlaceholder: "Replace with...",
+    findNext: "Next",
+    findPrevious: "Previous",
+    replaceOne: "Replace",
+    replaceAll: "Replace all",
+    findMatchesCount: (current, total) => `${current} of ${total}`,
+    findNoMatches: "No matches",
+    findCaseSensitive: "Match case",
+    replaceSuccess: (count) => `Replaced ${count} match${count !== 1 ? "es" : ""}`,
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -966,4 +1024,33 @@ export const frTranslations: DataTableTranslations = {
     kanbanNoColumn: "Sélectionnez une colonne pour les colonnes kanban",
     kanbanMoveCard: "Déplacer la carte",
     kanbanEmpty: "Aucun élément",
+
+    // Master/Detail
+    masterDetailExpand: "Afficher les détails",
+    masterDetailCollapse: "Masquer les détails",
+    masterDetailLoading: "Chargement des détails...",
+
+    // Integrated Charts
+    chartColumn: "Colonne",
+    chartType: "Type de graphique",
+    chartBar: "Barres",
+    chartLine: "Ligne",
+    chartPie: "Camembert",
+    chartDoughnut: "Anneau",
+    chartClose: "Fermer le graphique",
+    chartTitle: "Graphique",
+    chartNoData: "Aucune donnée numérique à afficher",
+
+    // Find & Replace
+    findReplace: "Rechercher et remplacer",
+    findPlaceholder: "Rechercher...",
+    replacePlaceholder: "Remplacer par...",
+    findNext: "Suivant",
+    findPrevious: "Précédent",
+    replaceOne: "Remplacer",
+    replaceAll: "Tout remplacer",
+    findMatchesCount: (current, total) => `${current} sur ${total}`,
+    findNoMatches: "Aucun résultat",
+    findCaseSensitive: "Respecter la casse",
+    replaceSuccess: (count) => `${count} remplacement${count !== 1 ? "s" : ""} effectué${count !== 1 ? "s" : ""}`,
 };
