@@ -30,6 +30,9 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 ### Columns
 
+- **Computed columns** — Derive values from other columns server-side (`->computed(['price', 'qty'], fn($row) => $row['price'] * $row['qty'])`)
+- **Column spanning** — Merge cells across columns (`->colSpan(3)`) with frontend rendering support
+- **Dynamic row height** — Auto-size rows based on content (`->autoHeight()`) — switches from `nowrap` to `whitespace-normal`
 - **Column visibility** — Toggle columns on/off, persisted to localStorage
 - **Column ordering** — Drag-to-reorder via GripVertical handles, persisted to localStorage
 - **Column resizing** — Drag-to-resize widths, persisted to localStorage
@@ -54,6 +57,9 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 ### Data Display
 
+- **Status bar** — Aggregate info (sum, avg, count, min, max) for selected rows displayed below the table
+- **Frozen/pinned rows** — Pin rows to the top or bottom of the table via `tablePinnedTopRows()` / `tablePinnedBottomRows()`
+- **Row spanning** — Merge cells vertically via `rowSpan` prop with functions returning span count per row
 - **Footer aggregations** — Per-page computed values (sum, avg, etc.) with custom rendering
 - **Full-dataset summaries** — Built-in sum/count/avg/min/max/range across the entire filtered dataset
 - **Range summarizer** — Show min–max range for numeric columns (`->summary('range')`)
@@ -73,6 +79,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Action groups** — Nested submenu dropdowns for organizing related actions (`group` property)
 - **Forms-in-actions** — Modal forms with text, number, select, textarea, and checkbox fields (`form` property)
 - **Header actions** — Custom buttons in the table toolbar (e.g., "Create New") via `headerActions` prop
+- **Server-driven conditional row actions** — Show/hide actions per row based on server-defined rules (`tableActionRules()`) with 8 operators
 - **Replicate action** — Duplicate a row with a single click (i18n label: "Duplicate")
 - **Force-delete/Restore** — Soft delete management actions with confirmation dialogs
 - **Shift+click range selection** — Select a range of rows by holding Shift
@@ -90,6 +97,8 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Batch inline editing** — Edit a column value across multiple selected rows at once
 - **Undo/redo** — Stack-based undo/redo for inline edits with Ctrl+Z / Ctrl+Y
 - **Boolean toggle switch** — One-click switch to toggle boolean columns inline (uses Inertia `router.patch`)
+- **Drag-to-fill** — Drag a cell handle to fill adjacent editable cells with the same value
+- **Multi-row clipboard paste** — Paste tab-separated data from spreadsheets into editable cells
 - **Inline row creation** — "Add row" button with inline form for creating new records
 - **Auto-validation by type** — Inline edit rules auto-generated from column type (e.g., `email` → `required|email|max:255`)
 - **Toast notifications** — Success/error toasts with auto-dismiss on inline edits and toggles
@@ -142,6 +151,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 ### Real-time & Performance
 
+- **Cell flashing** — Animated highlight when cell values change (via polling or real-time updates)
 - **Real-time updates** — Laravel Echo integration for auto-refreshing on server events
 - **Auto-refresh polling** — Timer-based automatic data refresh at configurable intervals
 - **Deferred/lazy loading** — Render table shell immediately, load data asynchronously
@@ -404,6 +414,9 @@ Extend this class for each model. It extends `Spatie\LaravelData\Data`, so it's 
 | `tableCascadingFilters()` | No | Map child → parent column IDs |
 | `resolveCascadingFilterOptions(column, parentValues)` | No | Return cascading options |
 | `tableDetailDisplay()` | No | Detail row display mode: `'inline'`, `'modal'`, `'drawer'`. Default: `'inline'` |
+| `tablePinnedTopRows()` | No | Returns `array` of row data to pin at the top of the table. Default: `[]` |
+| `tablePinnedBottomRows()` | No | Returns `array` of row data to pin at the bottom of the table. Default: `[]` |
+| `tableActionRules()` | No | Returns `array` of action visibility rules. Keys are action labels, values are `['column' => ..., 'operator' => ..., 'value' => ...]`. Default: `[]` |
 | `tableEagerLoad()` | No | Auto-derived from column `relation` fields. Override to add extra relationships |
 | `tableAuthorize(string $action, Request $request)` | No | Authorization gate for actions (`export`, `import`, `inline_edit`, `toggle`). Return `false` to deny. Default: `true` |
 | `buildFilteredQuery(?Request, ?prefix)` | Inherited | Builds a filtered+sorted QueryBuilder (shared by table, export, select-all) |
@@ -458,6 +471,9 @@ new Column(
     bulleted: false,         // Display arrays as bullet lists
     stacked: ['name', 'email'], // Stack multiple columns vertically
     rowIndex: false,         // Auto-incrementing row number
+    computedFrom: ['price', 'qty'], // Column IDs this computed column depends on
+    colSpan: 3,              // Number of columns this cell should span
+    autoHeight: false,       // Auto-size row height based on content
 );
 ```
 
@@ -573,6 +589,11 @@ All `ColumnBuilder` methods return `$this` for chaining. Call `->build()` at the
 | `html()` | Render cell as sanitized HTML | `->html()` |
 | `markdown()` | Render cell as Markdown | `->markdown()` |
 | `bulleted()` | Display array values as bullet list | `->bulleted()` |
+| `computed(array, Closure)` | Define a computed column from source columns | `->computed(['price', 'qty'], fn($row) => $row['price'] * $row['qty'])` |
+| `colSpan(int)` | Number of columns this cell should span | `->colSpan(3)` |
+| `autoHeight(bool)` | Auto-size row height based on content | `->autoHeight()` |
+
+**Static methods:** `getComputedResolvers()`, `clearComputedResolvers()` — manage the computed column resolver registry (same pattern as suffix resolvers).
 
 **Type setters:** `text()`, `number()`, `date()`, `option(?array)`, `multiOption(?array)`, `boolean()`, `image()`, `badge(?array)`, `currency(?string)`, `percentage()`, `link()`, `email()`, `phone()`, `iconColumn(array)`, `color()`, `select(array)`
 
@@ -1040,6 +1061,9 @@ class DataTableResponse extends Data {
     public ?string $reorderUrl;          // Reorder endpoint URL
     public ?string $importUrl;           // Import endpoint URL
     public ?string $groupByColumn;       // Column ID to group rows by
+    public ?array $pinnedTopRows;        // Rows pinned at the top of the table
+    public ?array $pinnedBottomRows;     // Rows pinned at the bottom of the table
+    public ?array $actionRules;          // Server-driven action visibility rules
 }
 ```
 
@@ -1267,7 +1291,16 @@ interface DataTableProps<TData extends object> {
         beforeTable?: ReactNode;
         afterTable?: ReactNode;
         pagination?: ReactNode;
+        statusBar?: ReactNode;       // Custom status bar content
     };
+
+    // Spanning
+    rowSpan?: Record<string, (row: TData, index: number, allRows: TData[]) => number>;  // Row spanning per column
+    columnSpan?: Record<string, (row: TData) => number>;  // Column spanning per column
+
+    // Clipboard & drag-to-fill
+    onClipboardPaste?: (startRowIndex: number, startColumnId: string, data: string[][]) => Promise<void> | void;
+    onDragToFill?: (columnId: string, value: unknown, targetRowIds: unknown[]) => Promise<void> | void;
 
     // New: callbacks & features
     onStateChange?: (state: DataTableState) => void; // Fires on any state change
@@ -1317,6 +1350,10 @@ All options default to sensible values. Only override what you need:
         exportProgress: true,        // Show spinner during export download
         emptyStateIllustration: true, // Show illustration when table is empty
         virtualScrolling: true,      // Lightweight built-in row virtualization (no external deps)
+        cellFlashing: true,          // Animate cells when values change (polling/realtime)
+        statusBar: true,             // Show aggregates (sum/avg/count/min/max) for selected rows
+        clipboardPaste: true,        // Paste tab-separated data into editable cells
+        dragToFill: true,            // Drag cell handle to fill adjacent cells
 
         // Enabled by default:
         loading: true,               // Skeleton during Inertia navigation
@@ -1476,6 +1513,12 @@ The `DataTableTranslations` interface has **100+ keys** covering every UI string
 | Print | `print` | Print button |
 | Row creation | `addRow` | Inline row creation |
 | Empty state | `emptyTitle`, `emptyDescription` | Empty table |
+| Status bar | `statusBarSum`, `statusBarAvg`, `statusBarCount`, `statusBarMin`, `statusBarMax` | Status bar aggregates |
+| Clipboard | `pasteSuccess`, `pasteError` | Clipboard paste feedback |
+| Drag-to-fill | `dragToFill` | Drag-to-fill tooltip |
+| Saved filters | `savedFilters`, `saveCurrentFilters`, `filterName`, `filterNamePlaceholder` | Server-persisted saved filters |
+| Export | `exportPdf` | PDF export option |
+| Pinned rows | `pinnedRow` | Pinned row label |
 
 ### `SavedView` Model
 
@@ -1581,6 +1624,13 @@ interface DataTableFormField {
     required?: boolean;
     placeholder?: string;
     defaultValue?: unknown;
+}
+
+// Server-driven action visibility rule
+interface DataTableActionRule {
+    column: string;
+    operator: string;   // "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "notIn"
+    value: unknown;
 }
 
 // Header action button in toolbar
@@ -1986,6 +2036,227 @@ public static function tableDetailDisplay(): string
 ```
 
 The display mode is set server-side via `tableDetailDisplay()`. The same `renderDetailRow` callback works for all three modes.
+
+---
+
+## Pinned/Frozen Rows
+
+Pin rows to the top or bottom of the table that stay visible regardless of sorting/filtering:
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tablePinnedTopRows(): array
+    {
+        return [
+            ['id' => 0, 'name' => 'TOTAL', 'price' => Product::sum('price')],
+        ];
+    }
+
+    public static function tablePinnedBottomRows(): array
+    {
+        return [
+            ['id' => -1, 'name' => 'Average', 'price' => Product::avg('price')],
+        ];
+    }
+}
+```
+
+Pinned rows render with a subtle `bg-primary/5` background and are not affected by sorting, filtering, or pagination.
+
+---
+
+## Computed Columns
+
+Define columns whose values are derived from other columns, resolved server-side:
+
+```php
+public static function tableColumns(): array
+{
+    return [
+        ColumnBuilder::make('price', 'Price')->currency('USD')->build(),
+        ColumnBuilder::make('qty', 'Quantity')->number()->build(),
+        ColumnBuilder::make('total', 'Total')
+            ->computed(['price', 'qty'], fn ($row) => $row['price'] * $row['qty'])
+            ->currency('USD')
+            ->build(),
+    ];
+}
+```
+
+The closure is registered in a static registry (like dynamic suffixes) and resolved in `makeTable()`. The computed value is injected into each row's data before serialization.
+
+---
+
+## Server-Driven Conditional Row Actions
+
+Control which row actions are visible per-row based on server-defined rules:
+
+```php
+class OrderDataTable extends AbstractDataTable
+{
+    public static function tableActionRules(): array
+    {
+        return [
+            'Delete' => ['column' => 'status', 'operator' => 'neq', 'value' => 'archived'],
+            'Ship'   => ['column' => 'status', 'operator' => 'eq',  'value' => 'pending'],
+            'Refund' => ['column' => 'total',  'operator' => 'gt',  'value' => 0],
+        ];
+    }
+}
+```
+
+Supported operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`.
+
+The rules are evaluated on the frontend per row. Actions that don't pass their rule are hidden from that row's action menu.
+
+---
+
+## Row & Column Spanning
+
+### Row Spanning
+
+Merge cells vertically when consecutive rows have the same value:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="orders"
+    rowSpan={{
+        customer: (row, index, allRows) => {
+            let span = 1;
+            while (index + span < allRows.length && allRows[index + span].customer === row.customer) {
+                span++;
+            }
+            return span;
+        },
+    }}
+/>
+```
+
+### Column Spanning
+
+Merge cells horizontally using the `colSpan` ColumnBuilder method:
+
+```php
+ColumnBuilder::make('summary', 'Summary')->text()->colSpan(3)->build(),
+```
+
+Or dynamically via the `columnSpan` prop:
+
+```tsx
+<DataTable
+    columnSpan={{
+        summary: (row) => row.isSummaryRow ? 3 : 1,
+    }}
+/>
+```
+
+---
+
+## Cell Flashing
+
+Highlight cells that changed values (useful with polling or real-time updates):
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="stocks"
+    realtimeChannel="stocks"
+    options={{ cellFlashing: true }}
+/>
+```
+
+When `cellFlashing` is enabled, the component tracks previous cell values and applies a CSS `@keyframes cell-flash` animation (1.5s yellow flash) to cells whose values changed between renders.
+
+---
+
+## Status Bar
+
+Show aggregate information for selected rows below the table:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ statusBar: true }}
+/>
+```
+
+When rows are selected, the status bar displays Sum, Average, Count, Min, and Max for all numeric columns in the selection. Customize with the `statusBar` slot:
+
+```tsx
+<DataTable
+    options={{ statusBar: true }}
+    slots={{
+        statusBar: <MyCustomStatusBar />,
+    }}
+/>
+```
+
+---
+
+## Drag-to-Fill
+
+Enable spreadsheet-like drag-to-fill for editable cells:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ dragToFill: true }}
+    onDragToFill={async (columnId, value, targetRowIds) => {
+        await fetch('/api/products/batch-fill', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ column: columnId, value, ids: targetRowIds }),
+        });
+        router.reload();
+    }}
+/>
+```
+
+A small blue handle appears at the bottom-right of editable cells. Drag it over adjacent rows to fill them with the same value.
+
+---
+
+## Multi-Row Clipboard Paste
+
+Paste tab-separated data from spreadsheets into editable cells:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ clipboardPaste: true }}
+    onClipboardPaste={async (startRowIndex, startColumnId, data) => {
+        // data is a 2D array: data[row][col] of pasted values
+        await fetch('/api/products/paste', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ startRow: startRowIndex, startColumn: startColumnId, values: data }),
+        });
+        router.reload();
+    }}
+/>
+```
+
+Users can copy cells from Excel/Google Sheets and paste directly into the table. The component parses tab-separated values and maps them to the appropriate cells.
+
+---
+
+## Dynamic Row Height
+
+Allow specific columns to auto-size row heights based on content:
+
+```php
+ColumnBuilder::make('description', 'Description')
+    ->text()
+    ->autoHeight()
+    ->build();
+```
+
+By default, cells use `whitespace-nowrap` and truncate with ellipsis. When `autoHeight` is enabled, the cell switches to `whitespace-normal`, allowing text to wrap and the row to grow in height.
 
 ---
 
