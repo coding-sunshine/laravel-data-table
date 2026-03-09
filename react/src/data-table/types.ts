@@ -62,6 +62,16 @@ export interface DataTableColumnDef {
     colSpan?: number | null;
     /** Whether this column should auto-size row heights based on content */
     autoHeight?: boolean;
+    /** valueGetter: column ID or dot-path to derive value for sorting/filtering */
+    valueGetter?: string | null;
+    /** valueFormatter: format string for display (e.g., '{value} USD') */
+    valueFormatter?: string | null;
+    /** Whether this column has an inline header filter */
+    headerFilter?: boolean;
+    /** Sparkline chart type: 'line' | 'bar' | null */
+    sparkline?: string | null;
+    /** Tree data parent column reference */
+    treeParent?: string | null;
 }
 
 export interface DataTableQuickView {
@@ -102,6 +112,18 @@ export interface DataTableConfig {
     asyncFilterColumns?: string[];
     cascadingFilters?: Record<string, string>;
     rules?: DataTableRule[];
+    /** Whether tree data (hierarchical rows) is enabled */
+    treeDataEnabled?: boolean;
+    /** Column ID holding the parent reference for tree data */
+    treeDataParentKey?: string;
+    /** Column ID used as tree node label */
+    treeDataLabelKey?: string;
+    /** Whether infinite scroll is enabled */
+    infiniteScroll?: boolean;
+    /** Whether pivot mode is available */
+    pivotEnabled?: boolean;
+    /** Pivot configuration */
+    pivotConfig?: { rowFields?: string[]; columnFields?: string[]; valueField?: string; aggregation?: string };
 }
 
 /** Conditional row/cell styling rule */
@@ -150,6 +172,26 @@ export interface DataTableOptions {
     clipboardPaste: boolean;
     /** Enable drag-to-fill for editable cells */
     dragToFill: boolean;
+    /** Enable inline header filters below column headers */
+    headerFilters: boolean;
+    /** Enable infinite scroll instead of pagination */
+    infiniteScroll: boolean;
+    /** Enable column auto-sizing (double-click resize handle to fit content) */
+    columnAutoSize: boolean;
+    /** Enable column virtualization (only render visible columns) */
+    columnVirtualization: boolean;
+    /** Enable cell range selection (spreadsheet-like) */
+    cellRangeSelection: boolean;
+    /** Enable AutoSizer (responsive container sizing) */
+    autoSizer: boolean;
+    /** Enable CellMeasurer (content-based variable row heights) */
+    cellMeasurer: boolean;
+    /** Enable scroll-aware simplified rendering during fast scroll */
+    scrollAwareRendering: boolean;
+    /** Enable window scroller (table scrolls with browser window) */
+    windowScroller: boolean;
+    /** Enable directional overscan (more rows pre-rendered in scroll direction) */
+    directionalOverscan: boolean;
 }
 
 /** Server-driven action visibility rule */
@@ -316,4 +358,34 @@ export interface DataTableProps<TData extends object> {
     onClipboardPaste?: (startRowIndex: number, startColumnId: string, data: string[][]) => Promise<void> | void;
     /** Called when drag-to-fill is completed */
     onDragToFill?: (columnId: string, value: unknown, targetRowIds: unknown[]) => Promise<void> | void;
+    /** Called when cell range is selected */
+    onCellRangeSelect?: (startRow: number, startCol: string, endRow: number, endCol: string) => void;
+    /** Imperative API ref for programmatic control */
+    apiRef?: React.MutableRefObject<DataTableApiRef | null>;
+    /** Called when infinite scroll needs more data */
+    onLoadMore?: (page: number) => Promise<void> | void;
+    /** Whether more data is available for infinite scroll */
+    hasMore?: boolean;
+    /** Sparkline data: maps column ID to an array of values per row */
+    sparklineData?: Record<string, number[][]>;
+    /** AI assistant prompt handler: receives natural language query, returns filter/sort config */
+    onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
+    /** Pivot mode state callback */
+    onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
+}
+
+/** Imperative API ref for programmatic grid control */
+export interface DataTableApiRef {
+    /** Scroll to a specific row by index */
+    scrollToRow: (index: number, alignment?: "start" | "center" | "end" | "auto") => void;
+    /** Auto-size all columns to fit content */
+    autosizeColumns: () => void;
+    /** Trigger export programmatically */
+    triggerExport: (format: "xlsx" | "csv" | "pdf") => void;
+    /** Reset all filters */
+    resetFilters: () => void;
+    /** Get current table state */
+    getState: () => Record<string, unknown>;
+    /** Focus a specific cell */
+    focusCell: (rowIndex: number, columnId: string) => void;
 }

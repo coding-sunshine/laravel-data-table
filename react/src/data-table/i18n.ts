@@ -235,6 +235,48 @@ export interface DataTableTranslations {
     saveCurrentFilters: string;
     filterName: string;
     filterNamePlaceholder: string;
+
+    // Header filters
+    headerFilterPlaceholder: string;
+    clearHeaderFilter: string;
+
+    // Tree data
+    expandAll: string;
+    collapseAll: string;
+    treeChildren: (count: number) => string;
+
+    // Infinite scroll
+    loadMore: string;
+    loadingMore: string;
+    noMoreData: string;
+
+    // Column auto-size
+    autoSizeColumn: string;
+    autoSizeAllColumns: string;
+
+    // Cell range selection
+    cellsSelected: (count: number) => string;
+
+    // Sparklines
+    sparklineLabel: string;
+
+    // AI assistant
+    aiAssistant: string;
+    aiPlaceholder: string;
+    aiQuerying: string;
+
+    // Pivot
+    pivotMode: string;
+    pivotRowFields: string;
+    pivotColumnFields: string;
+    pivotValueField: string;
+    pivotAggregation: string;
+
+    // Window scroller
+    scrollToTop: string;
+
+    // API ref
+    goToRow: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -474,6 +516,48 @@ export const defaultTranslations: DataTableTranslations = {
     saveCurrentFilters: "Save current filters",
     filterName: "Filter name",
     filterNamePlaceholder: "e.g. Active premium users",
+
+    // Header filters
+    headerFilterPlaceholder: "Filter...",
+    clearHeaderFilter: "Clear filter",
+
+    // Tree data
+    expandAll: "Expand all",
+    collapseAll: "Collapse all",
+    treeChildren: (count) => `${count} child${count !== 1 ? "ren" : ""}`,
+
+    // Infinite scroll
+    loadMore: "Load more",
+    loadingMore: "Loading more...",
+    noMoreData: "No more data",
+
+    // Column auto-size
+    autoSizeColumn: "Auto-size column",
+    autoSizeAllColumns: "Auto-size all columns",
+
+    // Cell range selection
+    cellsSelected: (count) => `${count} cell${count !== 1 ? "s" : ""} selected`,
+
+    // Sparklines
+    sparklineLabel: "Trend",
+
+    // AI assistant
+    aiAssistant: "AI Assistant",
+    aiPlaceholder: "Ask about your data...",
+    aiQuerying: "Analyzing...",
+
+    // Pivot
+    pivotMode: "Pivot mode",
+    pivotRowFields: "Row fields",
+    pivotColumnFields: "Column fields",
+    pivotValueField: "Value field",
+    pivotAggregation: "Aggregation",
+
+    // Window scroller
+    scrollToTop: "Scroll to top",
+
+    // API ref
+    goToRow: "Go to row",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -684,4 +768,46 @@ export const frTranslations: DataTableTranslations = {
     saveCurrentFilters: "Sauvegarder les filtres actuels",
     filterName: "Nom du filtre",
     filterNamePlaceholder: "ex. Utilisateurs premium actifs",
+
+    // Header filters
+    headerFilterPlaceholder: "Filtrer...",
+    clearHeaderFilter: "Effacer le filtre",
+
+    // Tree data
+    expandAll: "Tout développer",
+    collapseAll: "Tout réduire",
+    treeChildren: (count) => `${count} enfant${count !== 1 ? "s" : ""}`,
+
+    // Infinite scroll
+    loadMore: "Charger plus",
+    loadingMore: "Chargement...",
+    noMoreData: "Plus de données",
+
+    // Column auto-size
+    autoSizeColumn: "Ajuster la colonne",
+    autoSizeAllColumns: "Ajuster toutes les colonnes",
+
+    // Cell range selection
+    cellsSelected: (count) => `${count} cellule${count !== 1 ? "s" : ""} sélectionnée${count !== 1 ? "s" : ""}`,
+
+    // Sparklines
+    sparklineLabel: "Tendance",
+
+    // AI assistant
+    aiAssistant: "Assistant IA",
+    aiPlaceholder: "Posez une question sur vos données...",
+    aiQuerying: "Analyse en cours...",
+
+    // Pivot
+    pivotMode: "Mode tableau croisé",
+    pivotRowFields: "Champs lignes",
+    pivotColumnFields: "Champs colonnes",
+    pivotValueField: "Champ valeur",
+    pivotAggregation: "Agrégation",
+
+    // Window scroller
+    scrollToTop: "Retour en haut",
+
+    // API ref
+    goToRow: "Aller à la ligne",
 };

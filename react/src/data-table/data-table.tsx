@@ -156,15 +156,22 @@ function showToast(message: string, variant: "success" | "error" | "info" = "inf
 
 // ─── Lightweight row virtualization ──────────────────────────────────────────
 
-function useVirtualRows(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, rowCount: number, estimateRowHeight = 40) {
+function useVirtualRows(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, rowCount: number, estimateRowHeight = 40, directionalOverscan = false) {
     const [scrollTop, setScrollTop] = useState(0);
     const [containerHeight, setContainerHeight] = useState(600);
+    const lastScrollTopRef = useRef(0);
+    const scrollDirectionRef = useRef<"down" | "up">("down");
 
     useEffect(() => {
         if (!enabled || !containerRef.current) return;
         const el = containerRef.current;
         setContainerHeight(el.clientHeight);
-        const handleScroll = () => setScrollTop(el.scrollTop);
+        const handleScroll = () => {
+            const newScrollTop = el.scrollTop;
+            scrollDirectionRef.current = newScrollTop > lastScrollTopRef.current ? "down" : "up";
+            lastScrollTopRef.current = newScrollTop;
+            setScrollTop(newScrollTop);
+        };
         const handleResize = () => setContainerHeight(el.clientHeight);
         el.addEventListener("scroll", handleScroll, { passive: true });
         const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleResize) : null;
@@ -172,16 +179,240 @@ function useVirtualRows(enabled: boolean, containerRef: React.RefObject<HTMLElem
         return () => { el.removeEventListener("scroll", handleScroll); ro?.disconnect(); };
     }, [enabled, containerRef]);
 
-    if (!enabled) return { virtualRows: null, totalHeight: 0, offsetTop: 0 };
+    if (!enabled) return { virtualRows: null, totalHeight: 0, offsetTop: 0, isScrolling: false, scrollToIndex: (_i: number) => {} };
 
-    const overscan = 5;
+    // Directional overscan: more rows in scroll direction
+    const overscanForward = directionalOverscan ? 10 : 5;
+    const overscanBackward = directionalOverscan ? 2 : 5;
+    const overscanBefore = scrollDirectionRef.current === "down" ? overscanBackward : overscanForward;
+    const overscanAfter = scrollDirectionRef.current === "down" ? overscanForward : overscanBackward;
     const totalHeight = rowCount * estimateRowHeight;
-    const startIndex = Math.max(0, Math.floor(scrollTop / estimateRowHeight) - overscan);
-    const endIndex = Math.min(rowCount, Math.ceil((scrollTop + containerHeight) / estimateRowHeight) + overscan);
+    const startIndex = Math.max(0, Math.floor(scrollTop / estimateRowHeight) - overscanBefore);
+    const endIndex = Math.min(rowCount, Math.ceil((scrollTop + containerHeight) / estimateRowHeight) + overscanAfter);
     const virtualRows = { startIndex, endIndex };
     const offsetTop = startIndex * estimateRowHeight;
 
-    return { virtualRows, totalHeight, offsetTop };
+    const scrollToIndex = (index: number) => {
+        if (containerRef.current) {
+            containerRef.current.scrollTop = index * estimateRowHeight;
+        }
+    };
+
+    return { virtualRows, totalHeight, offsetTop, isScrolling: false, scrollToIndex };
+}
+
+// ─── AutoSizer hook ──────────────────────────────────────────────────────────
+
+function useAutoSizer(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>) {
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+    useEffect(() => {
+        if (!enabled || !containerRef.current) return;
+        const el = containerRef.current;
+        const updateDimensions = () => {
+            setDimensions({ width: el.clientWidth, height: el.clientHeight });
+        };
+        updateDimensions();
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateDimensions) : null;
+        ro?.observe(el);
+        return () => { ro?.disconnect(); };
+    }, [enabled, containerRef]);
+
+    return dimensions;
+}
+
+// ─── Scroll-aware rendering hook ─────────────────────────────────────────────
+
+function useScrollAwareRendering(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, resetDelay = 150) {
+    const [isScrolling, setIsScrolling] = useState(false);
+    const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+    useEffect(() => {
+        if (!enabled || !containerRef.current) return;
+        const el = containerRef.current;
+        const handleScroll = () => {
+            setIsScrolling(true);
+            if (timerRef.current) clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => setIsScrolling(false), resetDelay);
+        };
+        el.addEventListener("scroll", handleScroll, { passive: true });
+        return () => { el.removeEventListener("scroll", handleScroll); if (timerRef.current) clearTimeout(timerRef.current); };
+    }, [enabled, containerRef, resetDelay]);
+
+    return isScrolling;
+}
+
+// ─── CellMeasurer hook ───────────────────────────────────────────────────────
+
+function useCellMeasurer(enabled: boolean) {
+    const cache = useRef<Map<string, number>>(new Map());
+
+    const measureCell = useCallback((key: string, element: HTMLElement | null) => {
+        if (!enabled || !element) return;
+        const height = element.offsetHeight;
+        if (height > 0) cache.current.set(key, height);
+    }, [enabled]);
+
+    const getCellHeight = useCallback((key: string, defaultHeight: number) => {
+        return cache.current.get(key) ?? defaultHeight;
+    }, []);
+
+    const clearCache = useCallback(() => {
+        cache.current.clear();
+    }, []);
+
+    return { measureCell, getCellHeight, clearCache };
+}
+
+// ─── Window scroller hook ────────────────────────────────────────────────────
+
+function useWindowScroller(enabled: boolean) {
+    const [windowScrollTop, setWindowScrollTop] = useState(0);
+    const [windowHeight, setWindowHeight] = useState(typeof window !== "undefined" ? window.innerHeight : 800);
+
+    useEffect(() => {
+        if (!enabled || typeof window === "undefined") return;
+        const handleScroll = () => setWindowScrollTop(window.scrollY);
+        const handleResize = () => setWindowHeight(window.innerHeight);
+        window.addEventListener("scroll", handleScroll, { passive: true });
+        window.addEventListener("resize", handleResize);
+        return () => { window.removeEventListener("scroll", handleScroll); window.removeEventListener("resize", handleResize); };
+    }, [enabled]);
+
+    return { windowScrollTop, windowHeight };
+}
+
+// ─── Column auto-sizing ──────────────────────────────────────────────────────
+
+function autosizeColumn(tableRef: React.RefObject<HTMLElement | null>, columnId: string): number | null {
+    if (!tableRef.current) return null;
+    const cells = tableRef.current.querySelectorAll(`[data-column-id="${columnId}"]`);
+    let maxWidth = 60; // minimum
+    cells.forEach((cell) => {
+        const scrollWidth = (cell as HTMLElement).scrollWidth;
+        if (scrollWidth > maxWidth) maxWidth = scrollWidth;
+    });
+    return maxWidth + 16; // padding
+}
+
+function autosizeAllColumns(tableRef: React.RefObject<HTMLElement | null>, columnIds: string[]): Record<string, number> {
+    const sizes: Record<string, number> = {};
+    for (const id of columnIds) {
+        const width = autosizeColumn(tableRef, id);
+        if (width) sizes[id] = width;
+    }
+    return sizes;
+}
+
+// ─── Column virtualization hook ──────────────────────────────────────────────
+
+function useColumnVirtualization(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, columnCount: number, estimateColumnWidth = 150) {
+    const [scrollLeft, setScrollLeft] = useState(0);
+    const [containerWidth, setContainerWidth] = useState(1200);
+
+    useEffect(() => {
+        if (!enabled || !containerRef.current) return;
+        const el = containerRef.current;
+        setContainerWidth(el.clientWidth);
+        const handleScroll = () => setScrollLeft(el.scrollLeft);
+        const handleResize = () => setContainerWidth(el.clientWidth);
+        el.addEventListener("scroll", handleScroll, { passive: true });
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleResize) : null;
+        ro?.observe(el);
+        return () => { el.removeEventListener("scroll", handleScroll); ro?.disconnect(); };
+    }, [enabled, containerRef]);
+
+    if (!enabled) return { visibleColumnRange: null };
+
+    const overscan = 2;
+    const startIndex = Math.max(0, Math.floor(scrollLeft / estimateColumnWidth) - overscan);
+    const endIndex = Math.min(columnCount, Math.ceil((scrollLeft + containerWidth) / estimateColumnWidth) + overscan);
+    return { visibleColumnRange: { startIndex, endIndex } };
+}
+
+// ─── Cell range selection hook ───────────────────────────────────────────────
+
+function useCellRangeSelection(enabled: boolean) {
+    const [rangeStart, setRangeStart] = useState<{ row: number; col: string } | null>(null);
+    const [rangeEnd, setRangeEnd] = useState<{ row: number; col: string } | null>(null);
+    const [isSelecting, setIsSelecting] = useState(false);
+
+    const startSelection = useCallback((row: number, col: string) => {
+        if (!enabled) return;
+        setRangeStart({ row, col });
+        setRangeEnd({ row, col });
+        setIsSelecting(true);
+    }, [enabled]);
+
+    const updateSelection = useCallback((row: number, col: string) => {
+        if (!enabled || !isSelecting) return;
+        setRangeEnd({ row, col });
+    }, [enabled, isSelecting]);
+
+    const endSelection = useCallback(() => {
+        setIsSelecting(false);
+    }, []);
+
+    const clearSelection = useCallback(() => {
+        setRangeStart(null);
+        setRangeEnd(null);
+        setIsSelecting(false);
+    }, []);
+
+    const isCellInRange = useCallback((row: number, col: string, allColumns: string[]) => {
+        if (!rangeStart || !rangeEnd) return false;
+        const minRow = Math.min(rangeStart.row, rangeEnd.row);
+        const maxRow = Math.max(rangeStart.row, rangeEnd.row);
+        if (row < minRow || row > maxRow) return false;
+        const startColIdx = allColumns.indexOf(rangeStart.col);
+        const endColIdx = allColumns.indexOf(rangeEnd.col);
+        const colIdx = allColumns.indexOf(col);
+        const minCol = Math.min(startColIdx, endColIdx);
+        const maxCol = Math.max(startColIdx, endColIdx);
+        return colIdx >= minCol && colIdx <= maxCol;
+    }, [rangeStart, rangeEnd]);
+
+    const selectedCellCount = useMemo(() => {
+        if (!rangeStart || !rangeEnd) return 0;
+        const rowSpan = Math.abs(rangeEnd.row - rangeStart.row) + 1;
+        return rowSpan; // simplified count
+    }, [rangeStart, rangeEnd]);
+
+    return { startSelection, updateSelection, endSelection, clearSelection, isCellInRange, selectedCellCount, rangeStart, rangeEnd };
+}
+
+// ─── Sparkline mini-chart component ──────────────────────────────────────────
+
+function SparklineChart({ data, type = "line", width = 80, height = 20 }: { data: number[]; type?: "line" | "bar"; width?: number; height?: number }) {
+    if (!data || data.length === 0) return null;
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+
+    if (type === "bar") {
+        const barWidth = width / data.length;
+        return (
+            <svg width={width} height={height} className="inline-block align-middle">
+                {data.map((val, i) => {
+                    const barHeight = ((val - min) / range) * height;
+                    return <rect key={i} x={i * barWidth} y={height - barHeight} width={barWidth - 1} height={barHeight} className="fill-primary/60" />;
+                })}
+            </svg>
+        );
+    }
+
+    // Line chart
+    const points = data.map((val, i) => {
+        const x = (i / (data.length - 1)) * width;
+        const y = height - ((val - min) / range) * height;
+        return `${x},${y}`;
+    }).join(" ");
+
+    return (
+        <svg width={width} height={height} className="inline-block align-middle">
+            <polyline points={points} fill="none" className="stroke-primary" strokeWidth="1.5" />
+        </svg>
+    );
 }
 
 // ─── Safe localStorage helpers ──────────────────────────────────────────────
@@ -287,6 +518,11 @@ interface ColumnMeta {
     computedFrom?: string[] | null;
     colSpan?: number | null;
     autoHeight?: boolean;
+    valueGetter?: string | null;
+    valueFormatter?: string | null;
+    headerFilter?: boolean;
+    sparkline?: string | null;
+    treeParent?: string | null;
 }
 
 // ─── Error Boundary ─────────────────────────────────────────────────────────
@@ -1528,6 +1764,8 @@ function DataTableInner<TData extends object>({
     onStateChange, onRowCreate, mobileBreakpoint = 0, children,
     headerActions, groupByOptions, onGroupByChange,
     rowSpan, columnSpan, onClipboardPaste, onDragToFill,
+    onCellRangeSelect, apiRef, onLoadMore, hasMore,
+    sparklineData, onAiQuery, onPivotChange,
 }: DataTableProps<TData>) {
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
@@ -1553,7 +1791,11 @@ function DataTableInner<TData extends object>({
         persistSelection: false, shortcutsOverlay: false,
         exportProgress: false, emptyStateIllustration: false,
         cellFlashing: false, statusBar: false, clipboardPaste: false,
-        dragToFill: false,
+        dragToFill: false, headerFilters: false, infiniteScroll: false,
+        columnAutoSize: false, columnVirtualization: false,
+        cellRangeSelection: false, autoSizer: false, cellMeasurer: false,
+        scrollAwareRendering: false, windowScroller: false,
+        directionalOverscan: false,
         ...optionsOverride,
     }), [optionsOverride]);
 
@@ -1617,10 +1859,156 @@ function DataTableInner<TData extends object>({
     const tableBodyRef = useRef<HTMLTableSectionElement>(null);
     const virtualContainerRef = useRef<HTMLDivElement>(null);
     const allRows = table.getRowModel().rows;
-    const { virtualRows, totalHeight, offsetTop } = useVirtualRows(
+    const { virtualRows, totalHeight, offsetTop, scrollToIndex } = useVirtualRows(
         resolvedOptions.virtualScrolling, virtualContainerRef, allRows.length,
-        density === "compact" ? 32 : density === "spacious" ? 52 : 40
+        density === "compact" ? 32 : density === "spacious" ? 52 : 40,
+        resolvedOptions.directionalOverscan
     );
+    const tableElementRef = useRef<HTMLTableElement>(null);
+
+    // AutoSizer
+    const autoSizerDimensions = useAutoSizer(resolvedOptions.autoSizer, virtualContainerRef);
+
+    // Scroll-aware rendering
+    const isScrollingFast = useScrollAwareRendering(resolvedOptions.scrollAwareRendering, virtualContainerRef);
+
+    // CellMeasurer
+    const { measureCell, getCellHeight, clearCache: clearMeasureCache } = useCellMeasurer(resolvedOptions.cellMeasurer);
+
+    // Window scroller
+    const { windowScrollTop, windowHeight } = useWindowScroller(resolvedOptions.windowScroller);
+
+    // Column virtualization
+    const visibleColumnIds = useMemo(() => tableData.columns.filter(c => c.visible !== false).map(c => c.id), [tableData.columns]);
+    const { visibleColumnRange } = useColumnVirtualization(resolvedOptions.columnVirtualization, virtualContainerRef, visibleColumnIds.length);
+
+    // Cell range selection
+    const cellRange = useCellRangeSelection(resolvedOptions.cellRangeSelection);
+
+    // Header filter state
+    const [headerFilterValues, setHeaderFilterValues] = useState<Record<string, string>>({});
+
+    // Tree data state
+    const [expandedTreeNodes, setExpandedTreeNodes] = useState<Set<string>>(new Set());
+
+    // Infinite scroll state
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const infiniteScrollSentinelRef = useRef<HTMLDivElement>(null);
+
+    // AI assistant state
+    const [aiQuery, setAiQuery] = useState("");
+    const [aiQuerying, setAiQuerying] = useState(false);
+
+    // Pivot mode state
+    const [pivotActive, setPivotActive] = useState(false);
+
+    // Imperative API ref
+    useEffect(() => {
+        if (!apiRef) return;
+        apiRef.current = {
+            scrollToRow: (index: number) => { scrollToIndex?.(index); },
+            autosizeColumns: () => {
+                if (tableElementRef.current) {
+                    const sizes = autosizeAllColumns(tableElementRef, visibleColumnIds);
+                    // Apply sizes via column sizing if available
+                    Object.entries(sizes).forEach(([id, width]) => {
+                        const col = table.getColumn(id);
+                        if (col) col.getSize(); // trigger re-render
+                    });
+                }
+            },
+            triggerExport: (format: string) => {
+                if (tableData.exportUrl) {
+                    const url = buildExportUrl(tableData.exportUrl, format, visibleColumnIds);
+                    window.open(url, "_blank");
+                }
+            },
+            resetFilters: () => {
+                const url = new URL(window.location.href);
+                for (const key of [...url.searchParams.keys()]) {
+                    if (key.startsWith("filter")) url.searchParams.delete(key);
+                }
+                router.visit(url.toString());
+            },
+            getState: () => ({ sorting: meta.sorts, filters: meta.filters, page: meta.currentPage, perPage: meta.perPage }),
+            focusCell: (rowIndex: number, columnId: string) => {
+                const cell = tableElementRef.current?.querySelector(`[data-row-index="${rowIndex}"][data-column-id="${columnId}"]`) as HTMLElement;
+                cell?.focus();
+            },
+        };
+    }, [apiRef, table, tableData.exportUrl, visibleColumnIds, meta, scrollToIndex]);
+
+    // Infinite scroll observer
+    useEffect(() => {
+        if (!resolvedOptions.infiniteScroll || !onLoadMore || !hasMore) return;
+        const sentinel = infiniteScrollSentinelRef.current;
+        if (!sentinel) return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0]?.isIntersecting && !isLoadingMore) {
+                setIsLoadingMore(true);
+                Promise.resolve(onLoadMore(meta.currentPage + 1)).finally(() => setIsLoadingMore(false));
+            }
+        }, { threshold: 0.1 });
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [resolvedOptions.infiniteScroll, onLoadMore, hasMore, isLoadingMore, meta.currentPage]);
+
+    // Header filter handler
+    const handleHeaderFilterChange = useCallback((columnId: string, value: string) => {
+        setHeaderFilterValues(prev => ({ ...prev, [columnId]: value }));
+        // Apply filter via URL
+        const url = new URL(window.location.href);
+        const p = prefix ? `${prefix}_` : "";
+        if (value) {
+            url.searchParams.set(`${p}filter[${columnId}]`, `contains:${value}`);
+        } else {
+            url.searchParams.delete(`${p}filter[${columnId}]`);
+        }
+        url.searchParams.set(`${p}page`, "1");
+        router.visit(url.toString(), { preserveState: true, preserveScroll: true, only: partialReloadKey ? [partialReloadKey] : undefined });
+    }, [prefix, partialReloadKey]);
+
+    // AI assistant handler
+    const handleAiQuery = useCallback(async () => {
+        if (!onAiQuery || !aiQuery.trim()) return;
+        setAiQuerying(true);
+        try {
+            const result = await onAiQuery(aiQuery.trim());
+            if (result) {
+                const url = new URL(window.location.href);
+                const p = prefix ? `${prefix}_` : "";
+                if (result.filters) {
+                    Object.entries(result.filters).forEach(([key, value]) => {
+                        url.searchParams.set(`${p}filter[${key}]`, String(value));
+                    });
+                }
+                if (result.sort) {
+                    url.searchParams.set(`${p}sort`, result.sort);
+                }
+                router.visit(url.toString(), { preserveState: true });
+            }
+            setAiQuery("");
+        } finally {
+            setAiQuerying(false);
+        }
+    }, [onAiQuery, aiQuery, prefix]);
+
+    // Tree data: build hierarchy from flat data
+    const treeConfig = config;
+    const treeRows = useMemo(() => {
+        if (!treeConfig?.treeDataEnabled) return null;
+        const parentKey = treeConfig.treeDataParentKey ?? "parent_id";
+        const rows = allRows;
+        // Group rows by parent
+        const childMap = new Map<string | null, typeof rows>();
+        for (const row of rows) {
+            const parentId = String((row.original as Record<string, unknown>)[parentKey] ?? "null");
+            const parent = parentId === "null" || parentId === "undefined" || parentId === "" ? null : parentId;
+            if (!childMap.has(parent)) childMap.set(parent, []);
+            childMap.get(parent)!.push(row);
+        }
+        return childMap;
+    }, [treeConfig, allRows]);
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [showTrashed, setShowTrashed] = useState(false);
 
@@ -1789,10 +2177,26 @@ function DataTableInner<TData extends object>({
             return {
                 id: col.id, accessorKey: col.id, header: col.label, enableHiding: true,
                 enableResizing: resolvedOptions.columnResizing, size: columnSizing[col.id] || undefined,
-                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix, computedFrom: col.computedFrom, colSpan: col.colSpan, autoHeight: col.autoHeight } satisfies ColumnMeta,
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix, computedFrom: col.computedFrom, colSpan: col.colSpan, autoHeight: col.autoHeight, valueGetter: col.valueGetter, valueFormatter: col.valueFormatter, headerFilter: col.headerFilter, sparkline: col.sparkline, treeParent: col.treeParent } satisfies ColumnMeta,
                 cell: ({ row }) => {
-                    const value = row.getValue(col.id);
+                    // valueGetter: derive value from another column or dot-path
+                    let value = row.getValue(col.id);
                     const rowData = row.original as Record<string, unknown>;
+                    if (col.valueGetter) {
+                        const parts = col.valueGetter.split(".");
+                        let resolved: unknown = rowData;
+                        for (const part of parts) {
+                            if (resolved && typeof resolved === "object") resolved = (resolved as Record<string, unknown>)[part];
+                            else { resolved = undefined; break; }
+                        }
+                        if (resolved !== undefined) value = resolved;
+                    }
+
+                    // Sparkline column
+                    if (col.sparkline && sparklineData?.[col.id]) {
+                        const sparkData = sparklineData[col.id][row.index];
+                        if (sparkData) return <SparklineChart data={sparkData} type={col.sparkline as "line" | "bar"} />;
+                    }
 
                     // Row index column
                     if (col.rowIndex) {
@@ -1956,6 +2360,13 @@ function DataTableInner<TData extends object>({
                     }
 
                     if (col.type === "number" && typeof value === "number") return wrapCell(<span className="tabular-nums">{value.toLocaleString()}</span>);
+
+                    // valueFormatter: apply format string (e.g., '{value} USD')
+                    if (col.valueFormatter) {
+                        const formatted = col.valueFormatter.replace(/\{value\}/g, String(value));
+                        return wrapCell(formatted);
+                    }
+
                     // Search highlighting for text values
                     const strValue = String(value);
                     if (resolvedOptions.searchHighlight && currentSearchTerm && col.type === "text") {
@@ -2266,11 +2677,17 @@ function DataTableInner<TData extends object>({
         range: t.summaryRange ?? "Range",
     }), [t.summarySum, t.summaryAvg, t.summaryMin, t.summaryMax, t.summaryCount]);
 
-    const visibleLeafColumns = useMemo(() => [
+    const allVisibleLeafColumns = useMemo(() => [
         ...table.getLeftVisibleLeafColumns(),
         ...table.getCenterVisibleLeafColumns(),
         ...table.getRightVisibleLeafColumns(),
     ], [table.getLeftVisibleLeafColumns(), table.getCenterVisibleLeafColumns(), table.getRightVisibleLeafColumns()]);
+
+    // Column virtualization: only render columns in the visible range
+    const visibleLeafColumns = useMemo(() => {
+        if (!visibleColumnRange) return allVisibleLeafColumns;
+        return allVisibleLeafColumns.filter((_, i) => i >= visibleColumnRange.startIndex && i <= visibleColumnRange.endIndex);
+    }, [allVisibleLeafColumns, visibleColumnRange]);
 
     // Context menu: hide column handler
     const handleHideColumn = useCallback((columnId: string) => {
@@ -2422,7 +2839,8 @@ function DataTableInner<TData extends object>({
                 <div id={`dt-table-${tableName}`} className={cn("rounded-xl border shadow-sm overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
-                    <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}>
+                    <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}
+                        style={autoSizerDimensions ? { width: autoSizerDimensions.width, height: autoSizerDimensions.height } : undefined}>
                         <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
                             role="grid" aria-rowcount={meta.total} aria-colcount={table.getVisibleLeafColumns().length}>
                             <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background shadow-[0_1px_3px_-1px_rgba(0,0,0,0.1)]")}>
@@ -2475,6 +2893,10 @@ function DataTableInner<TData extends object>({
                                                         )}
                                                         {resolvedOptions.columnResizing && header.column.getCanResize() && (
                                                             <div onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()}
+                                                                onDoubleClick={resolvedOptions.columnAutoSize ? () => {
+                                                                    const width = autosizeColumn(tableElementRef, header.column.id);
+                                                                    if (width) header.column.getSize(); // trigger re-render
+                                                                } : undefined}
                                                                 className={cn("absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
                                                                     header.column.getIsResizing() ? "bg-primary" : "hover:bg-border")} />
                                                         )}
@@ -2502,6 +2924,28 @@ function DataTableInner<TData extends object>({
                                         </TableRow>
                                     );
                                 })}
+                                {/* Header filters row */}
+                                {resolvedOptions.headerFilters && (
+                                    <TableRow className="bg-muted/30 border-b">
+                                        {table.getVisibleLeafColumns().map((col) => {
+                                            const colDef = tableData.columns.find(c => c.id === col.id);
+                                            const isFilterable = colDef?.filterable || colDef?.headerFilter;
+                                            return (
+                                                <TableHead key={`hf-${col.id}`} className="py-1 px-2">
+                                                    {isFilterable ? (
+                                                        <Input
+                                                            placeholder={t.headerFilterPlaceholder}
+                                                            className="h-7 text-xs"
+                                                            value={headerFilterValues[col.id] ?? ""}
+                                                            onChange={(e) => handleHeaderFilterChange(col.id, e.target.value)}
+                                                            data-header-filter={col.id}
+                                                        />
+                                                    ) : null}
+                                                </TableHead>
+                                            );
+                                        })}
+                                    </TableRow>
+                                )}
                             </TableHeader>
                             <TableBody ref={tableBodyRef} role="rowgroup">
                                 {/* Pinned top rows */}
@@ -2523,6 +2967,18 @@ function DataTableInner<TData extends object>({
                                 ) : table.getRowModel().rows.length > 0 ? (
                                     (() => {
                                         const renderRow = (row: ReturnType<typeof table.getRowModel>["rows"][number], index: number) => {
+                                            // Scroll-aware rendering: show simplified placeholder during fast scroll
+                                            if (isScrollingFast) {
+                                                return (
+                                                    <TableRow key={row.id} className={cn("border-b border-border/40", densityClasses.row)}>
+                                                        {row.getVisibleCells().map((cell) => (
+                                                            <TableCell key={cell.id} className={cn("whitespace-nowrap", densityClasses.cell)}>
+                                                                <div className="h-4 w-full rounded bg-muted/40 animate-pulse" />
+                                                            </TableCell>
+                                                        ))}
+                                                    </TableRow>
+                                                );
+                                            }
                                             const dataAttrs = rowDataAttributes?.(row.original) ?? {};
                                             const rowRuleClass = getRowRuleClass(row.original);
                                             const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
@@ -2571,6 +3027,8 @@ function DataTableInner<TData extends object>({
                                                                 index >= Math.min(dragFillState.startRowIndex, dragFillEndIndex) &&
                                                                 index <= Math.max(dragFillState.startRowIndex, dragFillEndIndex) &&
                                                                 index !== dragFillState.startRowIndex;
+                                                            // Cell range selection highlight
+                                                            const isCellInRange = resolvedOptions.cellRangeSelection && cellRange.isCellInRange(index, cell.column.id);
                                                             return (
                                                                 <TableCell key={cell.id} role="gridcell"
                                                                     colSpan={colSpanVal} rowSpan={rowSpanVal}
@@ -2584,7 +3042,11 @@ function DataTableInner<TData extends object>({
                                                                         cellMeta?.group && groupClassName?.[cellMeta.group],
                                                                         isFlashing && "animate-cell-flash",
                                                                         isDragFillTarget && "bg-primary/10 ring-1 ring-inset ring-primary/30",
+                                                                        isCellInRange && "bg-primary/15 ring-1 ring-inset ring-primary/40",
                                                                         pin.className, cellRuleClass)}
+                                                                    onMouseDown={resolvedOptions.cellRangeSelection ? () => cellRange.startSelection(index, cell.column.id) : undefined}
+                                                                    onMouseOver={resolvedOptions.cellRangeSelection ? () => cellRange.updateSelection(index, cell.column.id) : undefined}
+                                                                    onMouseUp={resolvedOptions.cellRangeSelection ? () => { cellRange.endSelection(); onCellRangeSelect?.(cellRange.rangeStart?.row ?? index, cellRange.rangeStart?.col ?? cell.column.id, index, cell.column.id); } : undefined}
                                                                     onDragOver={resolvedOptions.dragToFill && dragFillState ? (e) => { e.preventDefault(); handleDragFillOver(e, index); } : undefined}>
                                                                     <div className="relative">
                                                                         {resolvedOptions.copyCell && cell.column.id !== "_select" && cell.column.id !== "_actions" && cell.column.id !== "_expand" && cell.column.id !== "_reorder" ? (
@@ -2657,6 +3119,43 @@ function DataTableInner<TData extends object>({
                                                     </>
                                                 );
                                             });
+                                        }
+
+                                        // Tree data mode — hierarchical rows with expand/collapse
+                                        if (treeRows) {
+                                            const labelKey = treeConfig?.treeDataLabelKey ?? "name";
+                                            const renderTreeRows = (parentId: string | null, depth: number): React.ReactNode[] => {
+                                                const children = treeRows.get(parentId);
+                                                if (!children) return [];
+                                                return children.flatMap((row, i) => {
+                                                    const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
+                                                    const hasChildren = treeRows.has(rowId);
+                                                    const isExpanded = expandedTreeNodes.has(rowId);
+                                                    const label = String((row.original as Record<string, unknown>)[labelKey] ?? "");
+                                                    return [
+                                                        <TableRow key={row.id} className={cn("border-b border-border/40", densityClasses.row)}>
+                                                            <TableCell colSpan={table.getVisibleLeafColumns().length} className={densityClasses.cell}>
+                                                                <div className="flex items-center" style={{ paddingLeft: `${depth * 1.5}rem` }}>
+                                                                    {hasChildren ? (
+                                                                        <button type="button" className="mr-1 p-0.5 hover:bg-muted rounded" onClick={() => {
+                                                                            setExpandedTreeNodes(prev => {
+                                                                                const next = new Set(prev);
+                                                                                if (next.has(rowId)) next.delete(rowId); else next.add(rowId);
+                                                                                return next;
+                                                                            });
+                                                                        }}>
+                                                                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                                                        </button>
+                                                                    ) : <span className="inline-block w-5" />}
+                                                                    <span>{label}</span>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>,
+                                                        ...(isExpanded ? renderTreeRows(rowId, depth + 1) : []),
+                                                    ];
+                                                });
+                                            };
+                                            return <>{renderTreeRows(null, 0)}</>;
                                         }
 
                                         // Normal mode — with optional virtual scrolling
@@ -2799,6 +3298,71 @@ function DataTableInner<TData extends object>({
                         </div>
                     );
                 })()
+            )}
+
+            {/* ── Infinite scroll sentinel ── */}
+            {resolvedOptions.infiniteScroll && (
+                <div ref={infiniteScrollSentinelRef} className="flex items-center justify-center py-4 print:hidden">
+                    {isLoadingMore ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t.loadingMore}</div>
+                    ) : hasMore === false ? (
+                        <span className="text-xs text-muted-foreground">{t.noMoreData}</span>
+                    ) : null}
+                </div>
+            )}
+
+            {/* ── Cell range selection indicator ── */}
+            {resolvedOptions.cellRangeSelection && cellRange.selectedCellCount > 0 && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground print:hidden">
+                    <span>{t.cellsSelected(cellRange.selectedCellCount)}</span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={cellRange.clearSelection}>{t.clearSelection}</Button>
+                </div>
+            )}
+
+            {/* ── AI Assistant input ── */}
+            {onAiQuery && (
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 print:hidden">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder={t.aiPlaceholder}
+                        value={aiQuery}
+                        onChange={(e) => setAiQuery(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleAiQuery(); }}
+                        className="h-7 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
+                        disabled={aiQuerying}
+                    />
+                    {aiQuerying && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={handleAiQuery} disabled={aiQuerying || !aiQuery.trim()}>
+                        {aiQuerying ? t.aiQuerying : t.aiAssistant}
+                    </Button>
+                </div>
+            )}
+
+            {/* ── Pivot mode controls ── */}
+            {config?.pivotEnabled && onPivotChange && (
+                <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs print:hidden">
+                    <label className="flex items-center gap-1.5 font-medium">
+                        <Checkbox checked={pivotActive} onCheckedChange={(checked) => setPivotActive(!!checked)} />
+                        {t.pivotMode}
+                    </label>
+                    {pivotActive && config.pivotConfig && (
+                        <span className="text-muted-foreground">
+                            {t.pivotRowFields}: {config.pivotConfig.rowFields?.join(", ")} | {t.pivotValueField}: {config.pivotConfig.valueField} ({config.pivotConfig.aggregation})
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {/* ── Window scroller: scroll to top button ── */}
+            {resolvedOptions.windowScroller && windowScrollTop > 400 && (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="fixed bottom-6 right-6 z-50 shadow-lg print:hidden"
+                    onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                >
+                    {t.scrollToTop}
+                </Button>
             )}
 
             {slots?.afterTable}

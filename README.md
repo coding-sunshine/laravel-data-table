@@ -156,6 +156,13 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Auto-refresh polling** — Timer-based automatic data refresh at configurable intervals
 - **Deferred/lazy loading** — Render table shell immediately, load data asynchronously
 - **Virtual scrolling** — Lightweight built-in `useVirtualRows` hook — no external dependencies needed
+- **Column virtualization** — Only render visible columns for wide tables with 50+ columns
+- **Directional overscan** — Pre-render extra rows in the scroll direction for smoother scrolling
+- **Scroll-aware rendering** — Show placeholder rows during fast scrolling for better performance
+- **AutoSizer** — ResizeObserver-based container sizing for responsive layouts
+- **CellMeasurer** — Content-based variable row height caching
+- **Window scroller** — Table scrolls with the browser window instead of its own container
+- **Infinite scroll** — Replace pagination with continuous scroll loading via IntersectionObserver
 - **Lazy detail rows** — Detail row content only renders when expanded (inline) or opened (modal/drawer)
 - **Undo/redo cleanup** — Undo and redo stacks are automatically cleared on component unmount to prevent memory leaks
 - **Persist state** — Save filters/sort/pagination to localStorage across page reloads
@@ -163,6 +170,19 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Inertia v2 prefetching** — Pagination buttons prefetch the next/prev page on hover for instant navigation
 - **Loading state** — Skeleton rows and spinner during Inertia navigation
 - **Inertia router for mutations** — Toggle and import use `router.patch`/`router.post` instead of raw `fetch()`
+
+### Advanced Features
+
+- **Header filters** — Inline filter inputs below column headers for quick filtering
+- **Tree data** — Hierarchical rows with expand/collapse for parent-child relationships
+- **Column auto-sizing** — Double-click resize handle to fit column width to content
+- **Cell range selection** — Spreadsheet-like mouse drag selection with aggregate display
+- **Imperative API ref** — Programmatic control (scrollToRow, autosizeColumns, triggerExport, resetFilters, focusCell)
+- **Pivot table mode** — Row/column grouping with aggregation (sum, avg, count, min, max)
+- **valueGetter/valueFormatter** — Separate data access from display formatting (like AG Grid)
+- **Sparklines** — Inline SVG mini-charts (line and bar) in table cells
+- **AI assistant** — Natural language query input for filtering and sorting via callback
+- **Column auto-size** — Auto-fit column widths to content via double-click or API
 
 ### Internationalization
 
@@ -592,6 +612,11 @@ All `ColumnBuilder` methods return `$this` for chaining. Call `->build()` at the
 | `computed(array, Closure)` | Define a computed column from source columns | `->computed(['price', 'qty'], fn($row) => $row['price'] * $row['qty'])` |
 | `colSpan(int)` | Number of columns this cell should span | `->colSpan(3)` |
 | `autoHeight(bool)` | Auto-size row height based on content | `->autoHeight()` |
+| `valueGetter(string)` | Dot-path to derive cell value from row data | `->valueGetter('user.name')` |
+| `valueFormatter(string)` | Format string for display (`{value}` placeholder) | `->valueFormatter('{value} USD')` |
+| `headerFilter(bool)` | Enable inline header filter for this column | `->headerFilter()` |
+| `sparkline(string)` | Sparkline chart type: `'line'` or `'bar'` | `->sparkline('line')` |
+| `treeParent(string)` | Column ID for tree data parent reference | `->treeParent('parent_id')` |
 
 **Static methods:** `getComputedResolvers()`, `clearComputedResolvers()` — manage the computed column resolver registry (same pattern as suffix resolvers).
 
@@ -1310,6 +1335,15 @@ interface DataTableProps<TData extends object> {
     headerActions?: DataTableHeaderAction[]; // Toolbar action buttons
     groupByOptions?: string[];              // Column IDs for user-selectable grouping
     onGroupByChange?: (columnId: string | null) => void; // Grouping change callback
+
+    // Advanced features
+    onCellRangeSelect?: (startRow: number, startCol: string, endRow: number, endCol: string) => void;
+    apiRef?: React.MutableRefObject<DataTableApiRef | null>; // Imperative API
+    onLoadMore?: (page: number) => Promise<void> | void;     // Infinite scroll callback
+    hasMore?: boolean;                      // More data available for infinite scroll
+    sparklineData?: Record<string, number[][]>; // Sparkline data per column per row
+    onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
+    onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
 }
 ```
 
@@ -1354,6 +1388,16 @@ All options default to sensible values. Only override what you need:
         statusBar: true,             // Show aggregates (sum/avg/count/min/max) for selected rows
         clipboardPaste: true,        // Paste tab-separated data into editable cells
         dragToFill: true,            // Drag cell handle to fill adjacent cells
+        headerFilters: true,         // Inline filters below column headers
+        infiniteScroll: true,        // Infinite scroll instead of pagination
+        columnAutoSize: true,        // Double-click resize handle to auto-fit
+        columnVirtualization: true,  // Only render visible columns (wide tables)
+        cellRangeSelection: true,    // Spreadsheet-like cell range selection
+        autoSizer: true,             // ResizeObserver container sizing
+        cellMeasurer: true,          // Content-based variable row heights
+        scrollAwareRendering: true,  // Placeholder rows during fast scroll
+        windowScroller: true,        // Scroll with browser window
+        directionalOverscan: true,   // More rows pre-rendered in scroll direction
 
         // Enabled by default:
         loading: true,               // Skeleton during Inertia navigation
@@ -1519,6 +1563,16 @@ The `DataTableTranslations` interface has **100+ keys** covering every UI string
 | Saved filters | `savedFilters`, `saveCurrentFilters`, `filterName`, `filterNamePlaceholder` | Server-persisted saved filters |
 | Export | `exportPdf` | PDF export option |
 | Pinned rows | `pinnedRow` | Pinned row label |
+| Header filters | `headerFilterPlaceholder` | Header filter input placeholder |
+| Tree data | `treeExpand`, `treeCollapse`, `treeExpandAll`, `treeCollapseAll` | Tree expand/collapse labels |
+| Infinite scroll | `loadingMore`, `noMoreData` | Infinite scroll status |
+| Column auto-size | `autosizeColumn`, `autosizeAllColumns` | Auto-size tooltips |
+| Cell range | `cellsSelected`, `clearSelection` | Range selection indicator |
+| Sparklines | `sparklineLabel` | Sparkline chart label |
+| AI assistant | `aiPlaceholder`, `aiAssistant`, `aiQuerying` | AI query input |
+| Pivot | `pivotMode`, `pivotRowFields`, `pivotValueField` | Pivot mode controls |
+| Window scroller | `scrollToTop` | Scroll-to-top button |
+| API ref | `apiScrollToRow`, `apiAutosize`, `apiExport`, `apiResetFilters` | API ref action labels |
 
 ### `SavedView` Model
 
@@ -2991,6 +3045,371 @@ export default function ProductsPage({ tableData }: Props) {
     );
 }
 ```
+
+---
+
+## Header Filters
+
+Enable inline filters directly below column headers for quick filtering without opening the filter panel:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ headerFilters: true }}
+/>
+```
+
+On the backend, mark columns as header-filterable:
+
+```php
+ColumnBuilder::make('status', 'Status')
+    ->option([['label' => 'Active', 'value' => 'active']])
+    ->headerFilter()
+    ->build();
+```
+
+Header filters render an `<Input>` below each filterable column header. Changes are debounced and applied as URL query parameters via Inertia navigation.
+
+---
+
+## Tree Data (Hierarchical Rows)
+
+Display hierarchical/nested data with expand/collapse controls:
+
+```php
+class CategoryDataTable extends AbstractDataTable
+{
+    protected function tableTreeDataEnabled(): bool { return true; }
+    protected function tableTreeDataParentKey(): string { return 'parent_id'; }
+    protected function tableTreeDataLabelKey(): string { return 'name'; }
+
+    protected function columns(): array
+    {
+        return [
+            ColumnBuilder::make('name', 'Category')
+                ->text()
+                ->treeParent('parent_id')
+                ->build(),
+        ];
+    }
+}
+```
+
+Rows are grouped into a tree hierarchy based on the parent key. Each level is indented, and parent nodes show expand/collapse chevrons.
+
+---
+
+## Infinite Scroll / Lazy Loading
+
+Replace pagination with infinite scroll for continuous data loading:
+
+```php
+class LogDataTable extends AbstractDataTable
+{
+    protected function tableInfiniteScroll(): bool { return true; }
+}
+```
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="logs"
+    options={{ infiniteScroll: true }}
+    onLoadMore={async (page) => {
+        await router.reload({ data: { page }, only: ['tableData'] });
+    }}
+    hasMore={tableData.meta.currentPage < tableData.meta.lastPage}
+/>
+```
+
+An `IntersectionObserver` watches a sentinel element at the bottom of the table and triggers `onLoadMore` when it becomes visible.
+
+---
+
+## Column Auto-Sizing
+
+Double-click a column resize handle to auto-fit the column width to its content:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ columnAutoSize: true, columnResizing: true }}
+/>
+```
+
+The auto-size algorithm measures the rendered width of all cells in the column (including the header) and sets the column to the maximum width found. Also available programmatically via the imperative API:
+
+```tsx
+const apiRef = useRef(null);
+apiRef.current?.autosizeColumns(); // auto-size all columns
+```
+
+---
+
+## Column Virtualization
+
+Only render columns that are currently visible in the viewport for wide tables with many columns:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="wide-table"
+    options={{ columnVirtualization: true }}
+/>
+```
+
+Uses an `IntersectionObserver` to determine which columns are in view and only renders those, significantly improving performance for tables with 50+ columns.
+
+---
+
+## Cell Range Selection
+
+Enable spreadsheet-like cell range selection with mouse drag:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ cellRangeSelection: true }}
+    onCellRangeSelect={(startRow, startCol, endRow, endCol) => {
+        console.log(`Selected from ${startRow}:${startCol} to ${endRow}:${endCol}`);
+    }}
+/>
+```
+
+Selected cells are highlighted with a primary-colored overlay. The selection count is displayed below the table with a clear button.
+
+---
+
+## AutoSizer
+
+Automatically measure and fill the container dimensions using `ResizeObserver`:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ autoSizer: true }}
+/>
+```
+
+The table container automatically resizes to fill its parent element. Useful for dashboard layouts where the table should fill available space.
+
+---
+
+## CellMeasurer
+
+Cache measured cell heights for variable-height row support:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ cellMeasurer: true }}
+/>
+```
+
+The CellMeasurer hook provides `measureCell(key, element)` and `getCellHeight(key, defaultHeight)` functions that cache DOM measurements. Combine with `autoHeight` columns for content-driven row heights.
+
+---
+
+## Imperative API Ref
+
+Programmatically control the table via a React ref:
+
+```tsx
+import { useRef } from 'react';
+import type { DataTableApiRef } from '@/data-table/types';
+
+function MyPage({ tableData }) {
+    const apiRef = useRef<DataTableApiRef>(null);
+
+    return (
+        <>
+            <button onClick={() => apiRef.current?.scrollToRow(0)}>Scroll to Top</button>
+            <button onClick={() => apiRef.current?.autosizeColumns()}>Auto-size</button>
+            <button onClick={() => apiRef.current?.triggerExport('xlsx')}>Export</button>
+            <button onClick={() => apiRef.current?.resetFilters()}>Reset Filters</button>
+            <button onClick={() => apiRef.current?.focusCell(0, 'name')}>Focus Cell</button>
+
+            <DataTable
+                tableData={tableData}
+                tableName="products"
+                apiRef={apiRef}
+            />
+        </>
+    );
+}
+```
+
+**Available methods:**
+
+| Method | Description |
+|---|---|
+| `scrollToRow(index, alignment?)` | Scroll to a specific row by index |
+| `autosizeColumns()` | Auto-fit all columns to content width |
+| `triggerExport(format)` | Programmatically trigger an export (`xlsx`, `csv`, `pdf`) |
+| `resetFilters()` | Clear all active filters |
+| `getState()` | Get the current table state as a plain object |
+| `focusCell(rowIndex, columnId)` | Focus a specific cell for keyboard navigation |
+
+---
+
+## Scroll-Aware Simplified Rendering
+
+Show placeholder rows during fast scrolling for smoother performance:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ scrollAwareRendering: true, virtualScrolling: true }}
+/>
+```
+
+When the user scrolls quickly, rows are replaced with animated pulse placeholders. Normal rendering resumes after scrolling stops (150ms debounce). This dramatically improves scroll performance for complex cell renderers.
+
+---
+
+## Pivot Table Mode
+
+Enable pivot table analysis with row/column grouping and aggregation:
+
+```php
+class SalesDataTable extends AbstractDataTable
+{
+    protected function tablePivotEnabled(): bool { return true; }
+    protected function tablePivotConfig(): array
+    {
+        return [
+            'rowFields' => ['category'],
+            'columnFields' => ['region'],
+            'valueField' => 'revenue',
+            'aggregation' => 'sum',
+        ];
+    }
+}
+```
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="sales"
+    onPivotChange={(config) => {
+        router.reload({ data: { pivot: config }, only: ['tableData'] });
+    }}
+/>
+```
+
+When pivot mode is activated, a control bar appears showing the current pivot configuration (row fields, column fields, value field, and aggregation type).
+
+---
+
+## valueGetter / valueFormatter
+
+Separate data access from display formatting, similar to AG Grid:
+
+```php
+ColumnBuilder::make('full_name', 'Full Name')
+    ->text()
+    ->valueGetter('user.name')  // Dot-path to derive value
+    ->build();
+
+ColumnBuilder::make('price', 'Price')
+    ->number()
+    ->valueFormatter('{value} USD')  // Display format
+    ->build();
+```
+
+- **valueGetter**: A column ID or dot-notation path (e.g., `user.name`, `address.city`) used to derive the cell value from the row data. Enables sorting/filtering on the derived value.
+- **valueFormatter**: A format string where `{value}` is replaced with the actual value. Applied after all other type-specific formatting.
+
+---
+
+## Window Scroller
+
+Make the table scroll with the browser window instead of its own scroll container:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ windowScroller: true }}
+/>
+```
+
+The table tracks `window.scrollY` and `window.innerHeight`. A "scroll to top" button appears (fixed bottom-right) when the user scrolls past 400px.
+
+---
+
+## Sparklines (Charts Integration)
+
+Display inline mini-charts in table cells:
+
+```php
+ColumnBuilder::make('trend', 'Trend')
+    ->text()
+    ->sparkline('line')  // 'line' or 'bar'
+    ->build();
+```
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="stocks"
+    sparklineData={{
+        trend: [
+            [10, 15, 12, 18, 22],  // row 0
+            [5, 8, 3, 12, 9],      // row 1
+            [20, 18, 22, 25, 30],  // row 2
+        ],
+    }}
+/>
+```
+
+Sparklines render as inline SVG charts (80×20px by default). Line charts use a polyline stroke; bar charts use filled rectangles. Both auto-scale to the data range.
+
+---
+
+## AI Assistant
+
+Add a natural language query input for filtering and sorting:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    onAiQuery={async (query) => {
+        const response = await fetch('/api/ai-query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, table: 'products' }),
+        });
+        return response.json();
+        // Expected: { filters: { status: 'active' }, sort: 'price' }
+    }}
+/>
+```
+
+An input field appears below the table. Users type natural language queries like "show me active products sorted by price". The `onAiQuery` callback receives the query string and should return filter/sort configuration that gets applied via URL parameters.
+
+---
+
+## Directional Overscan
+
+Pre-render more rows in the scroll direction for smoother virtual scrolling:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ virtualScrolling: true, directionalOverscan: true }}
+/>
+```
+
+When enabled, the virtual scroll engine tracks scroll direction and renders extra rows ahead of the scroll position (15 rows in the scroll direction vs. 5 behind). This reduces the white flash that can occur during fast scrolling.
 
 ---
 
