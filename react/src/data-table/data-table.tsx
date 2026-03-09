@@ -46,6 +46,7 @@ import {
     AlignJustify,
     ArrowDown,
     ArrowUp,
+    BarChart3,
     Calendar,
     Check,
     ChevronDown,
@@ -61,21 +62,27 @@ import {
     FileDown,
     FileSpreadsheet,
     FileText,
+    Grid3X3,
     GripVertical,
     Hash,
     HelpCircle,
     Image as ImageIcon,
+    Kanban,
     Keyboard,
+    LayoutGrid,
+    LayoutList,
     Link as LinkIcon,
     List,
     Loader2,
     Mail,
+    Paintbrush,
     PanelRight,
     Pencil,
     Percent,
     Phone,
     Pin,
     PinOff,
+    Plus,
     Printer,
     Redo2,
     RefreshCw,
@@ -88,6 +95,7 @@ import {
     Type,
     Undo2,
     Upload,
+    Users,
     X,
 } from "lucide-react";
 import {
@@ -102,7 +110,7 @@ import { defaultTranslations, type DataTableTranslations } from "./i18n";
 import { DataTablePagination } from "./data-table-pagination";
 import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
-import type { DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableFormField, DataTableHeaderAction, DataTableOptions, DataTableProps, DataTableRule } from "./types";
+import type { DataTableAnalytic, DataTableColumnDef, DataTableColumnStats, DataTableConditionalFormatRule, DataTableConfirmOptions, DataTableDensity, DataTableFormField, DataTableHeaderAction, DataTableLayoutMode, DataTableOptions, DataTablePresenceUser, DataTableProps, DataTableRule } from "./types";
 import { useDataTable } from "./use-data-table";
 import { DataTableColumn, extractColumnConfigs } from "./data-table-column";
 import {
@@ -156,15 +164,22 @@ function showToast(message: string, variant: "success" | "error" | "info" = "inf
 
 // ─── Lightweight row virtualization ──────────────────────────────────────────
 
-function useVirtualRows(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, rowCount: number, estimateRowHeight = 40) {
+function useVirtualRows(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, rowCount: number, estimateRowHeight = 40, directionalOverscan = false) {
     const [scrollTop, setScrollTop] = useState(0);
     const [containerHeight, setContainerHeight] = useState(600);
+    const lastScrollTopRef = useRef(0);
+    const scrollDirectionRef = useRef<"down" | "up">("down");
 
     useEffect(() => {
         if (!enabled || !containerRef.current) return;
         const el = containerRef.current;
         setContainerHeight(el.clientHeight);
-        const handleScroll = () => setScrollTop(el.scrollTop);
+        const handleScroll = () => {
+            const newScrollTop = el.scrollTop;
+            scrollDirectionRef.current = newScrollTop > lastScrollTopRef.current ? "down" : "up";
+            lastScrollTopRef.current = newScrollTop;
+            setScrollTop(newScrollTop);
+        };
         const handleResize = () => setContainerHeight(el.clientHeight);
         el.addEventListener("scroll", handleScroll, { passive: true });
         const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleResize) : null;
@@ -172,16 +187,331 @@ function useVirtualRows(enabled: boolean, containerRef: React.RefObject<HTMLElem
         return () => { el.removeEventListener("scroll", handleScroll); ro?.disconnect(); };
     }, [enabled, containerRef]);
 
-    if (!enabled) return { virtualRows: null, totalHeight: 0, offsetTop: 0 };
+    if (!enabled) return { virtualRows: null, totalHeight: 0, offsetTop: 0, isScrolling: false, scrollToIndex: (_i: number) => {} };
 
-    const overscan = 5;
+    // Directional overscan: more rows in scroll direction
+    const overscanForward = directionalOverscan ? 10 : 5;
+    const overscanBackward = directionalOverscan ? 2 : 5;
+    const overscanBefore = scrollDirectionRef.current === "down" ? overscanBackward : overscanForward;
+    const overscanAfter = scrollDirectionRef.current === "down" ? overscanForward : overscanBackward;
     const totalHeight = rowCount * estimateRowHeight;
-    const startIndex = Math.max(0, Math.floor(scrollTop / estimateRowHeight) - overscan);
-    const endIndex = Math.min(rowCount, Math.ceil((scrollTop + containerHeight) / estimateRowHeight) + overscan);
+    const startIndex = Math.max(0, Math.floor(scrollTop / estimateRowHeight) - overscanBefore);
+    const endIndex = Math.min(rowCount, Math.ceil((scrollTop + containerHeight) / estimateRowHeight) + overscanAfter);
     const virtualRows = { startIndex, endIndex };
     const offsetTop = startIndex * estimateRowHeight;
 
-    return { virtualRows, totalHeight, offsetTop };
+    const scrollToIndex = (index: number) => {
+        if (containerRef.current) {
+            containerRef.current.scrollTop = index * estimateRowHeight;
+        }
+    };
+
+    return { virtualRows, totalHeight, offsetTop, isScrolling: false, scrollToIndex };
+}
+
+// ─── AutoSizer hook ──────────────────────────────────────────────────────────
+
+function useAutoSizer(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>) {
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+    useEffect(() => {
+        if (!enabled || !containerRef.current) return;
+        const el = containerRef.current;
+        const updateDimensions = () => {
+            setDimensions({ width: el.clientWidth, height: el.clientHeight });
+        };
+        updateDimensions();
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateDimensions) : null;
+        ro?.observe(el);
+        return () => { ro?.disconnect(); };
+    }, [enabled, containerRef]);
+
+    return dimensions;
+}
+
+// ─── Scroll-aware rendering hook ─────────────────────────────────────────────
+
+function useScrollAwareRendering(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, resetDelay = 150) {
+    const [isScrolling, setIsScrolling] = useState(false);
+    const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+    useEffect(() => {
+        if (!enabled || !containerRef.current) return;
+        const el = containerRef.current;
+        const handleScroll = () => {
+            setIsScrolling(true);
+            if (timerRef.current) clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => setIsScrolling(false), resetDelay);
+        };
+        el.addEventListener("scroll", handleScroll, { passive: true });
+        return () => { el.removeEventListener("scroll", handleScroll); if (timerRef.current) clearTimeout(timerRef.current); };
+    }, [enabled, containerRef, resetDelay]);
+
+    return isScrolling;
+}
+
+// ─── CellMeasurer hook ───────────────────────────────────────────────────────
+
+function useCellMeasurer(enabled: boolean) {
+    const cache = useRef<Map<string, number>>(new Map());
+
+    const measureCell = useCallback((key: string, element: HTMLElement | null) => {
+        if (!enabled || !element) return;
+        const height = element.offsetHeight;
+        if (height > 0) cache.current.set(key, height);
+    }, [enabled]);
+
+    const getCellHeight = useCallback((key: string, defaultHeight: number) => {
+        return cache.current.get(key) ?? defaultHeight;
+    }, []);
+
+    const clearCache = useCallback(() => {
+        cache.current.clear();
+    }, []);
+
+    return { measureCell, getCellHeight, clearCache };
+}
+
+// ─── Window scroller hook ────────────────────────────────────────────────────
+
+function useWindowScroller(enabled: boolean) {
+    const [windowScrollTop, setWindowScrollTop] = useState(0);
+    const [windowHeight, setWindowHeight] = useState(typeof window !== "undefined" ? window.innerHeight : 800);
+
+    useEffect(() => {
+        if (!enabled || typeof window === "undefined") return;
+        const handleScroll = () => setWindowScrollTop(window.scrollY);
+        const handleResize = () => setWindowHeight(window.innerHeight);
+        window.addEventListener("scroll", handleScroll, { passive: true });
+        window.addEventListener("resize", handleResize);
+        return () => { window.removeEventListener("scroll", handleScroll); window.removeEventListener("resize", handleResize); };
+    }, [enabled]);
+
+    return { windowScrollTop, windowHeight };
+}
+
+// ─── Column auto-sizing ──────────────────────────────────────────────────────
+
+function autosizeColumn(tableRef: React.RefObject<HTMLElement | null>, columnId: string): number | null {
+    if (!tableRef.current) return null;
+    const cells = tableRef.current.querySelectorAll(`[data-column-id="${columnId}"]`);
+    let maxWidth = 60; // minimum
+    cells.forEach((cell) => {
+        const scrollWidth = (cell as HTMLElement).scrollWidth;
+        if (scrollWidth > maxWidth) maxWidth = scrollWidth;
+    });
+    return maxWidth + 16; // padding
+}
+
+function autosizeAllColumns(tableRef: React.RefObject<HTMLElement | null>, columnIds: string[]): Record<string, number> {
+    const sizes: Record<string, number> = {};
+    for (const id of columnIds) {
+        const width = autosizeColumn(tableRef, id);
+        if (width) sizes[id] = width;
+    }
+    return sizes;
+}
+
+// ─── Column virtualization hook ──────────────────────────────────────────────
+
+function useColumnVirtualization(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, columnCount: number, estimateColumnWidth = 150) {
+    const [scrollLeft, setScrollLeft] = useState(0);
+    const [containerWidth, setContainerWidth] = useState(1200);
+
+    useEffect(() => {
+        if (!enabled || !containerRef.current) return;
+        const el = containerRef.current;
+        setContainerWidth(el.clientWidth);
+        const handleScroll = () => setScrollLeft(el.scrollLeft);
+        const handleResize = () => setContainerWidth(el.clientWidth);
+        el.addEventListener("scroll", handleScroll, { passive: true });
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleResize) : null;
+        ro?.observe(el);
+        return () => { el.removeEventListener("scroll", handleScroll); ro?.disconnect(); };
+    }, [enabled, containerRef]);
+
+    if (!enabled) return { visibleColumnRange: null };
+
+    const overscan = 2;
+    const startIndex = Math.max(0, Math.floor(scrollLeft / estimateColumnWidth) - overscan);
+    const endIndex = Math.min(columnCount, Math.ceil((scrollLeft + containerWidth) / estimateColumnWidth) + overscan);
+    return { visibleColumnRange: { startIndex, endIndex } };
+}
+
+// ─── Cell range selection hook ───────────────────────────────────────────────
+
+function useCellRangeSelection(enabled: boolean) {
+    const [rangeStart, setRangeStart] = useState<{ row: number; col: string } | null>(null);
+    const [rangeEnd, setRangeEnd] = useState<{ row: number; col: string } | null>(null);
+    const [isSelecting, setIsSelecting] = useState(false);
+
+    const startSelection = useCallback((row: number, col: string) => {
+        if (!enabled) return;
+        setRangeStart({ row, col });
+        setRangeEnd({ row, col });
+        setIsSelecting(true);
+    }, [enabled]);
+
+    const updateSelection = useCallback((row: number, col: string) => {
+        if (!enabled || !isSelecting) return;
+        setRangeEnd({ row, col });
+    }, [enabled, isSelecting]);
+
+    const endSelection = useCallback(() => {
+        setIsSelecting(false);
+    }, []);
+
+    const clearSelection = useCallback(() => {
+        setRangeStart(null);
+        setRangeEnd(null);
+        setIsSelecting(false);
+    }, []);
+
+    const isCellInRange = useCallback((row: number, col: string, allColumns: string[]) => {
+        if (!rangeStart || !rangeEnd) return false;
+        const minRow = Math.min(rangeStart.row, rangeEnd.row);
+        const maxRow = Math.max(rangeStart.row, rangeEnd.row);
+        if (row < minRow || row > maxRow) return false;
+        const startColIdx = allColumns.indexOf(rangeStart.col);
+        const endColIdx = allColumns.indexOf(rangeEnd.col);
+        const colIdx = allColumns.indexOf(col);
+        const minCol = Math.min(startColIdx, endColIdx);
+        const maxCol = Math.max(startColIdx, endColIdx);
+        return colIdx >= minCol && colIdx <= maxCol;
+    }, [rangeStart, rangeEnd]);
+
+    const selectedCellCount = useMemo(() => {
+        if (!rangeStart || !rangeEnd) return 0;
+        const rowSpan = Math.abs(rangeEnd.row - rangeStart.row) + 1;
+        return rowSpan; // simplified count
+    }, [rangeStart, rangeEnd]);
+
+    return { startSelection, updateSelection, endSelection, clearSelection, isCellInRange, selectedCellCount, rangeStart, rangeEnd };
+}
+
+// ─── Sparkline mini-chart component ──────────────────────────────────────────
+
+function SparklineChart({ data, type = "line", width = 80, height = 20 }: { data: number[]; type?: "line" | "bar"; width?: number; height?: number }) {
+    if (!data || data.length === 0) return null;
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+
+    if (type === "bar") {
+        const barWidth = width / data.length;
+        return (
+            <svg width={width} height={height} className="inline-block align-middle">
+                {data.map((val, i) => {
+                    const barHeight = ((val - min) / range) * height;
+                    return <rect key={i} x={i * barWidth} y={height - barHeight} width={barWidth - 1} height={barHeight} className="fill-primary/60" />;
+                })}
+            </svg>
+        );
+    }
+
+    // Line chart
+    const points = data.map((val, i) => {
+        const x = (i / (data.length - 1)) * width;
+        const y = height - ((val - min) / range) * height;
+        return `${x},${y}`;
+    }).join(" ");
+
+    return (
+        <svg width={width} height={height} className="inline-block align-middle">
+            <polyline points={points} fill="none" className="stroke-primary" strokeWidth="1.5" />
+        </svg>
+    );
+}
+
+// ─── Analytics KPI Card (zero dependencies) ─────────────────────────────────
+
+function AnalyticsCard({ card, t }: { card: DataTableAnalytic; t: DataTableTranslations }) {
+    const formattedValue = useMemo(() => {
+        const v = card.value;
+        if (typeof v === "string") return v;
+        const num = typeof v === "number" ? v : parseFloat(String(v));
+        if (isNaN(num)) return String(v);
+
+        switch (card.format) {
+            case "currency":
+                return `${card.prefix ?? "$"}${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            case "percentage":
+                return `${num.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+            default:
+                return num.toLocaleString();
+        }
+    }, [card.value, card.format, card.prefix]);
+
+    const changeColor = card.change != null
+        ? card.change > 0 ? "text-emerald-600 dark:text-emerald-400"
+        : card.change < 0 ? "text-red-600 dark:text-red-400"
+        : "text-muted-foreground"
+        : null;
+
+    const changeArrow = card.change != null
+        ? card.change > 0 ? "\u2191" : card.change < 0 ? "\u2193" : ""
+        : null;
+
+    return (
+        <div className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">{card.label}</span>
+                {card.icon && <span className="text-lg text-muted-foreground/60">{card.icon}</span>}
+            </div>
+            <div className="flex items-baseline gap-2">
+                <span className={cn("text-2xl font-bold tracking-tight", card.color)}>
+                    {card.format !== "currency" && card.prefix}{formattedValue}{card.suffix}
+                </span>
+                {card.change != null && (
+                    <span className={cn("text-sm font-medium", changeColor)}>
+                        {changeArrow} {Math.abs(card.change).toFixed(1)}%
+                    </span>
+                )}
+            </div>
+            {card.description && (
+                <span className="text-xs text-muted-foreground">{card.description}</span>
+            )}
+        </div>
+    );
+}
+
+function AnalyticsSection<TData extends object>({
+    analytics,
+    slot,
+    data,
+    columns,
+    t,
+}: {
+    analytics: DataTableAnalytic[];
+    slot?: React.ReactNode | ((props: { data: TData[]; columns: DataTableColumnDef[]; analytics: DataTableAnalytic[] }) => React.ReactNode);
+    data: TData[];
+    columns: DataTableColumnDef[];
+    t: DataTableTranslations;
+}) {
+    // Custom slot — either a render function or static ReactNode
+    if (slot) {
+        if (typeof slot === "function") {
+            return <>{slot({ data, columns, analytics })}</>;
+        }
+        return <>{slot}</>;
+    }
+
+    // Default: built-in KPI cards grid
+    if (analytics.length === 0) return null;
+
+    return (
+        <div className={cn(
+            "grid gap-4 print:hidden",
+            analytics.length === 1 && "grid-cols-1",
+            analytics.length === 2 && "grid-cols-1 sm:grid-cols-2",
+            analytics.length === 3 && "grid-cols-1 sm:grid-cols-3",
+            analytics.length >= 4 && "grid-cols-2 sm:grid-cols-4",
+        )}>
+            {analytics.map((card, i) => (
+                <AnalyticsCard key={`${card.label}-${i}`} card={card} t={t} />
+            ))}
+        </div>
+    );
 }
 
 // ─── Safe localStorage helpers ──────────────────────────────────────────────
@@ -287,6 +617,11 @@ interface ColumnMeta {
     computedFrom?: string[] | null;
     colSpan?: number | null;
     autoHeight?: boolean;
+    valueGetter?: string | null;
+    valueFormatter?: string | null;
+    headerFilter?: boolean;
+    sparkline?: string | null;
+    treeParent?: string | null;
 }
 
 // ─── Error Boundary ─────────────────────────────────────────────────────────
@@ -1282,6 +1617,792 @@ function MobileCardLayout<TData>({ rows, columns, renderCell, actions, onRowClic
     );
 }
 
+// ─── Layout Switcher ─────────────────────────────────────────────────────
+
+function LayoutSwitcher({ layout, onLayoutChange, showKanban, t }: {
+    layout: DataTableLayoutMode; onLayoutChange: (mode: DataTableLayoutMode) => void;
+    showKanban: boolean; t: DataTableTranslations;
+}) {
+    const modes: { mode: DataTableLayoutMode; icon: React.ReactNode; label: string }[] = [
+        { mode: "table", icon: <LayoutList className="h-3.5 w-3.5" />, label: t.layoutTable },
+        { mode: "grid", icon: <LayoutGrid className="h-3.5 w-3.5" />, label: t.layoutGrid },
+        { mode: "cards", icon: <Rows3 className="h-3.5 w-3.5" />, label: t.layoutCards },
+        ...(showKanban ? [{ mode: "kanban" as const, icon: <Kanban className="h-3.5 w-3.5" />, label: t.layoutKanban }] : []),
+    ];
+    return (
+        <div className="inline-flex items-center rounded-lg border bg-muted/30 p-0.5">
+            {modes.map(({ mode, icon, label }) => (
+                <button key={mode} type="button" title={label}
+                    className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-all",
+                        layout === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                    onClick={() => onLayoutChange(mode)}>
+                    {icon}
+                    <span className="hidden sm:inline">{label}</span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// ─── Grid Layout ─────────────────────────────────────────────────────────
+
+function GridLayout<TData>({ rows, columns, renderCell, actions, onRowClick, rowLink, t, density,
+    imageColumn, titleColumn, subtitleColumn }: {
+    rows: TData[]; columns: DataTableColumnDef[];
+    renderCell?: (columnId: string, value: unknown, row: TData) => React.ReactNode | undefined;
+    actions?: import("./types").DataTableAction<TData>[];
+    onRowClick?: (row: TData) => void; rowLink?: (row: TData) => string;
+    t: DataTableTranslations; density: DataTableDensity;
+    imageColumn?: string; titleColumn?: string; subtitleColumn?: string;
+}) {
+    return (
+        <div className={cn("grid gap-4",
+            "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
+            {rows.length === 0 ? (
+                <div className="col-span-full text-center py-12 text-muted-foreground">{t.noData}</div>
+            ) : rows.map((row, idx) => {
+                const rowData = row as Record<string, unknown>;
+                const handleClick = () => {
+                    if (rowLink) window.location.href = rowLink(row);
+                    else if (onRowClick) onRowClick(row);
+                };
+                const isClickable = !!onRowClick || !!rowLink;
+                const imgSrc = imageColumn ? rowData[imageColumn] as string | undefined : undefined;
+                const title = titleColumn ? String(rowData[titleColumn] ?? "") : null;
+                const subtitle = subtitleColumn ? String(rowData[subtitleColumn] ?? "") : null;
+                const visibleCols = columns.filter(c => c.visible !== false && c.id !== imageColumn && c.id !== titleColumn && c.id !== subtitleColumn);
+
+                return (
+                    <div key={rowData.id != null ? String(rowData.id) : idx}
+                        className={cn("group rounded-xl border bg-card shadow-sm overflow-hidden transition-all",
+                            isClickable && "cursor-pointer hover:shadow-md hover:border-primary/30",
+                            density === "compact" && "text-xs")}
+                        onClick={isClickable ? handleClick : undefined}>
+                        {imgSrc && (
+                            <div className="aspect-video bg-muted overflow-hidden">
+                                <img src={imgSrc} alt={title ?? ""} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                            </div>
+                        )}
+                        <div className={cn("p-4 space-y-2", density === "compact" && "p-2.5 space-y-1", density === "spacious" && "p-5 space-y-3")}>
+                            {title && <h3 className="font-semibold text-sm truncate">{title}</h3>}
+                            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
+                            {visibleCols.slice(0, 4).map(col => {
+                                const value = rowData[col.id];
+                                const custom = renderCell?.(col.id, value, row);
+                                return (
+                                    <div key={col.id} className="flex items-center justify-between gap-2">
+                                        <span className="text-[11px] text-muted-foreground shrink-0">{col.label}</span>
+                                        <span className="text-xs text-right truncate">
+                                            {custom !== undefined ? custom : value == null ? "—" : String(value)}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                            {actions && actions.length > 0 && (
+                                <div className="flex justify-end gap-1 pt-2 border-t">
+                                    <DataTableRowActions row={row} actions={actions} t={t} />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Enhanced Card Layout ────────────────────────────────────────────────
+
+function CardLayout<TData>({ rows, columns, renderCell, actions, onRowClick, rowLink, t, density,
+    titleColumn, subtitleColumn }: {
+    rows: TData[]; columns: DataTableColumnDef[];
+    renderCell?: (columnId: string, value: unknown, row: TData) => React.ReactNode | undefined;
+    actions?: import("./types").DataTableAction<TData>[];
+    onRowClick?: (row: TData) => void; rowLink?: (row: TData) => string;
+    t: DataTableTranslations; density: DataTableDensity;
+    titleColumn?: string; subtitleColumn?: string;
+}) {
+    const visibleCols = columns.filter(c => c.visible !== false && c.id !== titleColumn && c.id !== subtitleColumn);
+    return (
+        <div className="space-y-3">
+            {rows.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">{t.noData}</div>
+            ) : rows.map((row, idx) => {
+                const rowData = row as Record<string, unknown>;
+                const handleClick = () => {
+                    if (rowLink) window.location.href = rowLink(row);
+                    else if (onRowClick) onRowClick(row);
+                };
+                const isClickable = !!onRowClick || !!rowLink;
+                const title = titleColumn ? String(rowData[titleColumn] ?? "") : null;
+                const subtitle = subtitleColumn ? String(rowData[subtitleColumn] ?? "") : null;
+
+                return (
+                    <div key={rowData.id != null ? String(rowData.id) : idx}
+                        className={cn("rounded-xl border bg-card shadow-sm transition-all",
+                            isClickable && "cursor-pointer hover:shadow-md hover:border-primary/30",
+                            density === "compact" && "text-xs")}
+                        onClick={isClickable ? handleClick : undefined}>
+                        <div className={cn("p-4", density === "compact" && "p-3", density === "spacious" && "p-6")}>
+                            {(title || subtitle) && (
+                                <div className="mb-3 pb-3 border-b">
+                                    {title && <h3 className="font-semibold text-base">{title}</h3>}
+                                    {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                                {visibleCols.map(col => {
+                                    const value = rowData[col.id];
+                                    const custom = renderCell?.(col.id, value, row);
+                                    return (
+                                        <div key={col.id} className="space-y-0.5">
+                                            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{col.label}</span>
+                                            <div className="text-sm">
+                                                {custom !== undefined ? custom : value == null ? "—" : String(value)}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {actions && actions.length > 0 && (
+                                <div className="flex justify-end gap-1 pt-3 mt-3 border-t">
+                                    <DataTableRowActions row={row} actions={actions} t={t} />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Column Statistics Popover ───────────────────────────────────────────
+
+function computeColumnStats(data: Record<string, unknown>[], columnId: string, columnType: string): DataTableColumnStats {
+    const values = data.map(row => row[columnId]);
+    const count = values.length;
+    const nullCount = values.filter(v => v === null || v === undefined || v === "").length;
+    const nonNull = values.filter(v => v !== null && v !== undefined && v !== "");
+    const uniqueCount = new Set(nonNull.map(v => String(v))).size;
+
+    const stats: DataTableColumnStats = { count, nullCount, uniqueCount };
+
+    // Numeric stats
+    if (columnType === "number" || columnType === "currency" || columnType === "percentage") {
+        const nums = nonNull.map(v => typeof v === "number" ? v : parseFloat(String(v))).filter(n => !isNaN(n));
+        if (nums.length > 0) {
+            const sorted = [...nums].sort((a, b) => a - b);
+            stats.min = sorted[0];
+            stats.max = sorted[sorted.length - 1];
+            stats.sum = nums.reduce((a, b) => a + b, 0);
+            stats.avg = stats.sum / nums.length;
+            const mid = Math.floor(sorted.length / 2);
+            stats.median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+
+            // Distribution: 8 buckets
+            const range = stats.max - stats.min;
+            if (range > 0) {
+                const bucketCount = Math.min(8, uniqueCount);
+                const bucketSize = range / bucketCount;
+                const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+                    bucket: `${(stats.min! + i * bucketSize).toFixed(1)}`,
+                    count: 0,
+                }));
+                for (const n of nums) {
+                    const idx = Math.min(Math.floor((n - stats.min!) / bucketSize), bucketCount - 1);
+                    buckets[idx].count++;
+                }
+                stats.distribution = buckets;
+            }
+        }
+    } else {
+        // Categorical distribution: top 8 values by frequency
+        const freq = new Map<string, number>();
+        for (const v of nonNull) {
+            const key = String(v);
+            freq.set(key, (freq.get(key) ?? 0) + 1);
+        }
+        stats.distribution = [...freq.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([bucket, count]) => ({ bucket, count }));
+    }
+
+    return stats;
+}
+
+function ColumnStatsPopover({ columnId, columnLabel, columnType, data, t }: {
+    columnId: string; columnLabel: string; columnType: string;
+    data: Record<string, unknown>[]; t: DataTableTranslations;
+}) {
+    const [open, setOpen] = useState(false);
+    const stats = useMemo(() => open ? computeColumnStats(data, columnId, columnType) : null, [open, data, columnId, columnType]);
+    const isNumeric = columnType === "number" || columnType === "currency" || columnType === "percentage";
+    const maxDistCount = stats?.distribution ? Math.max(...stats.distribution.map(d => d.count)) : 0;
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <button type="button" className="p-0.5 rounded hover:bg-muted transition-colors" title={t.columnStats}>
+                    <BarChart3 className="h-3 w-3 text-muted-foreground/60" />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-0">
+                <div className="p-3 border-b">
+                    <h4 className="font-semibold text-sm">{columnLabel}</h4>
+                    <p className="text-xs text-muted-foreground">{t.columnStats}</p>
+                </div>
+                {stats && (
+                    <div className="p-3 space-y-3">
+                        {/* Basic stats */}
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="text-center p-1.5 rounded bg-muted/50">
+                                <div className="text-xs text-muted-foreground">{t.statsCount}</div>
+                                <div className="text-sm font-semibold tabular-nums">{stats.count}</div>
+                            </div>
+                            <div className="text-center p-1.5 rounded bg-muted/50">
+                                <div className="text-xs text-muted-foreground">{t.statsNulls}</div>
+                                <div className="text-sm font-semibold tabular-nums">{stats.nullCount}</div>
+                            </div>
+                            <div className="text-center p-1.5 rounded bg-muted/50">
+                                <div className="text-xs text-muted-foreground">{t.statsUnique}</div>
+                                <div className="text-sm font-semibold tabular-nums">{stats.uniqueCount}</div>
+                            </div>
+                        </div>
+
+                        {/* Numeric stats */}
+                        {isNumeric && stats.min !== undefined && (
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { label: t.summaryMin, value: stats.min },
+                                    { label: t.summaryMax, value: stats.max },
+                                    { label: t.summaryAvg, value: stats.avg },
+                                    { label: t.statsMedian, value: stats.median },
+                                    { label: t.summarySum, value: stats.sum },
+                                ].filter(s => s.value !== undefined).map(({ label, value }) => (
+                                    <div key={label} className="flex justify-between text-xs py-0.5">
+                                        <span className="text-muted-foreground">{label}</span>
+                                        <span className="font-medium tabular-nums">{Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Distribution chart */}
+                        {stats.distribution && stats.distribution.length > 0 && (
+                            <div className="space-y-1">
+                                <h5 className="text-xs font-medium text-muted-foreground">{t.statsDistribution}</h5>
+                                <div className="space-y-0.5">
+                                    {stats.distribution.map((d, i) => (
+                                        <div key={i} className="flex items-center gap-2 text-xs">
+                                            <span className="w-16 truncate text-muted-foreground text-right shrink-0" title={d.bucket}>{d.bucket}</span>
+                                            <div className="flex-1 h-4 bg-muted/50 rounded overflow-hidden">
+                                                <div className="h-full bg-primary/40 rounded transition-all"
+                                                    style={{ width: `${maxDistCount > 0 ? (d.count / maxDistCount) * 100 : 0}%` }} />
+                                            </div>
+                                            <span className="w-8 text-right tabular-nums text-muted-foreground">{d.count}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+// ─── Conditional Formatting Rules Builder ────────────────────────────────
+
+const COND_FORMAT_OPERATORS = [
+    { value: "gt", label: ">" },
+    { value: "gte", label: ">=" },
+    { value: "lt", label: "<" },
+    { value: "lte", label: "<=" },
+    { value: "eq", label: "=" },
+    { value: "neq", label: "!=" },
+    { value: "contains", label: "contains" },
+    { value: "empty", label: "is empty" },
+    { value: "notEmpty", label: "is not empty" },
+];
+
+const COND_FORMAT_COLORS = [
+    { bg: "bg-red-100 dark:bg-red-900/30", label: "Red", value: "#fee2e2" },
+    { bg: "bg-orange-100 dark:bg-orange-900/30", label: "Orange", value: "#ffedd5" },
+    { bg: "bg-yellow-100 dark:bg-yellow-900/30", label: "Yellow", value: "#fef9c3" },
+    { bg: "bg-green-100 dark:bg-green-900/30", label: "Green", value: "#dcfce7" },
+    { bg: "bg-blue-100 dark:bg-blue-900/30", label: "Blue", value: "#dbeafe" },
+    { bg: "bg-purple-100 dark:bg-purple-900/30", label: "Purple", value: "#f3e8ff" },
+];
+
+function useConditionalFormatRules(tableName: string, enabled: boolean) {
+    const key = `dt-cond-format-${tableName}`;
+    const [rules, setRules] = useState<DataTableConditionalFormatRule[]>(() => {
+        if (!enabled) return [];
+        const stored = safeGetItem(key);
+        if (stored) { try { return JSON.parse(stored); } catch { return []; } }
+        return [];
+    });
+
+    const saveRules = useCallback((newRules: DataTableConditionalFormatRule[]) => {
+        setRules(newRules);
+        safeSetItem(key, JSON.stringify(newRules));
+    }, [key]);
+
+    const addRule = useCallback(() => {
+        saveRules([...rules, {
+            id: `cf-${Date.now()}`,
+            column: "", operator: "gt", value: "",
+            style: { backgroundColor: "#dcfce7" },
+        }]);
+    }, [rules, saveRules]);
+
+    const updateRule = useCallback((id: string, patch: Partial<DataTableConditionalFormatRule>) => {
+        saveRules(rules.map(r => r.id === id ? { ...r, ...patch } : r));
+    }, [rules, saveRules]);
+
+    const removeRule = useCallback((id: string) => {
+        saveRules(rules.filter(r => r.id !== id));
+    }, [rules, saveRules]);
+
+    return { rules, addRule, updateRule, removeRule };
+}
+
+function evaluateConditionalFormat(rule: DataTableConditionalFormatRule, cellValue: unknown): boolean {
+    const val = cellValue;
+    const ruleVal = rule.value;
+    switch (rule.operator) {
+        case "gt": return Number(val) > Number(ruleVal);
+        case "gte": return Number(val) >= Number(ruleVal);
+        case "lt": return Number(val) < Number(ruleVal);
+        case "lte": return Number(val) <= Number(ruleVal);
+        case "eq": return String(val) === String(ruleVal);
+        case "neq": return String(val) !== String(ruleVal);
+        case "contains": return String(val).toLowerCase().includes(String(ruleVal).toLowerCase());
+        case "empty": return val === null || val === undefined || val === "";
+        case "notEmpty": return val !== null && val !== undefined && val !== "";
+        case "between": return Number(val) >= Number(ruleVal) && Number(val) <= Number(rule.value2);
+        default: return false;
+    }
+}
+
+function ConditionalFormatDialog({ open, onOpenChange, columns, rules, onAddRule, onUpdateRule, onRemoveRule, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void;
+    columns: DataTableColumnDef[];
+    rules: DataTableConditionalFormatRule[];
+    onAddRule: () => void;
+    onUpdateRule: (id: string, patch: Partial<DataTableConditionalFormatRule>) => void;
+    onRemoveRule: (id: string) => void;
+    t: DataTableTranslations;
+}) {
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Paintbrush className="h-5 w-5" />{t.conditionalFormatting}
+                    </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 py-2">
+                    {rules.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4">{t.noRules}</p>
+                    )}
+                    {rules.map((rule) => (
+                        <div key={rule.id} className="flex flex-wrap items-end gap-2 rounded-lg border p-3 bg-muted/20">
+                            <div className="grid gap-1 flex-1 min-w-[120px]">
+                                <Label className="text-xs">{t.formatColumn}</Label>
+                                <Select value={rule.column} onValueChange={(v) => onUpdateRule(rule.id, { column: v })}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Column..." /></SelectTrigger>
+                                    <SelectContent>
+                                        {columns.map(col => (
+                                            <SelectItem key={col.id} value={col.id}>{col.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-1 min-w-[100px]">
+                                <Label className="text-xs">{t.formatOperator}</Label>
+                                <Select value={rule.operator} onValueChange={(v) => onUpdateRule(rule.id, { operator: v as DataTableConditionalFormatRule["operator"] })}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        {COND_FORMAT_OPERATORS.map(op => (
+                                            <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {rule.operator !== "empty" && rule.operator !== "notEmpty" && (
+                                <div className="grid gap-1 min-w-[80px]">
+                                    <Label className="text-xs">{t.formatValue}</Label>
+                                    <Input className="h-8 text-xs w-24" value={String(rule.value ?? "")}
+                                        onChange={e => onUpdateRule(rule.id, { value: e.target.value })} />
+                                </div>
+                            )}
+                            <div className="grid gap-1">
+                                <Label className="text-xs">{t.formatBackground}</Label>
+                                <div className="flex gap-1">
+                                    {COND_FORMAT_COLORS.map(color => (
+                                        <button key={color.value} type="button"
+                                            className={cn("h-6 w-6 rounded border transition-all", color.bg,
+                                                rule.style.backgroundColor === color.value && "ring-2 ring-primary ring-offset-1")}
+                                            onClick={() => onUpdateRule(rule.id, { style: { ...rule.style, backgroundColor: color.value } })} />
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <label className="flex items-center gap-1 text-xs">
+                                    <Checkbox checked={rule.style.fontWeight === "bold"}
+                                        onCheckedChange={checked => onUpdateRule(rule.id, { style: { ...rule.style, fontWeight: checked ? "bold" : "normal" } })} />
+                                    <span className="font-bold">B</span>
+                                </label>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => onRemoveRule(rule.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddRule}>
+                        <Plus className="h-3.5 w-3.5" />{t.addRule}
+                    </Button>
+                    <Button onClick={() => onOpenChange(false)}>{t.done}</Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── Faceted Filter ──────────────────────────────────────────────────────
+
+function FacetedFilterSection({ columns, facetedCounts, serverFilters, prefix, partialReloadKey, t }: {
+    columns: DataTableColumnDef[];
+    facetedCounts: Record<string, Record<string, number>>;
+    serverFilters: Record<string, unknown>;
+    prefix?: string; partialReloadKey?: string;
+    t: DataTableTranslations;
+}) {
+    const facetedColumns = columns.filter(c => c.filterable && facetedCounts[c.id]);
+    if (facetedColumns.length === 0) return null;
+
+    const handleToggle = useCallback((columnId: string, value: string) => {
+        const p = prefix ? `${prefix}_` : "";
+        const filterKey = `${p}filter[${columnId}]`;
+        const url = new URL(window.location.href);
+        const current = url.searchParams.get(filterKey) ?? "";
+        const currentValues = current.startsWith("in:") ? current.slice(3).split(",").filter(Boolean) : current ? [current] : [];
+
+        let newValues: string[];
+        if (currentValues.includes(value)) {
+            newValues = currentValues.filter(v => v !== value);
+        } else {
+            newValues = [...currentValues, value];
+        }
+
+        if (newValues.length === 0) {
+            url.searchParams.delete(filterKey);
+        } else {
+            url.searchParams.set(filterKey, newValues.length === 1 ? `is:${newValues[0]}` : `in:${newValues.join(",")}`);
+        }
+        url.searchParams.set(`${p}page`, "1");
+        router.visit(url.toString(), { preserveState: true, preserveScroll: true, only: partialReloadKey ? [partialReloadKey] : undefined });
+    }, [prefix, partialReloadKey]);
+
+    return (
+        <div className="flex flex-wrap gap-4 print:hidden">
+            {facetedColumns.map(col => {
+                const counts = facetedCounts[col.id];
+                const options = col.options ?? Object.keys(counts).map(k => ({ label: k, value: k }));
+                const p = prefix ? `${prefix}_` : "";
+                const filterKey = `${p}filter[${col.id}]`;
+                const currentFilter = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get(filterKey) ?? "" : "";
+                const selectedValues = new Set(currentFilter.startsWith("in:") ? currentFilter.slice(3).split(",") : currentFilter.startsWith("is:") ? [currentFilter.slice(3)] : []);
+
+                return (
+                    <div key={col.id} className="space-y-1.5">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{col.label}</h4>
+                        <div className="flex flex-wrap gap-1">
+                            {options.map(opt => {
+                                const count = counts[opt.value] ?? 0;
+                                const isActive = selectedValues.has(opt.value);
+                                return (
+                                    <button key={opt.value} type="button"
+                                        className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all border",
+                                            isActive
+                                                ? "bg-primary text-primary-foreground border-primary"
+                                                : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-accent/50")}
+                                        onClick={() => handleToggle(col.id, opt.value)}>
+                                        <span>{opt.label}</span>
+                                        <span className={cn("tabular-nums rounded-full px-1.5 py-0.5 text-[10px] min-w-[1.25rem] text-center",
+                                            isActive ? "bg-primary-foreground/20" : "bg-muted")}>
+                                            {count}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Collaborative Presence Indicators ───────────────────────────────────
+
+const PRESENCE_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#06b6d4"];
+
+function usePresence(channel: string | undefined, currentUser: DataTablePresenceUser | undefined): DataTablePresenceUser[] {
+    const [users, setUsers] = useState<DataTablePresenceUser[]>([]);
+
+    useEffect(() => {
+        if (!channel || !currentUser) return;
+        const Echo = (window as unknown as { Echo?: {
+            join: (name: string) => {
+                here: (cb: (users: DataTablePresenceUser[]) => void) => unknown;
+                joining: (cb: (user: DataTablePresenceUser) => void) => unknown;
+                leaving: (cb: (user: DataTablePresenceUser) => void) => unknown;
+                leave: () => void;
+            }
+        } }).Echo;
+        if (!Echo) return;
+
+        const presenceChannel = Echo.join(channel);
+        presenceChannel.here((members: DataTablePresenceUser[]) => {
+            setUsers(members.filter(m => m.id !== currentUser.id).map((m, i) => ({
+                ...m, color: m.color ?? PRESENCE_COLORS[i % PRESENCE_COLORS.length]
+            })));
+        });
+        presenceChannel.joining((user: DataTablePresenceUser) => {
+            setUsers(prev => {
+                if (prev.find(u => u.id === user.id)) return prev;
+                return [...prev, { ...user, color: user.color ?? PRESENCE_COLORS[prev.length % PRESENCE_COLORS.length] }];
+            });
+        });
+        presenceChannel.leaving((user: DataTablePresenceUser) => {
+            setUsers(prev => prev.filter(u => u.id !== user.id));
+        });
+
+        return () => { presenceChannel.leave(); };
+    }, [channel, currentUser]);
+
+    return users;
+}
+
+function PresenceIndicator({ users, t }: { users: DataTablePresenceUser[]; t: DataTableTranslations }) {
+    if (users.length === 0) return null;
+    const maxShow = 5;
+    const shown = users.slice(0, maxShow);
+    const overflow = users.length - maxShow;
+
+    return (
+        <div className="flex items-center gap-1.5 print:hidden" title={t.presenceUsers(users.length)}>
+            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+            <div className="flex -space-x-2">
+                {shown.map(user => (
+                    <div key={user.id} className="relative" title={`${user.name} — ${t.presenceViewing}`}>
+                        {user.avatar ? (
+                            <img src={user.avatar} alt={user.name}
+                                className="h-6 w-6 rounded-full ring-2 ring-background object-cover"
+                                style={{ borderColor: user.color }} />
+                        ) : (
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full ring-2 ring-background text-[10px] font-bold text-white"
+                                style={{ backgroundColor: user.color }}>
+                                {user.name.charAt(0).toUpperCase()}
+                            </div>
+                        )}
+                        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-background" />
+                    </div>
+                ))}
+            </div>
+            {overflow > 0 && <span className="text-xs text-muted-foreground">+{overflow}</span>}
+        </div>
+    );
+}
+
+// ─── Spreadsheet Mode: Tab/Enter cell navigation ─────────────────────────
+
+function useSpreadsheetMode(enabled: boolean, tableRef: React.RefObject<HTMLElement | null>) {
+    useEffect(() => {
+        if (!enabled || !tableRef.current) return;
+        const table = tableRef.current;
+
+        const getEditableCells = (): HTMLElement[] => {
+            return Array.from(table.querySelectorAll("[data-editable-cell]")) as HTMLElement[];
+        };
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest("[data-editable-cell]")) return;
+
+            const cells = getEditableCells();
+            const currentIndex = cells.findIndex(cell => cell.contains(target));
+            if (currentIndex === -1) return;
+
+            if (e.key === "Tab") {
+                e.preventDefault();
+                const nextIndex = e.shiftKey ? currentIndex - 1 : currentIndex + 1;
+                if (nextIndex >= 0 && nextIndex < cells.length) {
+                    const nextCell = cells[nextIndex];
+                    const input = nextCell.querySelector("input, [contenteditable]") as HTMLElement;
+                    if (input) input.focus();
+                    else nextCell.click();
+                }
+            } else if (e.key === "Enter" && !e.shiftKey) {
+                // Move down to next row, same column
+                const currentCell = cells[currentIndex];
+                const colId = currentCell.dataset.columnId;
+                const rowIdx = parseInt(currentCell.dataset.rowIndex ?? "0", 10);
+                const nextRowCell = cells.find(c => c.dataset.columnId === colId && parseInt(c.dataset.rowIndex ?? "0", 10) === rowIdx + 1);
+                if (nextRowCell) {
+                    e.preventDefault();
+                    const input = nextRowCell.querySelector("input, [contenteditable]") as HTMLElement;
+                    if (input) input.focus();
+                    else nextRowCell.click();
+                }
+            }
+        };
+
+        table.addEventListener("keydown", handleKeyDown);
+        return () => table.removeEventListener("keydown", handleKeyDown);
+    }, [enabled, tableRef]);
+}
+
+// ─── Kanban Board View ───────────────────────────────────────────────────
+
+function KanbanLayout<TData>({ rows, columns, kanbanColumnId, renderCell, actions,
+    onRowClick, rowLink, onKanbanMove, t, density, titleColumn, subtitleColumn }: {
+    rows: TData[]; columns: DataTableColumnDef[];
+    kanbanColumnId: string;
+    renderCell?: (columnId: string, value: unknown, row: TData) => React.ReactNode | undefined;
+    actions?: import("./types").DataTableAction<TData>[];
+    onRowClick?: (row: TData) => void; rowLink?: (row: TData) => string;
+    onKanbanMove?: (rowId: unknown, fromLane: string, toLane: string) => Promise<void> | void;
+    t: DataTableTranslations; density: DataTableDensity;
+    titleColumn?: string; subtitleColumn?: string;
+}) {
+    const kanbanCol = columns.find(c => c.id === kanbanColumnId);
+    const lanes: { value: string; label: string }[] = kanbanCol?.options ?? [];
+
+    // If no options defined, derive from data
+    const derivedLanes = useMemo(() => {
+        if (lanes.length > 0) return lanes;
+        const uniqueValues = new Set<string>();
+        for (const row of rows) {
+            const val = (row as Record<string, unknown>)[kanbanColumnId];
+            if (val != null) uniqueValues.add(String(val));
+        }
+        return [...uniqueValues].map(v => ({ value: v, label: v }));
+    }, [lanes, rows, kanbanColumnId]);
+
+    // Group rows by lane
+    const laneRows = useMemo(() => {
+        const map = new Map<string, TData[]>();
+        for (const lane of derivedLanes) map.set(lane.value, []);
+        for (const row of rows) {
+            const val = String((row as Record<string, unknown>)[kanbanColumnId] ?? "");
+            if (!map.has(val)) map.set(val, []);
+            map.get(val)!.push(row);
+        }
+        return map;
+    }, [rows, kanbanColumnId, derivedLanes]);
+
+    const [draggedCard, setDraggedCard] = useState<{ rowId: unknown; fromLane: string } | null>(null);
+    const [dragOverLane, setDragOverLane] = useState<string | null>(null);
+
+    const handleDragStart = useCallback((rowId: unknown, fromLane: string) => {
+        setDraggedCard({ rowId, fromLane });
+    }, []);
+
+    const handleDrop = useCallback((toLane: string) => {
+        if (draggedCard && draggedCard.fromLane !== toLane && onKanbanMove) {
+            onKanbanMove(draggedCard.rowId, draggedCard.fromLane, toLane);
+        }
+        setDraggedCard(null);
+        setDragOverLane(null);
+    }, [draggedCard, onKanbanMove]);
+
+    const visibleCols = columns.filter(c => c.visible !== false && c.id !== kanbanColumnId && c.id !== titleColumn && c.id !== subtitleColumn).slice(0, 3);
+
+    return (
+        <div className="flex gap-4 overflow-x-auto pb-4 print:hidden">
+            {derivedLanes.map(lane => {
+                const laneItems = laneRows.get(lane.value) ?? [];
+                const badge = kanbanCol?.options?.find(o => o.value === lane.value);
+                return (
+                    <div key={lane.value} className={cn("flex-shrink-0 w-72 rounded-xl border bg-muted/20",
+                        dragOverLane === lane.value && "ring-2 ring-primary/50 bg-primary/5")}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverLane(lane.value); }}
+                        onDragLeave={() => setDragOverLane(null)}
+                        onDrop={() => handleDrop(lane.value)}>
+                        {/* Lane header */}
+                        <div className="flex items-center justify-between p-3 border-b">
+                            <div className="flex items-center gap-2">
+                                {badge && (
+                                    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                        BADGE_VARIANTS[badge.variant ?? "default"] ?? BADGE_VARIANTS.default)}>
+                                        {lane.label}
+                                    </span>
+                                )}
+                                {!badge && <span className="text-sm font-semibold">{lane.label}</span>}
+                            </div>
+                            <span className="text-xs text-muted-foreground tabular-nums bg-muted rounded-full px-2 py-0.5">{laneItems.length}</span>
+                        </div>
+                        {/* Cards */}
+                        <div className="p-2 space-y-2 min-h-[100px]">
+                            {laneItems.length === 0 && (
+                                <div className="text-center py-6 text-xs text-muted-foreground">{t.kanbanEmpty}</div>
+                            )}
+                            {laneItems.map((row, idx) => {
+                                const rowData = row as Record<string, unknown>;
+                                const rowId = rowData.id ?? idx;
+                                const title = titleColumn ? String(rowData[titleColumn] ?? "") : null;
+                                const subtitle = subtitleColumn ? String(rowData[subtitleColumn] ?? "") : null;
+                                const isClickable = !!onRowClick || !!rowLink;
+                                return (
+                                    <div key={String(rowId)} draggable={!!onKanbanMove}
+                                        onDragStart={() => handleDragStart(rowId, lane.value)}
+                                        onDragEnd={() => { setDraggedCard(null); setDragOverLane(null); }}
+                                        className={cn("rounded-lg border bg-card p-3 shadow-sm transition-all",
+                                            "hover:shadow-md hover:border-primary/30",
+                                            isClickable && "cursor-pointer",
+                                            !!onKanbanMove && "cursor-grab active:cursor-grabbing",
+                                            density === "compact" && "p-2 text-xs")}
+                                        onClick={() => {
+                                            if (rowLink) window.location.href = rowLink(row);
+                                            else if (onRowClick) onRowClick(row);
+                                        }}>
+                                        {title && <div className="font-medium text-sm mb-1 truncate">{title}</div>}
+                                        {subtitle && <div className="text-xs text-muted-foreground mb-2 truncate">{subtitle}</div>}
+                                        {visibleCols.map(col => {
+                                            const value = rowData[col.id];
+                                            const custom = renderCell?.(col.id, value, row);
+                                            return (
+                                                <div key={col.id} className="flex justify-between text-xs py-0.5">
+                                                    <span className="text-muted-foreground">{col.label}</span>
+                                                    <span className="truncate ml-2">{custom !== undefined ? custom : value == null ? "—" : String(value)}</span>
+                                                </div>
+                                            );
+                                        })}
+                                        {actions && actions.length > 0 && (
+                                            <div className="flex justify-end pt-2 mt-1 border-t">
+                                                <DataTableRowActions row={row} actions={actions} t={t} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 // ─── Active filter chips ─────────────────────────────────────────────────────
 
 function FilterChips({ filters, columns, onClear, onClearAll, t }: {
@@ -1513,6 +2634,299 @@ function GroupBySelector({ options, columns, currentGroupBy, onChange, t }: {
     );
 }
 
+// ─── Master/Detail nested sub-table ──────────────────────────────────────────
+
+function MasterDetailRow<TData>({ row, colSpan, renderContent, t }: {
+    row: TData; colSpan: number;
+    renderContent: (row: TData) => React.ReactNode;
+    t: DataTableTranslations;
+}) {
+    const [loaded, setLoaded] = useState(false);
+    useEffect(() => { const timer = setTimeout(() => setLoaded(true), 0); return () => clearTimeout(timer); }, []);
+    return (
+        <TableRow className="bg-muted/10 hover:bg-muted/20 border-b border-border/30">
+            <TableCell colSpan={colSpan} className="p-0">
+                <div className="border-l-4 border-primary/30 pl-4 py-3 pr-3">
+                    {loaded ? renderContent(row) : (
+                        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />{t.masterDetailLoading}
+                        </div>
+                    )}
+                </div>
+            </TableCell>
+        </TableRow>
+    );
+}
+
+// ─── Integrated Charts ───────────────────────────────────────────────────────
+
+type ChartKind = "bar" | "line" | "pie" | "doughnut";
+
+interface IntegratedChartState {
+    columnId: string;
+    chartType: ChartKind;
+}
+
+/** Minimal SVG-based chart renderer — zero external dependencies */
+function IntegratedChartPanel({ data, columns, chartState, onClose, onChangeColumn, onChangeType, availableTypes, t }: {
+    data: Record<string, unknown>[];
+    columns: DataTableColumnDef[];
+    chartState: IntegratedChartState;
+    onClose: () => void;
+    onChangeColumn: (colId: string) => void;
+    onChangeType: (type: ChartKind) => void;
+    availableTypes: ChartKind[];
+    t: DataTableTranslations;
+}) {
+    const numericColumns = useMemo(() => columns.filter(c => c.type === "number" || c.type === "currency" || c.type === "percentage"), [columns]);
+    const labelColumns = useMemo(() => columns.filter(c => c.type === "text" || c.type === "option" || c.type === "badge"), [columns]);
+
+    const chartData = useMemo(() => {
+        const values: { label: string; value: number }[] = [];
+        const labelCol = labelColumns[0];
+        for (const row of data) {
+            const rawVal = row[chartState.columnId];
+            const num = typeof rawVal === "number" ? rawVal : Number(rawVal);
+            if (isNaN(num)) continue;
+            const label = labelCol ? String(row[labelCol.id] ?? "") : `Row ${values.length + 1}`;
+            values.push({ label, value: num });
+        }
+        return values.slice(0, 50); // limit for readability
+    }, [data, chartState.columnId, labelColumns]);
+
+    const maxVal = useMemo(() => Math.max(...chartData.map(d => Math.abs(d.value)), 1), [chartData]);
+    const total = useMemo(() => chartData.reduce((s, d) => s + Math.abs(d.value), 0), [chartData]);
+
+    // Color palette
+    const colors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316", "#6366f1", "#14b8a6",
+        "#e11d48", "#84cc16", "#7c3aed", "#0ea5e9", "#d946ef", "#10b981", "#f43f5e", "#a855f7", "#0891b2", "#65a30d"];
+
+    const chartTypeLabels: Record<ChartKind, string> = { bar: t.chartBar, line: t.chartLine, pie: t.chartPie, doughnut: t.chartDoughnut };
+
+    const renderBarChart = () => {
+        if (chartData.length === 0) return <text x="200" y="100" textAnchor="middle" className="fill-muted-foreground text-sm">{t.chartNoData}</text>;
+        const barWidth = Math.max(8, Math.min(40, 380 / chartData.length - 4));
+        const chartWidth = chartData.length * (barWidth + 4);
+        return (
+            <svg viewBox={`0 0 ${Math.max(400, chartWidth + 40)} 220`} className="w-full h-48">
+                {chartData.map((d, i) => {
+                    const barH = (Math.abs(d.value) / maxVal) * 180;
+                    const x = 20 + i * (barWidth + 4);
+                    return (
+                        <g key={i}>
+                            <rect x={x} y={200 - barH} width={barWidth} height={barH} fill={colors[i % colors.length]} rx="2" opacity="0.85">
+                                <title>{`${d.label}: ${d.value}`}</title>
+                            </rect>
+                            {chartData.length <= 20 && (
+                                <text x={x + barWidth / 2} y={215} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: "8px" }}>
+                                    {d.label.length > 6 ? d.label.slice(0, 5) + "…" : d.label}
+                                </text>
+                            )}
+                        </g>
+                    );
+                })}
+            </svg>
+        );
+    };
+
+    const renderLineChart = () => {
+        if (chartData.length < 2) return <text x="200" y="100" textAnchor="middle" className="fill-muted-foreground text-sm">{t.chartNoData}</text>;
+        const w = 400, h = 200, px = 20, py = 10;
+        const points = chartData.map((d, i) => ({
+            x: px + (i / (chartData.length - 1)) * (w - 2 * px),
+            y: py + (1 - Math.abs(d.value) / maxVal) * (h - 2 * py),
+        }));
+        const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+        return (
+            <svg viewBox={`0 0 ${w} ${h + 20}`} className="w-full h-48">
+                <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
+                {points.map((p, i) => (
+                    <circle key={i} cx={p.x} cy={p.y} r="3" fill="#3b82f6">
+                        <title>{`${chartData[i].label}: ${chartData[i].value}`}</title>
+                    </circle>
+                ))}
+            </svg>
+        );
+    };
+
+    const renderPieChart = (isDoughnut: boolean) => {
+        if (chartData.length === 0 || total === 0) return <text x="150" y="100" textAnchor="middle" className="fill-muted-foreground text-sm">{t.chartNoData}</text>;
+        const cx = 150, cy = 100, r = 80, innerR = isDoughnut ? 45 : 0;
+        let startAngle = -Math.PI / 2;
+        const slices = chartData.slice(0, 20).map((d, i) => {
+            const sliceAngle = (Math.abs(d.value) / total) * 2 * Math.PI;
+            const endAngle = startAngle + sliceAngle;
+            const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+            const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
+            const ix1 = cx + innerR * Math.cos(startAngle), iy1 = cy + innerR * Math.sin(startAngle);
+            const ix2 = cx + innerR * Math.cos(endAngle), iy2 = cy + innerR * Math.sin(endAngle);
+            const largeArc = sliceAngle > Math.PI ? 1 : 0;
+            const pathD = isDoughnut
+                ? `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix1} ${iy1} Z`
+                : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+            startAngle = endAngle;
+            return <path key={i} d={pathD} fill={colors[i % colors.length]} opacity="0.85"><title>{`${d.label}: ${d.value}`}</title></path>;
+        });
+        return (
+            <svg viewBox="0 0 300 200" className="w-full h-48">
+                {slices}
+            </svg>
+        );
+    };
+
+    return (
+        <div className="rounded-lg border bg-card shadow-sm p-4 print:hidden">
+            <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">{t.chartTitle}</h3>
+                <div className="flex items-center gap-2">
+                    <Select value={chartState.columnId} onValueChange={onChangeColumn}>
+                        <SelectTrigger className="h-7 w-[140px] text-xs">
+                            <SelectValue placeholder={t.chartColumn} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {numericColumns.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Select value={chartState.chartType} onValueChange={(v) => onChangeType(v as ChartKind)}>
+                        <SelectTrigger className="h-7 w-[100px] text-xs">
+                            <SelectValue placeholder={t.chartType} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {availableTypes.map(type => <SelectItem key={type} value={type}>{chartTypeLabels[type]}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}><X className="h-3.5 w-3.5" /></Button>
+                </div>
+            </div>
+            <div className="bg-muted/20 rounded-md p-2">
+                <svg width="0" height="0"><defs /></svg>
+                {chartState.chartType === "bar" && renderBarChart()}
+                {chartState.chartType === "line" && renderLineChart()}
+                {chartState.chartType === "pie" && renderPieChart(false)}
+                {chartState.chartType === "doughnut" && renderPieChart(true)}
+            </div>
+            {/* Legend */}
+            {(chartState.chartType === "pie" || chartState.chartType === "doughnut") && chartData.length > 0 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+                    {chartData.slice(0, 20).map((d, i) => (
+                        <div key={i} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: colors[i % colors.length] }} />
+                            {d.label}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Find & Replace ──────────────────────────────────────────────────────────
+
+interface FindReplaceMatch {
+    rowIndex: number;
+    columnId: string;
+    rowId: unknown;
+    value: string;
+}
+
+function useFindReplace(enabled: boolean, data: Record<string, unknown>[], columns: DataTableColumnDef[]) {
+    const [query, setQuery] = useState("");
+    const [replacement, setReplacement] = useState("");
+    const [caseSensitive, setCaseSensitive] = useState(false);
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    const matches = useMemo<FindReplaceMatch[]>(() => {
+        if (!enabled || !query) return [];
+        const q = caseSensitive ? query : query.toLowerCase();
+        const result: FindReplaceMatch[] = [];
+        const searchableCols = columns.filter(c => c.type === "text" || c.type === "option" || c.type === "badge" || c.type === "email" || c.type === "link" || c.type === "phone");
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const rowId = row.id ?? i;
+            for (const col of searchableCols) {
+                const val = String(row[col.id] ?? "");
+                const compareVal = caseSensitive ? val : val.toLowerCase();
+                if (compareVal.includes(q)) {
+                    result.push({ rowIndex: i, columnId: col.id, rowId, value: val });
+                }
+            }
+        }
+        return result;
+    }, [enabled, query, caseSensitive, data, columns]);
+
+    const goToNext = useCallback(() => {
+        if (matches.length === 0) return;
+        setCurrentIndex(prev => (prev + 1) % matches.length);
+    }, [matches.length]);
+
+    const goToPrevious = useCallback(() => {
+        if (matches.length === 0) return;
+        setCurrentIndex(prev => (prev - 1 + matches.length) % matches.length);
+    }, [matches.length]);
+
+    // Reset index when matches change
+    useEffect(() => { setCurrentIndex(0); }, [matches.length]);
+
+    return { query, setQuery, replacement, setReplacement, caseSensitive, setCaseSensitive, matches, currentIndex, setCurrentIndex, goToNext, goToPrevious };
+}
+
+function FindReplaceBar({ state, onReplace, onReplaceAll, onClose, t }: {
+    state: ReturnType<typeof useFindReplace>;
+    onReplace: (match: FindReplaceMatch, newValue: string) => void;
+    onReplaceAll: (matches: FindReplaceMatch[], replacement: string) => void;
+    onClose: () => void;
+    t: DataTableTranslations;
+}) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    useEffect(() => { inputRef.current?.focus(); }, []);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Escape") { onClose(); return; }
+        if (e.key === "Enter") {
+            if (e.shiftKey) state.goToPrevious();
+            else state.goToNext();
+        }
+    };
+
+    const currentMatch = state.matches[state.currentIndex] ?? null;
+
+    return (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card shadow-sm px-3 py-2 print:hidden">
+            <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Input ref={inputRef} value={state.query} onChange={(e) => state.setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t.findPlaceholder} className="h-7 w-40 text-xs" />
+            <Input value={state.replacement} onChange={(e) => state.setReplacement(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t.replacePlaceholder} className="h-7 w-40 text-xs" />
+            <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={state.goToPrevious} disabled={state.matches.length === 0}>{t.findPrevious}</Button>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={state.goToNext} disabled={state.matches.length === 0}>{t.findNext}</Button>
+            </div>
+            <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                    disabled={!currentMatch || !state.replacement}
+                    onClick={() => { if (currentMatch && state.replacement) onReplace(currentMatch, state.replacement); }}>
+                    {t.replaceOne}
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                    disabled={state.matches.length === 0 || !state.replacement}
+                    onClick={() => { if (state.matches.length > 0 && state.replacement) onReplaceAll(state.matches, state.replacement); }}>
+                    {t.replaceAll}
+                </Button>
+            </div>
+            <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                <Checkbox checked={state.caseSensitive} onCheckedChange={(v) => state.setCaseSensitive(!!v)} className="h-3.5 w-3.5" />
+                {t.findCaseSensitive}
+            </label>
+            <span className="text-xs text-muted-foreground tabular-nums">
+                {state.query ? (state.matches.length > 0 ? t.findMatchesCount(state.currentIndex + 1, state.matches.length) : t.findNoMatches) : ""}
+            </span>
+            <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto" onClick={onClose}><X className="h-3.5 w-3.5" /></Button>
+        </div>
+    );
+}
+
 // ─── Main DataTable component ───────────────────────────────────────────────
 
 function DataTableInner<TData extends object>({
@@ -1528,6 +2942,12 @@ function DataTableInner<TData extends object>({
     onStateChange, onRowCreate, mobileBreakpoint = 0, children,
     headerActions, groupByOptions, onGroupByChange,
     rowSpan, columnSpan, onClipboardPaste, onDragToFill,
+    onCellRangeSelect, apiRef, onLoadMore, hasMore,
+    sparklineData, onAiQuery, onPivotChange,
+    kanbanColumnId, onKanbanMove, facetedCounts: facetedCountsProp,
+    presenceChannel, currentUser,
+    cardImageColumn, cardTitleColumn, cardSubtitleColumn,
+    renderMasterDetail, onFindReplace, chartTypes,
 }: DataTableProps<TData>) {
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
@@ -1553,7 +2973,15 @@ function DataTableInner<TData extends object>({
         persistSelection: false, shortcutsOverlay: false,
         exportProgress: false, emptyStateIllustration: false,
         cellFlashing: false, statusBar: false, clipboardPaste: false,
-        dragToFill: false,
+        dragToFill: false, headerFilters: false, infiniteScroll: false,
+        columnAutoSize: false, columnVirtualization: false,
+        cellRangeSelection: false, autoSizer: false, cellMeasurer: false,
+        scrollAwareRendering: false, windowScroller: false,
+        directionalOverscan: false,
+        layoutSwitcher: false, columnStatistics: false,
+        conditionalFormatting: false, facetedFilters: false,
+        presence: false, spreadsheetMode: false, kanbanView: false,
+        masterDetail: false, integratedCharts: false, findReplace: false,
         ...optionsOverride,
     }), [optionsOverride]);
 
@@ -1617,10 +3045,261 @@ function DataTableInner<TData extends object>({
     const tableBodyRef = useRef<HTMLTableSectionElement>(null);
     const virtualContainerRef = useRef<HTMLDivElement>(null);
     const allRows = table.getRowModel().rows;
-    const { virtualRows, totalHeight, offsetTop } = useVirtualRows(
+    const { virtualRows, totalHeight, offsetTop, scrollToIndex } = useVirtualRows(
         resolvedOptions.virtualScrolling, virtualContainerRef, allRows.length,
-        density === "compact" ? 32 : density === "spacious" ? 52 : 40
+        density === "compact" ? 32 : density === "spacious" ? 52 : 40,
+        resolvedOptions.directionalOverscan
     );
+    const tableElementRef = useRef<HTMLTableElement>(null);
+
+    // Spreadsheet mode (Tab/Enter navigation)
+    useSpreadsheetMode(resolvedOptions.spreadsheetMode, tableElementRef);
+
+    // AutoSizer
+    const autoSizerDimensions = useAutoSizer(resolvedOptions.autoSizer, virtualContainerRef);
+
+    // Scroll-aware rendering
+    const isScrollingFast = useScrollAwareRendering(resolvedOptions.scrollAwareRendering, virtualContainerRef);
+
+    // CellMeasurer
+    const { measureCell, getCellHeight, clearCache: clearMeasureCache } = useCellMeasurer(resolvedOptions.cellMeasurer);
+
+    // Window scroller
+    const { windowScrollTop, windowHeight } = useWindowScroller(resolvedOptions.windowScroller);
+
+    // Column virtualization
+    const visibleColumnIds = useMemo(() => tableData.columns.filter(c => c.visible !== false).map(c => c.id), [tableData.columns]);
+    const { visibleColumnRange } = useColumnVirtualization(resolvedOptions.columnVirtualization, virtualContainerRef, visibleColumnIds.length);
+
+    // Cell range selection
+    const cellRange = useCellRangeSelection(resolvedOptions.cellRangeSelection);
+
+    // Header filter state
+    const [headerFilterValues, setHeaderFilterValues] = useState<Record<string, string>>({});
+
+    // Tree data state
+    const [expandedTreeNodes, setExpandedTreeNodes] = useState<Set<string>>(new Set());
+
+    // Infinite scroll state
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const infiniteScrollSentinelRef = useRef<HTMLDivElement>(null);
+
+    // AI assistant state
+    const [aiQuery, setAiQuery] = useState("");
+    const [aiQuerying, setAiQuerying] = useState(false);
+
+    // Pivot mode state
+    const [pivotActive, setPivotActive] = useState(false);
+
+    // Layout mode state (persisted to localStorage)
+    const [layoutMode, setLayoutMode] = useState<DataTableLayoutMode>(() => {
+        if (!resolvedOptions.layoutSwitcher) return "table";
+        const stored = safeGetItem(`dt-layout-${tableName}`);
+        if (stored === "grid" || stored === "cards" || stored === "kanban" || stored === "table") return stored;
+        return "table";
+    });
+    const handleLayoutChange = useCallback((mode: DataTableLayoutMode) => {
+        setLayoutMode(mode);
+        safeSetItem(`dt-layout-${tableName}`, mode);
+    }, [tableName]);
+
+    // Conditional formatting rules
+    const condFormat = useConditionalFormatRules(tableName, resolvedOptions.conditionalFormatting);
+    const [condFormatOpen, setCondFormatOpen] = useState(false);
+
+    // Presence
+    const presenceUsers = usePresence(
+        resolvedOptions.presence ? presenceChannel : undefined,
+        resolvedOptions.presence ? currentUser : undefined,
+    );
+
+    // Master/Detail expanded rows (separate from regular detail rows)
+    const [masterDetailExpanded, setMasterDetailExpanded] = useState<Set<string | number>>(new Set());
+    const hasMasterDetail = resolvedOptions.masterDetail && !!renderMasterDetail;
+    const toggleMasterDetail = useCallback((rowId: string | number) => {
+        setMasterDetailExpanded(prev => {
+            const next = new Set(prev);
+            if (next.has(rowId)) next.delete(rowId); else next.add(rowId);
+            return next;
+        });
+    }, []);
+
+    // Integrated Charts
+    const [chartState, setChartState] = useState<IntegratedChartState | null>(null);
+    const resolvedChartTypes = chartTypes ?? (["bar", "line", "pie", "doughnut"] as ChartKind[]);
+    const numericCols = useMemo(() => mergedColumns.filter(c => c.type === "number" || c.type === "currency" || c.type === "percentage"), [mergedColumns]);
+    const openChart = useCallback(() => {
+        const firstNumCol = numericCols[0];
+        if (firstNumCol) setChartState({ columnId: firstNumCol.id, chartType: "bar" });
+    }, [numericCols]);
+
+    // Find & Replace
+    const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+    const findReplace = useFindReplace(resolvedOptions.findReplace && findReplaceOpen, tableData.data as Record<string, unknown>[], mergedColumns);
+
+    // Ctrl+F keyboard shortcut for Find & Replace
+    useEffect(() => {
+        if (!resolvedOptions.findReplace) return;
+        const handler = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+                e.preventDefault();
+                setFindReplaceOpen(true);
+            }
+        };
+        document.addEventListener("keydown", handler);
+        return () => document.removeEventListener("keydown", handler);
+    }, [resolvedOptions.findReplace]);
+
+    // Find & Replace highlight set for cell rendering
+    const findReplaceHighlights = useMemo<Set<string>>(() => {
+        if (!findReplaceOpen || findReplace.matches.length === 0) return new Set();
+        return new Set(findReplace.matches.map(m => `${m.rowIndex}:${m.columnId}`));
+    }, [findReplaceOpen, findReplace.matches]);
+
+    const findReplaceCurrentKey = findReplace.matches[findReplace.currentIndex]
+        ? `${findReplace.matches[findReplace.currentIndex].rowIndex}:${findReplace.matches[findReplace.currentIndex].columnId}`
+        : null;
+
+    const handleFindReplace = useCallback((match: FindReplaceMatch, newValue: string) => {
+        if (onFindReplace) {
+            const row = tableData.data[match.rowIndex] as Record<string, unknown>;
+            const oldValue = row[match.columnId];
+            const replaced = String(oldValue ?? "").replace(
+                findReplace.caseSensitive ? match.value : new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+                newValue
+            );
+            onFindReplace(match.rowId, match.columnId, oldValue, replaced);
+            showToast(t.replaceSuccess(1), "success");
+        }
+    }, [onFindReplace, tableData.data, findReplace.caseSensitive, findReplace.query, t]);
+
+    const handleFindReplaceAll = useCallback((matches: FindReplaceMatch[], replacement: string) => {
+        if (onFindReplace) {
+            for (const match of matches) {
+                const row = tableData.data[match.rowIndex] as Record<string, unknown>;
+                const oldValue = row[match.columnId];
+                const replaced = String(oldValue ?? "").replace(
+                    findReplace.caseSensitive
+                        ? new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
+                        : new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+                    replacement
+                );
+                onFindReplace(match.rowId, match.columnId, oldValue, replaced);
+            }
+            showToast(t.replaceSuccess(matches.length), "success");
+        }
+    }, [onFindReplace, tableData.data, findReplace.caseSensitive, findReplace.query, t]);
+
+    // Faceted counts: merge from prop and server response
+    const facetedCounts = facetedCountsProp ?? tableData.facetedCounts ?? null;
+
+    // Imperative API ref
+    useEffect(() => {
+        if (!apiRef) return;
+        apiRef.current = {
+            scrollToRow: (index: number) => { scrollToIndex?.(index); },
+            autosizeColumns: () => {
+                if (tableElementRef.current) {
+                    const sizes = autosizeAllColumns(tableElementRef, visibleColumnIds);
+                    // Apply sizes via column sizing if available
+                    Object.entries(sizes).forEach(([id, width]) => {
+                        const col = table.getColumn(id);
+                        if (col) col.getSize(); // trigger re-render
+                    });
+                }
+            },
+            triggerExport: (format: string) => {
+                if (tableData.exportUrl) {
+                    const url = buildExportUrl(tableData.exportUrl, format, visibleColumnIds);
+                    window.open(url, "_blank");
+                }
+            },
+            resetFilters: () => {
+                const url = new URL(window.location.href);
+                for (const key of [...url.searchParams.keys()]) {
+                    if (key.startsWith("filter")) url.searchParams.delete(key);
+                }
+                router.visit(url.toString());
+            },
+            getState: () => ({ sorting: meta.sorts, filters: meta.filters, page: meta.currentPage, perPage: meta.perPage }),
+            focusCell: (rowIndex: number, columnId: string) => {
+                const cell = tableElementRef.current?.querySelector(`[data-row-index="${rowIndex}"][data-column-id="${columnId}"]`) as HTMLElement;
+                cell?.focus();
+            },
+        };
+    }, [apiRef, table, tableData.exportUrl, visibleColumnIds, meta, scrollToIndex]);
+
+    // Infinite scroll observer
+    useEffect(() => {
+        if (!resolvedOptions.infiniteScroll || !onLoadMore || !hasMore) return;
+        const sentinel = infiniteScrollSentinelRef.current;
+        if (!sentinel) return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0]?.isIntersecting && !isLoadingMore) {
+                setIsLoadingMore(true);
+                Promise.resolve(onLoadMore(meta.currentPage + 1)).finally(() => setIsLoadingMore(false));
+            }
+        }, { threshold: 0.1 });
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [resolvedOptions.infiniteScroll, onLoadMore, hasMore, isLoadingMore, meta.currentPage]);
+
+    // Header filter handler
+    const handleHeaderFilterChange = useCallback((columnId: string, value: string) => {
+        setHeaderFilterValues(prev => ({ ...prev, [columnId]: value }));
+        // Apply filter via URL
+        const url = new URL(window.location.href);
+        const p = prefix ? `${prefix}_` : "";
+        if (value) {
+            url.searchParams.set(`${p}filter[${columnId}]`, `contains:${value}`);
+        } else {
+            url.searchParams.delete(`${p}filter[${columnId}]`);
+        }
+        url.searchParams.set(`${p}page`, "1");
+        router.visit(url.toString(), { preserveState: true, preserveScroll: true, only: partialReloadKey ? [partialReloadKey] : undefined });
+    }, [prefix, partialReloadKey]);
+
+    // AI assistant handler
+    const handleAiQuery = useCallback(async () => {
+        if (!onAiQuery || !aiQuery.trim()) return;
+        setAiQuerying(true);
+        try {
+            const result = await onAiQuery(aiQuery.trim());
+            if (result) {
+                const url = new URL(window.location.href);
+                const p = prefix ? `${prefix}_` : "";
+                if (result.filters) {
+                    Object.entries(result.filters).forEach(([key, value]) => {
+                        url.searchParams.set(`${p}filter[${key}]`, String(value));
+                    });
+                }
+                if (result.sort) {
+                    url.searchParams.set(`${p}sort`, result.sort);
+                }
+                router.visit(url.toString(), { preserveState: true });
+            }
+            setAiQuery("");
+        } finally {
+            setAiQuerying(false);
+        }
+    }, [onAiQuery, aiQuery, prefix]);
+
+    // Tree data: build hierarchy from flat data
+    const treeConfig = config;
+    const treeRows = useMemo(() => {
+        if (!treeConfig?.treeDataEnabled) return null;
+        const parentKey = treeConfig.treeDataParentKey ?? "parent_id";
+        const rows = allRows;
+        // Group rows by parent
+        const childMap = new Map<string | null, typeof rows>();
+        for (const row of rows) {
+            const parentId = String((row.original as Record<string, unknown>)[parentKey] ?? "null");
+            const parent = parentId === "null" || parentId === "undefined" || parentId === "" ? null : parentId;
+            if (!childMap.has(parent)) childMap.set(parent, []);
+            childMap.get(parent)!.push(row);
+        }
+        return childMap;
+    }, [treeConfig, allRows]);
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [showTrashed, setShowTrashed] = useState(false);
 
@@ -1789,10 +3468,26 @@ function DataTableInner<TData extends object>({
             return {
                 id: col.id, accessorKey: col.id, header: col.label, enableHiding: true,
                 enableResizing: resolvedOptions.columnResizing, size: columnSizing[col.id] || undefined,
-                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix, computedFrom: col.computedFrom, colSpan: col.colSpan, autoHeight: col.autoHeight } satisfies ColumnMeta,
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix, computedFrom: col.computedFrom, colSpan: col.colSpan, autoHeight: col.autoHeight, valueGetter: col.valueGetter, valueFormatter: col.valueFormatter, headerFilter: col.headerFilter, sparkline: col.sparkline, treeParent: col.treeParent } satisfies ColumnMeta,
                 cell: ({ row }) => {
-                    const value = row.getValue(col.id);
+                    // valueGetter: derive value from another column or dot-path
+                    let value = row.getValue(col.id);
                     const rowData = row.original as Record<string, unknown>;
+                    if (col.valueGetter) {
+                        const parts = col.valueGetter.split(".");
+                        let resolved: unknown = rowData;
+                        for (const part of parts) {
+                            if (resolved && typeof resolved === "object") resolved = (resolved as Record<string, unknown>)[part];
+                            else { resolved = undefined; break; }
+                        }
+                        if (resolved !== undefined) value = resolved;
+                    }
+
+                    // Sparkline column
+                    if (col.sparkline && sparklineData?.[col.id]) {
+                        const sparkData = sparklineData[col.id][row.index];
+                        if (sparkData) return <SparklineChart data={sparkData} type={col.sparkline as "line" | "bar"} />;
+                    }
 
                     // Row index column
                     if (col.rowIndex) {
@@ -1956,6 +3651,13 @@ function DataTableInner<TData extends object>({
                     }
 
                     if (col.type === "number" && typeof value === "number") return wrapCell(<span className="tabular-nums">{value.toLocaleString()}</span>);
+
+                    // valueFormatter: apply format string (e.g., '{value} USD')
+                    if (col.valueFormatter) {
+                        const formatted = col.valueFormatter.replace(/\{value\}/g, String(value));
+                        return wrapCell(formatted);
+                    }
+
                     // Search highlighting for text values
                     const strValue = String(value);
                     if (resolvedOptions.searchHighlight && currentSearchTerm && col.type === "text") {
@@ -2003,6 +3705,24 @@ function DataTableInner<TData extends object>({
                                 const next = new Set(prev); if (next.has(rowId)) next.delete(rowId); else next.add(rowId); return next;
                             }); }} aria-label={isExpanded ? t.collapse : t.expand}>
                             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </Button>
+                    );
+                },
+            });
+        }
+
+        // Master/Detail expand column
+        if (hasMasterDetail) {
+            result.push({
+                id: "_masterDetail", header: "", enableHiding: false, enableResizing: false, size: 36,
+                cell: ({ row }) => {
+                    const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
+                    const isMdExpanded = masterDetailExpanded.has(rowId);
+                    return (
+                        <Button variant="ghost" size="icon" className="h-6 w-6"
+                            onClick={(e) => { e.stopPropagation(); toggleMasterDetail(rowId); }}
+                            aria-label={isMdExpanded ? t.masterDetailCollapse : t.masterDetailExpand}>
+                            {isMdExpanded ? <ChevronDown className="h-4 w-4 text-primary" /> : <ChevronRight className="h-4 w-4" />}
                         </Button>
                     );
                 },
@@ -2060,7 +3780,7 @@ function DataTableInner<TData extends object>({
         }
 
         return result;
-    }, [mergedColumns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, resolvedOptions.rowReorder, resolvedOptions.searchHighlight, resolvedOptions.copyCell, columnSizing, hasDetailRows, expandedRows, tableName, selectionMode, responsiveHiddenCols, tableData.toggleUrl, onReorder, handleRowDragStart, handleRowDragOver, handleRowDragEnd, currentSearchTerm]);
+    }, [mergedColumns, actions, hasBulkActions, renderCell, t, onInlineEdit, resolvedOptions.columnResizing, resolvedOptions.rowReorder, resolvedOptions.searchHighlight, resolvedOptions.copyCell, columnSizing, hasDetailRows, expandedRows, tableName, selectionMode, responsiveHiddenCols, tableData.toggleUrl, onReorder, handleRowDragStart, handleRowDragOver, handleRowDragEnd, currentSearchTerm, hasMasterDetail, masterDetailExpanded, toggleMasterDetail]);
 
     const { table, meta, columnVisibility, columnOrder, setColumnOrder, rowSelection, setRowSelection,
         applyColumns, handleSort, handlePageChange, handlePerPageChange, handleCursorChange,
@@ -2170,6 +3890,23 @@ function DataTableInner<TData extends object>({
 
     const editableColumns = useMemo(() => mergedColumns.filter((c) => c.editable), [mergedColumns]);
 
+    // Conditional formatting: compute cell styles from user-created rules
+    const getCondFormatStyle = useCallback((row: TData, columnId: string): React.CSSProperties => {
+        if (condFormat.rules.length === 0) return {};
+        const rowData = row as Record<string, unknown>;
+        for (const rule of condFormat.rules) {
+            if (rule.column !== columnId) continue;
+            if (evaluateConditionalFormat(rule, rowData[columnId])) {
+                return {
+                    backgroundColor: rule.style.backgroundColor,
+                    color: rule.style.textColor,
+                    fontWeight: rule.style.fontWeight === "bold" ? "bold" : undefined,
+                };
+            }
+        }
+        return {};
+    }, [condFormat.rules]);
+
     // Undo/Redo handlers
     const handleUndo = useCallback(() => {
         const action = undoEdit();
@@ -2266,11 +4003,17 @@ function DataTableInner<TData extends object>({
         range: t.summaryRange ?? "Range",
     }), [t.summarySum, t.summaryAvg, t.summaryMin, t.summaryMax, t.summaryCount]);
 
-    const visibleLeafColumns = useMemo(() => [
+    const allVisibleLeafColumns = useMemo(() => [
         ...table.getLeftVisibleLeafColumns(),
         ...table.getCenterVisibleLeafColumns(),
         ...table.getRightVisibleLeafColumns(),
     ], [table.getLeftVisibleLeafColumns(), table.getCenterVisibleLeafColumns(), table.getRightVisibleLeafColumns()]);
+
+    // Column virtualization: only render columns in the visible range
+    const visibleLeafColumns = useMemo(() => {
+        if (!visibleColumnRange) return allVisibleLeafColumns;
+        return allVisibleLeafColumns.filter((_, i) => i >= visibleColumnRange.startIndex && i <= visibleColumnRange.endIndex);
+    }, [allVisibleLeafColumns, visibleColumnRange]);
 
     // Context menu: hide column handler
     const handleHideColumn = useCallback((columnId: string) => {
@@ -2305,6 +4048,17 @@ function DataTableInner<TData extends object>({
             </a>
             {slots?.beforeTable}
 
+            {/* ── Analytics section ── */}
+            {(tableData.analytics?.length || slots?.analytics) && (
+                <AnalyticsSection<TData>
+                    analytics={tableData.analytics ?? []}
+                    slot={slots?.analytics}
+                    data={tableData.data}
+                    columns={mergedColumns}
+                    t={t}
+                />
+            )}
+
             {/* ── Toolbar ── */}
             <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 print:hidden">
                 <div className="flex flex-1 items-center gap-2 min-w-0">
@@ -2326,39 +4080,102 @@ function DataTableInner<TData extends object>({
                         </Button>
                     )}
                 </div>
-                {slots?.toolbar ?? (
-                    <>
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 md:hidden"><EllipsisVertical className="h-4 w-4" /></Button>
-                            </PopoverTrigger>
-                            <PopoverContent align="end" className="flex w-auto flex-col gap-2 p-2"><DataTableToolbar {...toolbarProps} /></PopoverContent>
-                        </Popover>
-                        <div className="hidden items-center gap-2 md:flex">
-                            {/* Header actions */}
-                            {headerActions?.map((action, i) => {
-                                const Icon = action.icon;
-                                return (
-                                    <Button key={i} variant={action.variant ?? "outline"} size="sm" className="h-8 gap-1.5" onClick={action.onClick}>
-                                        {Icon && <Icon className="h-3.5 w-3.5" />}
-                                        <span className="hidden sm:inline">{action.label}</span>
-                                    </Button>
-                                );
-                            })}
-                            {/* User-selectable grouping */}
-                            {groupByOptions && groupByOptions.length > 0 && (
-                                <GroupBySelector options={groupByOptions} columns={mergedColumns}
-                                    currentGroupBy={userGroupBy} onChange={handleGroupByChange} t={t} />
+                <div className="flex items-center gap-2">
+                    {/* Presence indicators */}
+                    {resolvedOptions.presence && <PresenceIndicator users={presenceUsers} t={t} />}
+
+                    {/* Layout switcher */}
+                    {resolvedOptions.layoutSwitcher && (
+                        <LayoutSwitcher layout={layoutMode} onLayoutChange={handleLayoutChange}
+                            showKanban={resolvedOptions.kanbanView && !!kanbanColumnId} t={t} />
+                    )}
+
+                    {/* Conditional formatting button */}
+                    {resolvedOptions.conditionalFormatting && (
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => setCondFormatOpen(true)}>
+                            <Paintbrush className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">{t.conditionalFormatting}</span>
+                            {condFormat.rules.length > 0 && (
+                                <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 text-[10px] font-medium text-primary">{condFormat.rules.length}</span>
                             )}
-                            <DataTableToolbar {...toolbarProps} />
-                        </div>
-                    </>
-                )}
+                        </Button>
+                    )}
+
+                    {/* Integrated Charts button */}
+                    {resolvedOptions.integratedCharts && numericCols.length > 0 && (
+                        <Button variant={chartState ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => chartState ? setChartState(null) : openChart()}>
+                            <BarChart3 className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">{t.chartTitle}</span>
+                        </Button>
+                    )}
+
+                    {/* Find & Replace button */}
+                    {resolvedOptions.findReplace && (
+                        <Button variant={findReplaceOpen ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => setFindReplaceOpen(v => !v)}>
+                            <Search className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">{t.findReplace}</span>
+                        </Button>
+                    )}
+
+                    {slots?.toolbar ?? (
+                        <>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 md:hidden"><EllipsisVertical className="h-4 w-4" /></Button>
+                                </PopoverTrigger>
+                                <PopoverContent align="end" className="flex w-auto flex-col gap-2 p-2"><DataTableToolbar {...toolbarProps} /></PopoverContent>
+                            </Popover>
+                            <div className="hidden items-center gap-2 md:flex">
+                                {/* Header actions */}
+                                {headerActions?.map((action, i) => {
+                                    const Icon = action.icon;
+                                    return (
+                                        <Button key={i} variant={action.variant ?? "outline"} size="sm" className="h-8 gap-1.5" onClick={action.onClick}>
+                                            {Icon && <Icon className="h-3.5 w-3.5" />}
+                                            <span className="hidden sm:inline">{action.label}</span>
+                                        </Button>
+                                    );
+                                })}
+                                {/* User-selectable grouping */}
+                                {groupByOptions && groupByOptions.length > 0 && (
+                                    <GroupBySelector options={groupByOptions} columns={mergedColumns}
+                                        currentGroupBy={userGroupBy} onChange={handleGroupByChange} t={t} />
+                                )}
+                                <DataTableToolbar {...toolbarProps} />
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* ── Active filter chips ── */}
             <FilterChips filters={meta.filters as Record<string, unknown>} columns={mergedColumns}
                 onClear={handleClearFilterChip} onClearAll={handleClearAllFilterChips} t={t} />
+
+            {/* ── Faceted filters with counts ── */}
+            {resolvedOptions.facetedFilters && facetedCounts && (
+                <FacetedFilterSection columns={mergedColumns} facetedCounts={facetedCounts}
+                    serverFilters={meta.filters as Record<string, unknown>}
+                    prefix={prefix} partialReloadKey={partialReloadKey} t={t} />
+            )}
+
+            {/* ── Find & Replace bar ── */}
+            {resolvedOptions.findReplace && findReplaceOpen && (
+                <FindReplaceBar state={findReplace}
+                    onReplace={handleFindReplace} onReplaceAll={handleFindReplaceAll}
+                    onClose={() => { setFindReplaceOpen(false); findReplace.setQuery(""); }}
+                    t={t} />
+            )}
+
+            {/* ── Integrated Charts panel ── */}
+            {resolvedOptions.integratedCharts && chartState && (
+                <IntegratedChartPanel data={tableData.data as Record<string, unknown>[]}
+                    columns={mergedColumns} chartState={chartState}
+                    onClose={() => setChartState(null)}
+                    onChangeColumn={(colId) => setChartState(prev => prev ? { ...prev, columnId: colId } : null)}
+                    onChangeType={(type) => setChartState(prev => prev ? { ...prev, chartType: type } : null)}
+                    availableTypes={resolvedChartTypes} t={t} />
+            )}
 
             {/* ── Inline row creation ── */}
             {onRowCreate && (
@@ -2417,13 +4234,40 @@ function DataTableInner<TData extends object>({
                     rowLink={rowLink} t={t} density={density} />
             )}
 
+            {/* ── Grid Layout ── */}
+            {!isMobile && layoutMode === "grid" && (!config?.deferLoading || deferLoaded) && (
+                <GridLayout rows={tableData.data} columns={mergedColumns}
+                    renderCell={renderCell} actions={actions} onRowClick={onRowClick}
+                    rowLink={rowLink} t={t} density={density}
+                    imageColumn={cardImageColumn} titleColumn={cardTitleColumn}
+                    subtitleColumn={cardSubtitleColumn} />
+            )}
+
+            {/* ── Cards Layout ── */}
+            {!isMobile && layoutMode === "cards" && (!config?.deferLoading || deferLoaded) && (
+                <CardLayout rows={tableData.data} columns={mergedColumns}
+                    renderCell={renderCell} actions={actions} onRowClick={onRowClick}
+                    rowLink={rowLink} t={t} density={density}
+                    titleColumn={cardTitleColumn} subtitleColumn={cardSubtitleColumn} />
+            )}
+
+            {/* ── Kanban Layout ── */}
+            {!isMobile && layoutMode === "kanban" && kanbanColumnId && (!config?.deferLoading || deferLoaded) && (
+                <KanbanLayout rows={tableData.data} columns={mergedColumns}
+                    kanbanColumnId={kanbanColumnId} renderCell={renderCell}
+                    actions={actions} onRowClick={onRowClick} rowLink={rowLink}
+                    onKanbanMove={onKanbanMove} t={t} density={density}
+                    titleColumn={cardTitleColumn} subtitleColumn={cardSubtitleColumn} />
+            )}
+
             {/* ── Table ── */}
-            {!isMobile && (!config?.deferLoading || deferLoaded) && (
+            {!isMobile && layoutMode === "table" && (!config?.deferLoading || deferLoaded) && (
                 <div id={`dt-table-${tableName}`} className={cn("rounded-xl border shadow-sm overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
-                    <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}>
-                        <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
+                    <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}
+                        style={autoSizerDimensions ? { width: autoSizerDimensions.width, height: autoSizerDimensions.height } : undefined}>
+                        <Table ref={tableElementRef} style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
                             role="grid" aria-rowcount={meta.total} aria-colcount={table.getVisibleLeafColumns().length}>
                             <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background shadow-[0_1px_3px_-1px_rgba(0,0,0,0.1)]")}>
                                 {table.getHeaderGroups().map((headerGroup, groupIdx) => {
@@ -2461,6 +4305,10 @@ function DataTableInner<TData extends object>({
                                                                         {renderHeader?.[colDef.id]}
                                                                     </DataTableColumnHeader>
                                                                     {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                                    {resolvedOptions.columnStatistics && colDef && (
+                                                                        <ColumnStatsPopover columnId={colDef.id} columnLabel={colDef.label}
+                                                                            columnType={colDef.type} data={tableData.data as Record<string, unknown>[]} t={t} />
+                                                                    )}
                                                                 </div>
                                                                 {colDef.description && <span className="text-[10px] font-normal text-muted-foreground/70 leading-tight">{colDef.description}</span>}
                                                             </div>
@@ -2469,12 +4317,20 @@ function DataTableInner<TData extends object>({
                                                                 <div className="flex items-center gap-1">
                                                                     {renderHeader?.[header.column.id] ?? flexRender(header.column.columnDef.header, header.getContext())}
                                                                     {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                                    {resolvedOptions.columnStatistics && colDef && (
+                                                                        <ColumnStatsPopover columnId={colDef.id} columnLabel={colDef.label}
+                                                                            columnType={colDef.type} data={tableData.data as Record<string, unknown>[]} t={t} />
+                                                                    )}
                                                                 </div>
                                                                 {colDef?.description && <span className="text-[10px] font-normal text-muted-foreground/70 leading-tight">{colDef.description}</span>}
                                                             </div>
                                                         )}
                                                         {resolvedOptions.columnResizing && header.column.getCanResize() && (
                                                             <div onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()}
+                                                                onDoubleClick={resolvedOptions.columnAutoSize ? () => {
+                                                                    const width = autosizeColumn(tableElementRef, header.column.id);
+                                                                    if (width) header.column.getSize(); // trigger re-render
+                                                                } : undefined}
                                                                 className={cn("absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
                                                                     header.column.getIsResizing() ? "bg-primary" : "hover:bg-border")} />
                                                         )}
@@ -2502,6 +4358,28 @@ function DataTableInner<TData extends object>({
                                         </TableRow>
                                     );
                                 })}
+                                {/* Header filters row */}
+                                {resolvedOptions.headerFilters && (
+                                    <TableRow className="bg-muted/30 border-b">
+                                        {table.getVisibleLeafColumns().map((col) => {
+                                            const colDef = tableData.columns.find(c => c.id === col.id);
+                                            const isFilterable = colDef?.filterable || colDef?.headerFilter;
+                                            return (
+                                                <TableHead key={`hf-${col.id}`} className="py-1 px-2">
+                                                    {isFilterable ? (
+                                                        <Input
+                                                            placeholder={t.headerFilterPlaceholder}
+                                                            className="h-7 text-xs"
+                                                            value={headerFilterValues[col.id] ?? ""}
+                                                            onChange={(e) => handleHeaderFilterChange(col.id, e.target.value)}
+                                                            data-header-filter={col.id}
+                                                        />
+                                                    ) : null}
+                                                </TableHead>
+                                            );
+                                        })}
+                                    </TableRow>
+                                )}
                             </TableHeader>
                             <TableBody ref={tableBodyRef} role="rowgroup">
                                 {/* Pinned top rows */}
@@ -2523,6 +4401,18 @@ function DataTableInner<TData extends object>({
                                 ) : table.getRowModel().rows.length > 0 ? (
                                     (() => {
                                         const renderRow = (row: ReturnType<typeof table.getRowModel>["rows"][number], index: number) => {
+                                            // Scroll-aware rendering: show simplified placeholder during fast scroll
+                                            if (isScrollingFast) {
+                                                return (
+                                                    <TableRow key={row.id} className={cn("border-b border-border/40", densityClasses.row)}>
+                                                        {row.getVisibleCells().map((cell) => (
+                                                            <TableCell key={cell.id} className={cn("whitespace-nowrap", densityClasses.cell)}>
+                                                                <div className="h-4 w-full rounded bg-muted/40 animate-pulse" />
+                                                            </TableCell>
+                                                        ))}
+                                                    </TableRow>
+                                                );
+                                            }
                                             const dataAttrs = rowDataAttributes?.(row.original) ?? {};
                                             const rowRuleClass = getRowRuleClass(row.original);
                                             const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
@@ -2571,10 +4461,22 @@ function DataTableInner<TData extends object>({
                                                                 index >= Math.min(dragFillState.startRowIndex, dragFillEndIndex) &&
                                                                 index <= Math.max(dragFillState.startRowIndex, dragFillEndIndex) &&
                                                                 index !== dragFillState.startRowIndex;
+                                                            // Cell range selection highlight
+                                                            const isCellInRange = resolvedOptions.cellRangeSelection && cellRange.isCellInRange(index, cell.column.id);
+                                                            // Conditional formatting styles
+                                                            const condStyle = resolvedOptions.conditionalFormatting ? getCondFormatStyle(row.original, cell.column.id) : {};
+                                                            // Find & Replace highlight
+                                                            const findKey = `${index}:${cell.column.id}`;
+                                                            const isFindMatch = findReplaceHighlights.has(findKey);
+                                                            const isFindCurrent = findKey === findReplaceCurrentKey;
                                                             return (
                                                                 <TableCell key={cell.id} role="gridcell"
                                                                     colSpan={colSpanVal} rowSpan={rowSpanVal}
-                                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
+                                                                    data-editable-cell={cellMeta?.editable ? "" : undefined}
+                                                                    data-column-id={cell.column.id}
+                                                                    data-row-index={index}
+                                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}), ...condStyle,
+                                                                        ...(isFindCurrent ? { backgroundColor: "hsl(47.9 95.8% 53.1% / 0.4)", outline: "2px solid hsl(47.9 95.8% 53.1%)" } : isFindMatch ? { backgroundColor: "hsl(47.9 95.8% 53.1% / 0.15)" } : {}) }}
                                                                     className={cn(
                                                                         isAutoHeight ? "whitespace-normal" : "whitespace-nowrap",
                                                                         densityClasses.cell,
@@ -2584,7 +4486,11 @@ function DataTableInner<TData extends object>({
                                                                         cellMeta?.group && groupClassName?.[cellMeta.group],
                                                                         isFlashing && "animate-cell-flash",
                                                                         isDragFillTarget && "bg-primary/10 ring-1 ring-inset ring-primary/30",
+                                                                        isCellInRange && "bg-primary/15 ring-1 ring-inset ring-primary/40",
                                                                         pin.className, cellRuleClass)}
+                                                                    onMouseDown={resolvedOptions.cellRangeSelection ? () => cellRange.startSelection(index, cell.column.id) : undefined}
+                                                                    onMouseOver={resolvedOptions.cellRangeSelection ? () => cellRange.updateSelection(index, cell.column.id) : undefined}
+                                                                    onMouseUp={resolvedOptions.cellRangeSelection ? () => { cellRange.endSelection(); onCellRangeSelect?.(cellRange.rangeStart?.row ?? index, cellRange.rangeStart?.col ?? cell.column.id, index, cell.column.id); } : undefined}
                                                                     onDragOver={resolvedOptions.dragToFill && dragFillState ? (e) => { e.preventDefault(); handleDragFillOver(e, index); } : undefined}>
                                                                     <div className="relative">
                                                                         {resolvedOptions.copyCell && cell.column.id !== "_select" && cell.column.id !== "_actions" && cell.column.id !== "_expand" && cell.column.id !== "_reorder" ? (
@@ -2607,6 +4513,13 @@ function DataTableInner<TData extends object>({
                                                                 {renderDetailRow(row.original)}
                                                             </TableCell>
                                                         </TableRow>
+                                                    )}
+                                                    {hasMasterDetail && masterDetailExpanded.has(rowId) && renderMasterDetail && (
+                                                        <MasterDetailRow key={`${row.id}-master-detail`}
+                                                            row={row.original}
+                                                            colSpan={table.getVisibleLeafColumns().length}
+                                                            renderContent={renderMasterDetail}
+                                                            t={t} />
                                                     )}
                                                 </>
                                             );
@@ -2657,6 +4570,43 @@ function DataTableInner<TData extends object>({
                                                     </>
                                                 );
                                             });
+                                        }
+
+                                        // Tree data mode — hierarchical rows with expand/collapse
+                                        if (treeRows) {
+                                            const labelKey = treeConfig?.treeDataLabelKey ?? "name";
+                                            const renderTreeRows = (parentId: string | null, depth: number): React.ReactNode[] => {
+                                                const children = treeRows.get(parentId);
+                                                if (!children) return [];
+                                                return children.flatMap((row, i) => {
+                                                    const rowId = String((row.original as Record<string, unknown>).id ?? row.index);
+                                                    const hasChildren = treeRows.has(rowId);
+                                                    const isExpanded = expandedTreeNodes.has(rowId);
+                                                    const label = String((row.original as Record<string, unknown>)[labelKey] ?? "");
+                                                    return [
+                                                        <TableRow key={row.id} className={cn("border-b border-border/40", densityClasses.row)}>
+                                                            <TableCell colSpan={table.getVisibleLeafColumns().length} className={densityClasses.cell}>
+                                                                <div className="flex items-center" style={{ paddingLeft: `${depth * 1.5}rem` }}>
+                                                                    {hasChildren ? (
+                                                                        <button type="button" className="mr-1 p-0.5 hover:bg-muted rounded" onClick={() => {
+                                                                            setExpandedTreeNodes(prev => {
+                                                                                const next = new Set(prev);
+                                                                                if (next.has(rowId)) next.delete(rowId); else next.add(rowId);
+                                                                                return next;
+                                                                            });
+                                                                        }}>
+                                                                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                                                        </button>
+                                                                    ) : <span className="inline-block w-5" />}
+                                                                    <span>{label}</span>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>,
+                                                        ...(isExpanded ? renderTreeRows(rowId, depth + 1) : []),
+                                                    ];
+                                                });
+                                            };
+                                            return <>{renderTreeRows(null, 0)}</>;
                                         }
 
                                         // Normal mode — with optional virtual scrolling
@@ -2801,6 +4751,71 @@ function DataTableInner<TData extends object>({
                 })()
             )}
 
+            {/* ── Infinite scroll sentinel ── */}
+            {resolvedOptions.infiniteScroll && (
+                <div ref={infiniteScrollSentinelRef} className="flex items-center justify-center py-4 print:hidden">
+                    {isLoadingMore ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t.loadingMore}</div>
+                    ) : hasMore === false ? (
+                        <span className="text-xs text-muted-foreground">{t.noMoreData}</span>
+                    ) : null}
+                </div>
+            )}
+
+            {/* ── Cell range selection indicator ── */}
+            {resolvedOptions.cellRangeSelection && cellRange.selectedCellCount > 0 && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground print:hidden">
+                    <span>{t.cellsSelected(cellRange.selectedCellCount)}</span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={cellRange.clearSelection}>{t.clearSelection}</Button>
+                </div>
+            )}
+
+            {/* ── AI Assistant input ── */}
+            {onAiQuery && (
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 print:hidden">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder={t.aiPlaceholder}
+                        value={aiQuery}
+                        onChange={(e) => setAiQuery(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleAiQuery(); }}
+                        className="h-7 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
+                        disabled={aiQuerying}
+                    />
+                    {aiQuerying && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={handleAiQuery} disabled={aiQuerying || !aiQuery.trim()}>
+                        {aiQuerying ? t.aiQuerying : t.aiAssistant}
+                    </Button>
+                </div>
+            )}
+
+            {/* ── Pivot mode controls ── */}
+            {config?.pivotEnabled && onPivotChange && (
+                <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs print:hidden">
+                    <label className="flex items-center gap-1.5 font-medium">
+                        <Checkbox checked={pivotActive} onCheckedChange={(checked) => setPivotActive(!!checked)} />
+                        {t.pivotMode}
+                    </label>
+                    {pivotActive && config.pivotConfig && (
+                        <span className="text-muted-foreground">
+                            {t.pivotRowFields}: {config.pivotConfig.rowFields?.join(", ")} | {t.pivotValueField}: {config.pivotConfig.valueField} ({config.pivotConfig.aggregation})
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {/* ── Window scroller: scroll to top button ── */}
+            {resolvedOptions.windowScroller && windowScrollTop > 400 && (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="fixed bottom-6 right-6 z-50 shadow-lg print:hidden"
+                    onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                >
+                    {t.scrollToTop}
+                </Button>
+            )}
+
             {slots?.afterTable}
 
             {/* ── Bulk action confirmation dialog ── */}
@@ -2882,6 +4897,14 @@ function DataTableInner<TData extends object>({
             {formAction && formAction.action.form && (
                 <FormActionDialog open={!!formAction} onOpenChange={(open) => { if (!open) setFormAction(null); }}
                     action={formAction.action} row={formAction.row} t={t} />
+            )}
+
+            {/* ── Conditional formatting dialog ── */}
+            {resolvedOptions.conditionalFormatting && (
+                <ConditionalFormatDialog open={condFormatOpen} onOpenChange={setCondFormatOpen}
+                    columns={mergedColumns} rules={condFormat.rules}
+                    onAddRule={condFormat.addRule} onUpdateRule={condFormat.updateRule}
+                    onRemoveRule={condFormat.removeRule} t={t} />
             )}
 
             {resolvedOptions.printable && (

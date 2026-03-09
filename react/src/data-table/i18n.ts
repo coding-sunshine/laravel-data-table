@@ -235,6 +235,129 @@ export interface DataTableTranslations {
     saveCurrentFilters: string;
     filterName: string;
     filterNamePlaceholder: string;
+
+    // Header filters
+    headerFilterPlaceholder: string;
+    clearHeaderFilter: string;
+
+    // Tree data
+    expandAll: string;
+    collapseAll: string;
+    treeChildren: (count: number) => string;
+
+    // Infinite scroll
+    loadMore: string;
+    loadingMore: string;
+    noMoreData: string;
+
+    // Column auto-size
+    autoSizeColumn: string;
+    autoSizeAllColumns: string;
+
+    // Cell range selection
+    cellsSelected: (count: number) => string;
+
+    // Sparklines
+    sparklineLabel: string;
+
+    // AI assistant
+    aiAssistant: string;
+    aiPlaceholder: string;
+    aiQuerying: string;
+
+    // Pivot
+    pivotMode: string;
+    pivotRowFields: string;
+    pivotColumnFields: string;
+    pivotValueField: string;
+    pivotAggregation: string;
+
+    // Window scroller
+    scrollToTop: string;
+
+    // API ref
+    goToRow: string;
+
+    // Analytics
+    analyticsTitle: string;
+    analyticsChange: string;
+    analyticsNoChange: string;
+
+    // Layout switcher
+    layoutTable: string;
+    layoutGrid: string;
+    layoutCards: string;
+    layoutKanban: string;
+    switchLayout: string;
+
+    // Column statistics
+    columnStats: string;
+    statsCount: string;
+    statsNulls: string;
+    statsUnique: string;
+    statsMedian: string;
+    statsDistribution: string;
+
+    // Conditional formatting
+    conditionalFormatting: string;
+    addRule: string;
+    removeRule: string;
+    formatColumn: string;
+    formatOperator: string;
+    formatValue: string;
+    formatBackground: string;
+    formatTextColor: string;
+    formatBold: string;
+    noRules: string;
+
+    // Faceted filters
+    facetedAll: string;
+    facetedClear: string;
+
+    // Presence
+    presenceViewing: string;
+    presenceEditing: string;
+    presenceUsers: (count: number) => string;
+
+    // Spreadsheet mode
+    spreadsheetMode: string;
+    tabToNext: string;
+    enterToConfirm: string;
+    escapeToCancel: string;
+
+    // Kanban
+    kanbanNoColumn: string;
+    kanbanMoveCard: string;
+    kanbanEmpty: string;
+
+    // Master/Detail
+    masterDetailExpand: string;
+    masterDetailCollapse: string;
+    masterDetailLoading: string;
+
+    // Integrated Charts
+    chartColumn: string;
+    chartType: string;
+    chartBar: string;
+    chartLine: string;
+    chartPie: string;
+    chartDoughnut: string;
+    chartClose: string;
+    chartTitle: string;
+    chartNoData: string;
+
+    // Find & Replace
+    findReplace: string;
+    findPlaceholder: string;
+    replacePlaceholder: string;
+    findNext: string;
+    findPrevious: string;
+    replaceOne: string;
+    replaceAll: string;
+    findMatchesCount: (current: number, total: number) => string;
+    findNoMatches: string;
+    findCaseSensitive: string;
+    replaceSuccess: (count: number) => string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -474,6 +597,129 @@ export const defaultTranslations: DataTableTranslations = {
     saveCurrentFilters: "Save current filters",
     filterName: "Filter name",
     filterNamePlaceholder: "e.g. Active premium users",
+
+    // Header filters
+    headerFilterPlaceholder: "Filter...",
+    clearHeaderFilter: "Clear filter",
+
+    // Tree data
+    expandAll: "Expand all",
+    collapseAll: "Collapse all",
+    treeChildren: (count) => `${count} child${count !== 1 ? "ren" : ""}`,
+
+    // Infinite scroll
+    loadMore: "Load more",
+    loadingMore: "Loading more...",
+    noMoreData: "No more data",
+
+    // Column auto-size
+    autoSizeColumn: "Auto-size column",
+    autoSizeAllColumns: "Auto-size all columns",
+
+    // Cell range selection
+    cellsSelected: (count) => `${count} cell${count !== 1 ? "s" : ""} selected`,
+
+    // Sparklines
+    sparklineLabel: "Trend",
+
+    // AI assistant
+    aiAssistant: "AI Assistant",
+    aiPlaceholder: "Ask about your data...",
+    aiQuerying: "Analyzing...",
+
+    // Pivot
+    pivotMode: "Pivot mode",
+    pivotRowFields: "Row fields",
+    pivotColumnFields: "Column fields",
+    pivotValueField: "Value field",
+    pivotAggregation: "Aggregation",
+
+    // Window scroller
+    scrollToTop: "Scroll to top",
+
+    // API ref
+    goToRow: "Go to row",
+
+    // Analytics
+    analyticsTitle: "Analytics",
+    analyticsChange: "change",
+    analyticsNoChange: "no change",
+
+    // Layout switcher
+    layoutTable: "Table",
+    layoutGrid: "Grid",
+    layoutCards: "Cards",
+    layoutKanban: "Kanban",
+    switchLayout: "Switch layout",
+
+    // Column statistics
+    columnStats: "Column statistics",
+    statsCount: "Count",
+    statsNulls: "Nulls",
+    statsUnique: "Unique",
+    statsMedian: "Median",
+    statsDistribution: "Distribution",
+
+    // Conditional formatting
+    conditionalFormatting: "Conditional formatting",
+    addRule: "Add rule",
+    removeRule: "Remove",
+    formatColumn: "Column",
+    formatOperator: "Condition",
+    formatValue: "Value",
+    formatBackground: "Background",
+    formatTextColor: "Text color",
+    formatBold: "Bold",
+    noRules: "No formatting rules yet",
+
+    // Faceted filters
+    facetedAll: "All",
+    facetedClear: "Clear",
+
+    // Presence
+    presenceViewing: "viewing",
+    presenceEditing: "editing",
+    presenceUsers: (count) => `${count} user${count !== 1 ? "s" : ""} online`,
+
+    // Spreadsheet mode
+    spreadsheetMode: "Spreadsheet mode",
+    tabToNext: "Tab to next cell",
+    enterToConfirm: "Enter to confirm",
+    escapeToCancel: "Escape to cancel",
+
+    // Kanban
+    kanbanNoColumn: "Select a column for kanban lanes",
+    kanbanMoveCard: "Move card",
+    kanbanEmpty: "No items",
+
+    // Master/Detail
+    masterDetailExpand: "Show details",
+    masterDetailCollapse: "Hide details",
+    masterDetailLoading: "Loading details...",
+
+    // Integrated Charts
+    chartColumn: "Column",
+    chartType: "Chart type",
+    chartBar: "Bar",
+    chartLine: "Line",
+    chartPie: "Pie",
+    chartDoughnut: "Doughnut",
+    chartClose: "Close chart",
+    chartTitle: "Chart",
+    chartNoData: "No numeric data to chart",
+
+    // Find & Replace
+    findReplace: "Find & Replace",
+    findPlaceholder: "Find...",
+    replacePlaceholder: "Replace with...",
+    findNext: "Next",
+    findPrevious: "Previous",
+    replaceOne: "Replace",
+    replaceAll: "Replace all",
+    findMatchesCount: (current, total) => `${current} of ${total}`,
+    findNoMatches: "No matches",
+    findCaseSensitive: "Match case",
+    replaceSuccess: (count) => `Replaced ${count} match${count !== 1 ? "es" : ""}`,
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -684,4 +930,127 @@ export const frTranslations: DataTableTranslations = {
     saveCurrentFilters: "Sauvegarder les filtres actuels",
     filterName: "Nom du filtre",
     filterNamePlaceholder: "ex. Utilisateurs premium actifs",
+
+    // Header filters
+    headerFilterPlaceholder: "Filtrer...",
+    clearHeaderFilter: "Effacer le filtre",
+
+    // Tree data
+    expandAll: "Tout développer",
+    collapseAll: "Tout réduire",
+    treeChildren: (count) => `${count} enfant${count !== 1 ? "s" : ""}`,
+
+    // Infinite scroll
+    loadMore: "Charger plus",
+    loadingMore: "Chargement...",
+    noMoreData: "Plus de données",
+
+    // Column auto-size
+    autoSizeColumn: "Ajuster la colonne",
+    autoSizeAllColumns: "Ajuster toutes les colonnes",
+
+    // Cell range selection
+    cellsSelected: (count) => `${count} cellule${count !== 1 ? "s" : ""} sélectionnée${count !== 1 ? "s" : ""}`,
+
+    // Sparklines
+    sparklineLabel: "Tendance",
+
+    // AI assistant
+    aiAssistant: "Assistant IA",
+    aiPlaceholder: "Posez une question sur vos données...",
+    aiQuerying: "Analyse en cours...",
+
+    // Pivot
+    pivotMode: "Mode tableau croisé",
+    pivotRowFields: "Champs lignes",
+    pivotColumnFields: "Champs colonnes",
+    pivotValueField: "Champ valeur",
+    pivotAggregation: "Agrégation",
+
+    // Window scroller
+    scrollToTop: "Retour en haut",
+
+    // API ref
+    goToRow: "Aller à la ligne",
+
+    // Analytics
+    analyticsTitle: "Analytique",
+    analyticsChange: "variation",
+    analyticsNoChange: "aucune variation",
+
+    // Layout switcher
+    layoutTable: "Tableau",
+    layoutGrid: "Grille",
+    layoutCards: "Cartes",
+    layoutKanban: "Kanban",
+    switchLayout: "Changer la disposition",
+
+    // Column statistics
+    columnStats: "Statistiques de colonne",
+    statsCount: "Nombre",
+    statsNulls: "Valeurs nulles",
+    statsUnique: "Valeurs uniques",
+    statsMedian: "Médiane",
+    statsDistribution: "Distribution",
+
+    // Conditional formatting
+    conditionalFormatting: "Mise en forme conditionnelle",
+    addRule: "Ajouter une règle",
+    removeRule: "Supprimer",
+    formatColumn: "Colonne",
+    formatOperator: "Condition",
+    formatValue: "Valeur",
+    formatBackground: "Arrière-plan",
+    formatTextColor: "Couleur du texte",
+    formatBold: "Gras",
+    noRules: "Aucune règle de formatage",
+
+    // Faceted filters
+    facetedAll: "Tous",
+    facetedClear: "Effacer",
+
+    // Presence
+    presenceViewing: "en consultation",
+    presenceEditing: "en édition",
+    presenceUsers: (count) => `${count} utilisateur${count !== 1 ? "s" : ""} en ligne`,
+
+    // Spreadsheet mode
+    spreadsheetMode: "Mode tableur",
+    tabToNext: "Tab pour la cellule suivante",
+    enterToConfirm: "Entrée pour confirmer",
+    escapeToCancel: "Échap pour annuler",
+
+    // Kanban
+    kanbanNoColumn: "Sélectionnez une colonne pour les colonnes kanban",
+    kanbanMoveCard: "Déplacer la carte",
+    kanbanEmpty: "Aucun élément",
+
+    // Master/Detail
+    masterDetailExpand: "Afficher les détails",
+    masterDetailCollapse: "Masquer les détails",
+    masterDetailLoading: "Chargement des détails...",
+
+    // Integrated Charts
+    chartColumn: "Colonne",
+    chartType: "Type de graphique",
+    chartBar: "Barres",
+    chartLine: "Ligne",
+    chartPie: "Camembert",
+    chartDoughnut: "Anneau",
+    chartClose: "Fermer le graphique",
+    chartTitle: "Graphique",
+    chartNoData: "Aucune donnée numérique à afficher",
+
+    // Find & Replace
+    findReplace: "Rechercher et remplacer",
+    findPlaceholder: "Rechercher...",
+    replacePlaceholder: "Remplacer par...",
+    findNext: "Suivant",
+    findPrevious: "Précédent",
+    replaceOne: "Remplacer",
+    replaceAll: "Tout remplacer",
+    findMatchesCount: (current, total) => `${current} sur ${total}`,
+    findNoMatches: "Aucun résultat",
+    findCaseSensitive: "Respecter la casse",
+    replaceSuccess: (count) => `${count} remplacement${count !== 1 ? "s" : ""} effectué${count !== 1 ? "s" : ""}`,
 };

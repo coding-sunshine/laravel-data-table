@@ -37,5 +37,7 @@ class DataTableResponse extends Data
         public ?array $pinnedBottomRows = null,
         /** Server-driven action visibility rules */
         public ?array $actionRules = null,
+        /** Analytics KPI cards displayed above the table */
+        public ?array $analytics = null,
     ) {}
 }

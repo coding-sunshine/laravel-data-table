@@ -73,5 +73,15 @@ class Column extends Data
         public ?int $colSpan = null,
         /** Whether this column should auto-size row heights based on content */
         public bool $autoHeight = false,
+        /** valueGetter expression: column ID or dot-path to derive the value for sorting/filtering */
+        public ?string $valueGetter = null,
+        /** valueFormatter expression: format string for display (e.g., '{value} USD') */
+        public ?string $valueFormatter = null,
+        /** Whether this column supports header filter (inline filter in column header) */
+        public bool $headerFilter = false,
+        /** Sparkline chart type for this column: 'line', 'bar', or null */
+        public ?string $sparkline = null,
+        /** Tree data: column ID used as the tree path parent reference */
+        public ?string $treeParent = null,
     ) {}
 }

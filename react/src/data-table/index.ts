@@ -29,6 +29,7 @@ export type {
     DataTableConfig,
     DataTableRule,
     DataTableDensity,
+    DataTableLayoutMode,
     DataTableOptions,
     DataTableResponse,
     DataTableConfirmOptions,
@@ -37,6 +38,12 @@ export type {
     DataTableProps,
     DataTableFormField,
     DataTableHeaderAction,
+    DataTableAnalytic,
+    DataTableApiRef,
+    DataTableConditionalFormatRule,
+    DataTablePresenceUser,
+    DataTableFacetedOption,
+    DataTableColumnStats,
 } from "./types";
 
 // ─── i18n ───────────────────────────────────────────────────────────────────

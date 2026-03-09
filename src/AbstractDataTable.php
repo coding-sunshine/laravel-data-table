@@ -66,6 +66,57 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Whether tree data (hierarchical rows) is enabled.
+     */
+    public static function tableTreeDataEnabled(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Return the column ID that holds the parent reference for tree data.
+     * Rows with null parent are root nodes.
+     */
+    public static function tableTreeDataParentKey(): string
+    {
+        return 'parent_id';
+    }
+
+    /**
+     * Return the column ID used as the tree node label/display.
+     */
+    public static function tableTreeDataLabelKey(): string
+    {
+        return 'name';
+    }
+
+    /**
+     * Whether infinite scroll (lazy loading) is enabled instead of traditional pagination.
+     */
+    public static function tableInfiniteScroll(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Whether pivot mode is available for this table.
+     */
+    public static function tablePivotEnabled(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Return pivot configuration: row fields, column fields, and value aggregation.
+     *
+     * @return array{rowFields?: string[], columnFields?: string[], valueField?: string, aggregation?: string}
+     */
+    public static function tablePivotConfig(): array
+    {
+        return [];
+    }
+
+    /**
      * Server-driven action visibility rules.
      * Return an array mapping action labels to column-based conditions.
      * Example: ['Delete' => ['column' => 'status', 'operator' => 'neq', 'value' => 'archived']]
@@ -73,6 +124,18 @@ abstract class AbstractDataTable extends Data
      * @return array<string, array{column: string, operator: string, value: mixed}>
      */
     public static function tableActionRules(): array
+    {
+        return [];
+    }
+
+    /**
+     * Return analytics cards to display above the table.
+     * Each card is an array with: label, value, format (number|currency|percentage), change (delta %), prefix, suffix, color, icon.
+     * Override this method in your DataTable to provide KPI cards.
+     *
+     * @return array<int, array{label: string, value: float|int|string, format?: string, change?: float|null, prefix?: string|null, suffix?: string|null, color?: string|null, icon?: string|null, description?: string|null}>
+     */
+    public static function tableAnalytics(): array
     {
         return [];
     }
@@ -575,6 +638,12 @@ abstract class AbstractDataTable extends Data
             'asyncFilterColumns' => static::tableAsyncFilterColumns(),
             'cascadingFilters' => static::tableCascadingFilters(),
             'rules' => static::tableRules(),
+            'treeDataEnabled' => static::tableTreeDataEnabled(),
+            'treeDataParentKey' => static::tableTreeDataParentKey(),
+            'treeDataLabelKey' => static::tableTreeDataLabelKey(),
+            'infiniteScroll' => static::tableInfiniteScroll(),
+            'pivotEnabled' => static::tablePivotEnabled(),
+            'pivotConfig' => static::tablePivotConfig(),
         ];
 
         // Toggle URL
@@ -602,6 +671,9 @@ abstract class AbstractDataTable extends Data
         // Server-driven action rules
         $actionRules = static::tableActionRules();
 
+        // Analytics KPI cards
+        $analytics = static::tableAnalytics();
+
         return new DataTableResponse(
             data: $dataCollection->all(),
             columns: static::tableColumns(),
@@ -620,6 +692,7 @@ abstract class AbstractDataTable extends Data
             pinnedTopRows: ! empty($pinnedTop) ? $pinnedTop : null,
             pinnedBottomRows: ! empty($pinnedBottom) ? $pinnedBottom : null,
             actionRules: ! empty($actionRules) ? $actionRules : null,
+            analytics: ! empty($analytics) ? $analytics : null,
         );
     }
 

@@ -30,6 +30,9 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 ### Columns
 
+- **Computed columns** — Derive values from other columns server-side (`->computed(['price', 'qty'], fn($row) => $row['price'] * $row['qty'])`)
+- **Column spanning** — Merge cells across columns (`->colSpan(3)`) with frontend rendering support
+- **Dynamic row height** — Auto-size rows based on content (`->autoHeight()`) — switches from `nowrap` to `whitespace-normal`
 - **Column visibility** — Toggle columns on/off, persisted to localStorage
 - **Column ordering** — Drag-to-reorder via GripVertical handles, persisted to localStorage
 - **Column resizing** — Drag-to-resize widths, persisted to localStorage
@@ -54,6 +57,9 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 ### Data Display
 
+- **Status bar** — Aggregate info (sum, avg, count, min, max) for selected rows displayed below the table
+- **Frozen/pinned rows** — Pin rows to the top or bottom of the table via `tablePinnedTopRows()` / `tablePinnedBottomRows()`
+- **Row spanning** — Merge cells vertically via `rowSpan` prop with functions returning span count per row
 - **Footer aggregations** — Per-page computed values (sum, avg, etc.) with custom rendering
 - **Full-dataset summaries** — Built-in sum/count/avg/min/max/range across the entire filtered dataset
 - **Range summarizer** — Show min–max range for numeric columns (`->summary('range')`)
@@ -73,6 +79,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Action groups** — Nested submenu dropdowns for organizing related actions (`group` property)
 - **Forms-in-actions** — Modal forms with text, number, select, textarea, and checkbox fields (`form` property)
 - **Header actions** — Custom buttons in the table toolbar (e.g., "Create New") via `headerActions` prop
+- **Server-driven conditional row actions** — Show/hide actions per row based on server-defined rules (`tableActionRules()`) with 8 operators
 - **Replicate action** — Duplicate a row with a single click (i18n label: "Duplicate")
 - **Force-delete/Restore** — Soft delete management actions with confirmation dialogs
 - **Shift+click range selection** — Select a range of rows by holding Shift
@@ -90,6 +97,8 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Batch inline editing** — Edit a column value across multiple selected rows at once
 - **Undo/redo** — Stack-based undo/redo for inline edits with Ctrl+Z / Ctrl+Y
 - **Boolean toggle switch** — One-click switch to toggle boolean columns inline (uses Inertia `router.patch`)
+- **Drag-to-fill** — Drag a cell handle to fill adjacent editable cells with the same value
+- **Multi-row clipboard paste** — Paste tab-separated data from spreadsheets into editable cells
 - **Inline row creation** — "Add row" button with inline form for creating new records
 - **Auto-validation by type** — Inline edit rules auto-generated from column type (e.g., `email` → `required|email|max:255`)
 - **Toast notifications** — Success/error toasts with auto-dismiss on inline edits and toggles
@@ -136,16 +145,28 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 ### Responsive
 
+- **Multi-layout switcher** — Toggle between Table, Grid, Cards, and Kanban views from the toolbar
 - **Mobile card layout** — Automatic card-based layout on small screens via `mobileBreakpoint` prop
 - **Responsive column collapse** — Auto-hide columns on small screens based on priority levels
 - **Mobile toolbar stacking** — Toolbar wraps gracefully on small screens with `flex-wrap` and `min-w-0`
+- **Grid layout** — Image-forward responsive card grid (1–4 columns) for products, users, etc.
+- **Cards layout** — Detail-focused stacked cards with 2-column field layout
+- **Kanban board** — Drag-and-drop kanban lanes grouped by a status/category column
 
 ### Real-time & Performance
 
+- **Cell flashing** — Animated highlight when cell values change (via polling or real-time updates)
 - **Real-time updates** — Laravel Echo integration for auto-refreshing on server events
 - **Auto-refresh polling** — Timer-based automatic data refresh at configurable intervals
 - **Deferred/lazy loading** — Render table shell immediately, load data asynchronously
 - **Virtual scrolling** — Lightweight built-in `useVirtualRows` hook — no external dependencies needed
+- **Column virtualization** — Only render visible columns for wide tables with 50+ columns
+- **Directional overscan** — Pre-render extra rows in the scroll direction for smoother scrolling
+- **Scroll-aware rendering** — Show placeholder rows during fast scrolling for better performance
+- **AutoSizer** — ResizeObserver-based container sizing for responsive layouts
+- **CellMeasurer** — Content-based variable row height caching
+- **Window scroller** — Table scrolls with the browser window instead of its own container
+- **Infinite scroll** — Replace pagination with continuous scroll loading via IntersectionObserver
 - **Lazy detail rows** — Detail row content only renders when expanded (inline) or opened (modal/drawer)
 - **Undo/redo cleanup** — Undo and redo stacks are automatically cleared on component unmount to prevent memory leaks
 - **Persist state** — Save filters/sort/pagination to localStorage across page reloads
@@ -153,6 +174,29 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Inertia v2 prefetching** — Pagination buttons prefetch the next/prev page on hover for instant navigation
 - **Loading state** — Skeleton rows and spinner during Inertia navigation
 - **Inertia router for mutations** — Toggle and import use `router.patch`/`router.post` instead of raw `fetch()`
+
+### Advanced Features
+
+- **Header filters** — Inline filter inputs below column headers for quick filtering
+- **Tree data** — Hierarchical rows with expand/collapse for parent-child relationships
+- **Column auto-sizing** — Double-click resize handle to fit column width to content
+- **Cell range selection** — Spreadsheet-like mouse drag selection with aggregate display
+- **Imperative API ref** — Programmatic control (scrollToRow, autosizeColumns, triggerExport, resetFilters, focusCell)
+- **Pivot table mode** — Row/column grouping with aggregation (sum, avg, count, min, max)
+- **valueGetter/valueFormatter** — Separate data access from display formatting (like AG Grid)
+- **Sparklines** — Inline SVG mini-charts (line and bar) in table cells
+- **AI assistant** — Natural language query input for filtering and sorting via callback
+- **Column auto-size** — Auto-fit column widths to content via double-click or API
+- **Analytics / KPI cards** — Built-in zero-dependency KPI cards above the table with delta arrows, formatting, and responsive grid
+- **Custom charts slot** — Bring your own charting library (Recharts, Chart.js, Nivo) via `slots.analytics` render prop
+- **Column statistics** — Click column header for min/max/avg/median/nulls/unique count with distribution histogram
+- **Conditional formatting** — GUI rules builder (if price > 100, highlight green) with localStorage persistence
+- **Faceted filters** — E-commerce style filter chips with counts: `Active (42) | Draft (18)`
+- **Collaborative presence** — Show who else is viewing the table with avatar indicators via Laravel Echo
+- **Spreadsheet mode** — Tab/Enter/Shift+Tab cell navigation for editable cells
+- **Master/Detail** — Nested sub-tables inside expandable rows (e.g., Order → Order Items)
+- **Integrated Charts** — Instantly chart any numeric column with bar/line/pie/doughnut (zero-dependency SVG)
+- **Find & Replace** — Ctrl+F to search within table data with match highlighting and optional replace
 
 ### Internationalization
 
@@ -404,6 +448,9 @@ Extend this class for each model. It extends `Spatie\LaravelData\Data`, so it's 
 | `tableCascadingFilters()` | No | Map child → parent column IDs |
 | `resolveCascadingFilterOptions(column, parentValues)` | No | Return cascading options |
 | `tableDetailDisplay()` | No | Detail row display mode: `'inline'`, `'modal'`, `'drawer'`. Default: `'inline'` |
+| `tablePinnedTopRows()` | No | Returns `array` of row data to pin at the top of the table. Default: `[]` |
+| `tablePinnedBottomRows()` | No | Returns `array` of row data to pin at the bottom of the table. Default: `[]` |
+| `tableActionRules()` | No | Returns `array` of action visibility rules. Keys are action labels, values are `['column' => ..., 'operator' => ..., 'value' => ...]`. Default: `[]` |
 | `tableEagerLoad()` | No | Auto-derived from column `relation` fields. Override to add extra relationships |
 | `tableAuthorize(string $action, Request $request)` | No | Authorization gate for actions (`export`, `import`, `inline_edit`, `toggle`). Return `false` to deny. Default: `true` |
 | `buildFilteredQuery(?Request, ?prefix)` | Inherited | Builds a filtered+sorted QueryBuilder (shared by table, export, select-all) |
@@ -458,6 +505,9 @@ new Column(
     bulleted: false,         // Display arrays as bullet lists
     stacked: ['name', 'email'], // Stack multiple columns vertically
     rowIndex: false,         // Auto-incrementing row number
+    computedFrom: ['price', 'qty'], // Column IDs this computed column depends on
+    colSpan: 3,              // Number of columns this cell should span
+    autoHeight: false,       // Auto-size row height based on content
 );
 ```
 
@@ -562,7 +612,7 @@ All `ColumnBuilder` methods return `$this` for chaining. Call `->build()` at the
 | `currency(?string)` | Set type to currency with code | `->currency('EUR')` |
 | `selectOptions(array)` | Options for inline select dropdown | `->selectOptions([...])` |
 | `prefix(string)` | Text before cell value | `->prefix('$')` |
-| `suffix(string)` | Text after cell value | `->suffix(' kg')` |
+| `suffix(string\|Closure)` | Text after cell value (string or dynamic Closure) | `->suffix(' kg')` or `->suffix(fn($row) => $row['unit'])` |
 | `tooltip(string)` | Hover tooltip (static text or column ID) | `->tooltip('description')` |
 | `description(string)` | Small text below column header | `->description('Before tax')` |
 | `lineClamp(int)` | CSS line-clamp to truncate long text | `->lineClamp(2)` |
@@ -573,6 +623,17 @@ All `ColumnBuilder` methods return `$this` for chaining. Call `->build()` at the
 | `html()` | Render cell as sanitized HTML | `->html()` |
 | `markdown()` | Render cell as Markdown | `->markdown()` |
 | `bulleted()` | Display array values as bullet list | `->bulleted()` |
+| `computed(array, Closure)` | Define a computed column from source columns | `->computed(['price', 'qty'], fn($row) => $row['price'] * $row['qty'])` |
+| `colSpan(int)` | Number of columns this cell should span | `->colSpan(3)` |
+| `autoHeight(bool)` | Auto-size row height based on content | `->autoHeight()` |
+| `valueGetter(string)` | Dot-path to derive cell value from row data | `->valueGetter('user.name')` |
+| `valueFormatter(string)` | Format string for display (`{value}` placeholder) | `->valueFormatter('{value} USD')` |
+| `headerFilter(bool)` | Enable inline header filter for this column | `->headerFilter()` |
+| `sparkline(string)` | Sparkline chart type: `'line'` or `'bar'` | `->sparkline('line')` |
+| `treeParent(string)` | Column ID for tree data parent reference | `->treeParent('parent_id')` |
+| `avatar(string)` | Show avatar image alongside text (composite cell) | `->avatar('profile_image')` |
+
+**Static methods:** `getComputedResolvers()`, `clearComputedResolvers()` — manage the computed column resolver registry (same pattern as suffix resolvers).
 
 **Type setters:** `text()`, `number()`, `date()`, `option(?array)`, `multiOption(?array)`, `boolean()`, `image()`, `badge(?array)`, `currency(?string)`, `percentage()`, `link()`, `email()`, `phone()`, `iconColumn(array)`, `color()`, `select(array)`
 
@@ -1040,6 +1101,11 @@ class DataTableResponse extends Data {
     public ?string $reorderUrl;          // Reorder endpoint URL
     public ?string $importUrl;           // Import endpoint URL
     public ?string $groupByColumn;       // Column ID to group rows by
+    public ?array $pinnedTopRows;        // Rows pinned at the top of the table
+    public ?array $pinnedBottomRows;     // Rows pinned at the bottom of the table
+    public ?array $actionRules;          // Server-driven action visibility rules
+    public ?array $analytics;            // DataTableAnalytic[] KPI cards above the table
+    public ?array $facetedCounts;        // Faceted filter counts: [columnId => [value => count]]
 }
 ```
 
@@ -1267,7 +1333,16 @@ interface DataTableProps<TData extends object> {
         beforeTable?: ReactNode;
         afterTable?: ReactNode;
         pagination?: ReactNode;
+        statusBar?: ReactNode;       // Custom status bar content
     };
+
+    // Spanning
+    rowSpan?: Record<string, (row: TData, index: number, allRows: TData[]) => number>;  // Row spanning per column
+    columnSpan?: Record<string, (row: TData) => number>;  // Column spanning per column
+
+    // Clipboard & drag-to-fill
+    onClipboardPaste?: (startRowIndex: number, startColumnId: string, data: string[][]) => Promise<void> | void;
+    onDragToFill?: (columnId: string, value: unknown, targetRowIds: unknown[]) => Promise<void> | void;
 
     // New: callbacks & features
     onStateChange?: (state: DataTableState) => void; // Fires on any state change
@@ -1277,6 +1352,38 @@ interface DataTableProps<TData extends object> {
     headerActions?: DataTableHeaderAction[]; // Toolbar action buttons
     groupByOptions?: string[];              // Column IDs for user-selectable grouping
     onGroupByChange?: (columnId: string | null) => void; // Grouping change callback
+
+    // Advanced features
+    onCellRangeSelect?: (startRow: number, startCol: string, endRow: number, endCol: string) => void;
+    apiRef?: React.MutableRefObject<DataTableApiRef | null>; // Imperative API
+    onLoadMore?: (page: number) => Promise<void> | void;     // Infinite scroll callback
+    hasMore?: boolean;                      // More data available for infinite scroll
+    sparklineData?: Record<string, number[][]>; // Sparkline data per column per row
+    onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
+    onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
+
+    // Layout & views
+    kanbanColumnId?: string;                // Column ID for kanban lane grouping
+    onKanbanMove?: (rowId: unknown, fromLane: string, toLane: string) => Promise<void> | void;
+    cardImageColumn?: string;               // Column ID for card thumbnail (grid layout)
+    cardTitleColumn?: string;               // Column ID for card title (grid/cards/kanban)
+    cardSubtitleColumn?: string;            // Column ID for card subtitle (grid/cards/kanban)
+
+    // Faceted filters
+    facetedCounts?: Record<string, Record<string, number>>; // Column ID → { value → count }
+
+    // Collaborative presence
+    presenceChannel?: string;               // Laravel Echo presence channel name
+    currentUser?: DataTablePresenceUser;    // Current user info for presence tracking
+
+    // Master/Detail
+    renderMasterDetail?: (row: TData) => React.ReactNode; // Render nested content for expanded rows
+
+    // Find & Replace
+    onFindReplace?: (rowId: unknown, columnId: string, oldValue: unknown, newValue: unknown) => Promise<void> | void;
+
+    // Integrated Charts
+    chartTypes?: ("bar" | "line" | "pie" | "doughnut")[]; // Available chart types (default: all four)
 }
 ```
 
@@ -1317,6 +1424,30 @@ All options default to sensible values. Only override what you need:
         exportProgress: true,        // Show spinner during export download
         emptyStateIllustration: true, // Show illustration when table is empty
         virtualScrolling: true,      // Lightweight built-in row virtualization (no external deps)
+        cellFlashing: true,          // Animate cells when values change (polling/realtime)
+        statusBar: true,             // Show aggregates (sum/avg/count/min/max) for selected rows
+        clipboardPaste: true,        // Paste tab-separated data into editable cells
+        dragToFill: true,            // Drag cell handle to fill adjacent cells
+        headerFilters: true,         // Inline filters below column headers
+        infiniteScroll: true,        // Infinite scroll instead of pagination
+        columnAutoSize: true,        // Double-click resize handle to auto-fit
+        columnVirtualization: true,  // Only render visible columns (wide tables)
+        cellRangeSelection: true,    // Spreadsheet-like cell range selection
+        autoSizer: true,             // ResizeObserver container sizing
+        cellMeasurer: true,          // Content-based variable row heights
+        scrollAwareRendering: true,  // Placeholder rows during fast scroll
+        windowScroller: true,        // Scroll with browser window
+        directionalOverscan: true,   // More rows pre-rendered in scroll direction
+        layoutSwitcher: true,        // Table/Grid/Cards/Kanban view toggle
+        columnStatistics: true,      // Column stats popover on header click
+        conditionalFormatting: true,  // User-defined cell formatting rules
+        facetedFilters: true,        // Filter chips with counts
+        presence: true,              // Collaborative presence indicators
+        spreadsheetMode: true,       // Tab/Enter cell navigation
+        kanbanView: true,            // Kanban board layout option
+        masterDetail: true,          // Nested sub-tables in expandable rows
+        integratedCharts: true,      // Chart any numeric column (bar/line/pie/doughnut)
+        findReplace: true,           // Ctrl+F find & replace with highlighting
 
         // Enabled by default:
         loading: true,               // Skeleton during Inertia navigation
@@ -1476,6 +1607,32 @@ The `DataTableTranslations` interface has **100+ keys** covering every UI string
 | Print | `print` | Print button |
 | Row creation | `addRow` | Inline row creation |
 | Empty state | `emptyTitle`, `emptyDescription` | Empty table |
+| Status bar | `statusBarSum`, `statusBarAvg`, `statusBarCount`, `statusBarMin`, `statusBarMax` | Status bar aggregates |
+| Clipboard | `pasteSuccess`, `pasteError` | Clipboard paste feedback |
+| Drag-to-fill | `dragToFill` | Drag-to-fill tooltip |
+| Saved filters | `savedFilters`, `saveCurrentFilters`, `filterName`, `filterNamePlaceholder` | Server-persisted saved filters |
+| Export | `exportPdf` | PDF export option |
+| Pinned rows | `pinnedRow` | Pinned row label |
+| Header filters | `headerFilterPlaceholder` | Header filter input placeholder |
+| Tree data | `treeExpand`, `treeCollapse`, `treeExpandAll`, `treeCollapseAll` | Tree expand/collapse labels |
+| Infinite scroll | `loadingMore`, `noMoreData` | Infinite scroll status |
+| Column auto-size | `autosizeColumn`, `autosizeAllColumns` | Auto-size tooltips |
+| Cell range | `cellsSelected`, `clearSelection` | Range selection indicator |
+| Sparklines | `sparklineLabel` | Sparkline chart label |
+| AI assistant | `aiPlaceholder`, `aiAssistant`, `aiQuerying` | AI query input |
+| Pivot | `pivotMode`, `pivotRowFields`, `pivotValueField` | Pivot mode controls |
+| Window scroller | `scrollToTop` | Scroll-to-top button |
+| API ref | `apiScrollToRow`, `apiAutosize`, `apiExport`, `apiResetFilters` | API ref action labels |
+| Layout switcher | `layoutTable`, `layoutGrid`, `layoutCards`, `layoutKanban`, `switchLayout` | Multi-layout toggle |
+| Column statistics | `columnStats`, `statsCount`, `statsNulls`, `statsUnique`, `statsMin`, `statsMax`, `statsSum`, `statsAvg`, `statsMedian`, `statsDistribution` | Column stats popover |
+| Conditional formatting | `conditionalFormatting`, `addRule`, `removeRule`, `formatColumn`, `formatOperator`, `formatValue`, `formatStyle`, `formatBackgroundColor`, `formatTextColor`, `formatFontWeight`, `noRules` | Conditional format rules builder |
+| Faceted filters | `facetedAll`, `facetedClear`, `facetedSelected(count)`, `facetedNoResults` | Faceted filter chips |
+| Presence | `presenceViewing`, `presenceEditing`, `presenceUsers(count)` | Collaborative presence indicators |
+| Spreadsheet mode | `spreadsheetMode`, `tabToNext`, `enterToConfirm`, `escapeToCancel` | Spreadsheet navigation hints |
+| Kanban | `kanbanNoColumn`, `kanbanMoveCard`, `kanbanEmpty`, `kanbanLaneCount(count)` | Kanban board labels |
+| Master/Detail | `masterDetailExpand`, `masterDetailCollapse`, `masterDetailLoading` | Nested sub-table expand/collapse |
+| Integrated Charts | `chartColumn`, `chartType`, `chartBar`, `chartLine`, `chartPie`, `chartDoughnut`, `chartClose`, `chartTitle`, `chartNoData` | Chart panel controls |
+| Find & Replace | `findReplace`, `findPlaceholder`, `replacePlaceholder`, `findNext`, `findPrevious`, `replaceOne`, `replaceAll`, `findMatchesCount(current, total)`, `findNoMatches`, `findCaseSensitive`, `replaceSuccess(count)` | Find & replace bar |
 
 ### `SavedView` Model
 
@@ -1528,6 +1685,17 @@ interface DataTableConfig {
     asyncFilterColumns?: string[];
     cascadingFilters?: Record<string, string>;
     rules?: DataTableRule[];
+    treeDataEnabled?: boolean;
+    treeDataParentKey?: string;       // Column ID holding parent reference
+    treeDataLabelKey?: string;        // Column ID used as tree node label
+    infiniteScroll?: boolean;
+    pivotEnabled?: boolean;
+    pivotConfig?: {
+        rowFields?: string[];
+        columnFields?: string[];
+        valueField?: string;
+        aggregation?: string;         // "sum" | "avg" | "count" | "min" | "max"
+    };
 }
 
 // Quick view (frontend version — includes computed `active` boolean)
@@ -1583,12 +1751,67 @@ interface DataTableFormField {
     defaultValue?: unknown;
 }
 
+// Server-driven action visibility rule
+interface DataTableActionRule {
+    column: string;
+    operator: string;   // "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "notIn"
+    value: unknown;
+}
+
 // Header action button in toolbar
 interface DataTableHeaderAction {
     label: string;
     icon?: React.ComponentType<{ className?: string }>;
     onClick: () => void;
     variant?: "default" | "outline" | "destructive" | "ghost";
+}
+
+// Layout mode for the multi-layout switcher
+type DataTableLayoutMode = "table" | "grid" | "cards" | "kanban";
+
+// Conditional formatting rule (created by users via the rules builder UI)
+interface DataTableConditionalFormatRule {
+    id: string;
+    column: string;
+    operator: "gt" | "gte" | "lt" | "lte" | "eq" | "neq" | "contains" | "between" | "empty" | "notEmpty";
+    value: unknown;
+    value2?: unknown;
+    style: {
+        backgroundColor?: string;
+        textColor?: string;
+        fontWeight?: "normal" | "bold";
+        icon?: string;
+    };
+}
+
+// User presence for collaborative indicators
+interface DataTablePresenceUser {
+    id: string | number;
+    name: string;
+    avatar?: string;
+    color?: string;
+    activeRow?: string | number | null;
+}
+
+// Faceted filter option with count
+interface DataTableFacetedOption {
+    value: string;
+    label: string;
+    count: number;
+    icon?: string;
+}
+
+// Column statistics computed from data
+interface DataTableColumnStats {
+    count: number;
+    nullCount: number;
+    uniqueCount: number;
+    min?: number;
+    max?: number;
+    sum?: number;
+    avg?: number;
+    median?: number;
+    distribution?: { bucket: string; count: number }[];
 }
 
 // Filter value (from useDataTableFilters hook)
@@ -1986,6 +2209,227 @@ public static function tableDetailDisplay(): string
 ```
 
 The display mode is set server-side via `tableDetailDisplay()`. The same `renderDetailRow` callback works for all three modes.
+
+---
+
+## Pinned/Frozen Rows
+
+Pin rows to the top or bottom of the table that stay visible regardless of sorting/filtering:
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tablePinnedTopRows(): array
+    {
+        return [
+            ['id' => 0, 'name' => 'TOTAL', 'price' => Product::sum('price')],
+        ];
+    }
+
+    public static function tablePinnedBottomRows(): array
+    {
+        return [
+            ['id' => -1, 'name' => 'Average', 'price' => Product::avg('price')],
+        ];
+    }
+}
+```
+
+Pinned rows render with a subtle `bg-primary/5` background and are not affected by sorting, filtering, or pagination.
+
+---
+
+## Computed Columns
+
+Define columns whose values are derived from other columns, resolved server-side:
+
+```php
+public static function tableColumns(): array
+{
+    return [
+        ColumnBuilder::make('price', 'Price')->currency('USD')->build(),
+        ColumnBuilder::make('qty', 'Quantity')->number()->build(),
+        ColumnBuilder::make('total', 'Total')
+            ->computed(['price', 'qty'], fn ($row) => $row['price'] * $row['qty'])
+            ->currency('USD')
+            ->build(),
+    ];
+}
+```
+
+The closure is registered in a static registry (like dynamic suffixes) and resolved in `makeTable()`. The computed value is injected into each row's data before serialization.
+
+---
+
+## Server-Driven Conditional Row Actions
+
+Control which row actions are visible per-row based on server-defined rules:
+
+```php
+class OrderDataTable extends AbstractDataTable
+{
+    public static function tableActionRules(): array
+    {
+        return [
+            'Delete' => ['column' => 'status', 'operator' => 'neq', 'value' => 'archived'],
+            'Ship'   => ['column' => 'status', 'operator' => 'eq',  'value' => 'pending'],
+            'Refund' => ['column' => 'total',  'operator' => 'gt',  'value' => 0],
+        ];
+    }
+}
+```
+
+Supported operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`.
+
+The rules are evaluated on the frontend per row. Actions that don't pass their rule are hidden from that row's action menu.
+
+---
+
+## Row & Column Spanning
+
+### Row Spanning
+
+Merge cells vertically when consecutive rows have the same value:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="orders"
+    rowSpan={{
+        customer: (row, index, allRows) => {
+            let span = 1;
+            while (index + span < allRows.length && allRows[index + span].customer === row.customer) {
+                span++;
+            }
+            return span;
+        },
+    }}
+/>
+```
+
+### Column Spanning
+
+Merge cells horizontally using the `colSpan` ColumnBuilder method:
+
+```php
+ColumnBuilder::make('summary', 'Summary')->text()->colSpan(3)->build(),
+```
+
+Or dynamically via the `columnSpan` prop:
+
+```tsx
+<DataTable
+    columnSpan={{
+        summary: (row) => row.isSummaryRow ? 3 : 1,
+    }}
+/>
+```
+
+---
+
+## Cell Flashing
+
+Highlight cells that changed values (useful with polling or real-time updates):
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="stocks"
+    realtimeChannel="stocks"
+    options={{ cellFlashing: true }}
+/>
+```
+
+When `cellFlashing` is enabled, the component tracks previous cell values and applies a CSS `@keyframes cell-flash` animation (1.5s yellow flash) to cells whose values changed between renders.
+
+---
+
+## Status Bar
+
+Show aggregate information for selected rows below the table:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ statusBar: true }}
+/>
+```
+
+When rows are selected, the status bar displays Sum, Average, Count, Min, and Max for all numeric columns in the selection. Customize with the `statusBar` slot:
+
+```tsx
+<DataTable
+    options={{ statusBar: true }}
+    slots={{
+        statusBar: <MyCustomStatusBar />,
+    }}
+/>
+```
+
+---
+
+## Drag-to-Fill
+
+Enable spreadsheet-like drag-to-fill for editable cells:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ dragToFill: true }}
+    onDragToFill={async (columnId, value, targetRowIds) => {
+        await fetch('/api/products/batch-fill', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ column: columnId, value, ids: targetRowIds }),
+        });
+        router.reload();
+    }}
+/>
+```
+
+A small blue handle appears at the bottom-right of editable cells. Drag it over adjacent rows to fill them with the same value.
+
+---
+
+## Multi-Row Clipboard Paste
+
+Paste tab-separated data from spreadsheets into editable cells:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ clipboardPaste: true }}
+    onClipboardPaste={async (startRowIndex, startColumnId, data) => {
+        // data is a 2D array: data[row][col] of pasted values
+        await fetch('/api/products/paste', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ startRow: startRowIndex, startColumn: startColumnId, values: data }),
+        });
+        router.reload();
+    }}
+/>
+```
+
+Users can copy cells from Excel/Google Sheets and paste directly into the table. The component parses tab-separated values and maps them to the appropriate cells.
+
+---
+
+## Dynamic Row Height
+
+Allow specific columns to auto-size row heights based on content:
+
+```php
+ColumnBuilder::make('description', 'Description')
+    ->text()
+    ->autoHeight()
+    ->build();
+```
+
+By default, cells use `whitespace-nowrap` and truncate with ellipsis. When `autoHeight` is enabled, the cell switches to `whitespace-normal`, allowing text to wrap and the row to grow in height.
 
 ---
 
@@ -2720,6 +3164,848 @@ export default function ProductsPage({ tableData }: Props) {
     );
 }
 ```
+
+---
+
+## Analytics / KPI Cards
+
+Display summary KPI cards above the table — zero charting dependencies required. Optionally bring your own charting library for custom visualizations.
+
+### Built-in KPI Cards (Zero Dependencies)
+
+Define analytics in your DataTable class:
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tableAnalytics(): array
+    {
+        return [
+            [
+                'label' => 'Total Revenue',
+                'value' => Product::sum('price'),
+                'format' => 'currency',
+                'prefix' => '$',
+                'change' => 12.5,   // +12.5% positive delta (green arrow)
+                'description' => 'Last 30 days',
+                'icon' => '💰',
+            ],
+            [
+                'label' => 'Active Products',
+                'value' => Product::where('status', 'active')->count(),
+                'format' => 'number',
+                'change' => -3.2,   // -3.2% negative delta (red arrow)
+            ],
+            [
+                'label' => 'Avg Price',
+                'value' => Product::avg('price'),
+                'format' => 'currency',
+                'prefix' => '$',
+            ],
+            [
+                'label' => 'Conversion Rate',
+                'value' => 68.4,
+                'format' => 'percentage',
+                'change' => 2.1,
+                'color' => 'text-blue-600',
+            ],
+        ];
+    }
+}
+```
+
+That's it — KPI cards render automatically above the table with responsive grid layout, delta arrows, and formatting. No React code needed for the basic case.
+
+**Card properties:**
+
+| Property | Type | Description |
+|---|---|---|
+| `label` | `string` | Card title |
+| `value` | `number\|string` | The metric value |
+| `format` | `string` | `'number'`, `'currency'`, `'percentage'`, or `'text'` |
+| `change` | `float\|null` | Percentage change — positive shows green up arrow, negative shows red down arrow |
+| `prefix` | `string\|null` | Text before value (e.g., `'$'`, `'€'`) |
+| `suffix` | `string\|null` | Text after value (e.g., `' units'`) |
+| `color` | `string\|null` | Tailwind color class (e.g., `'text-emerald-600'`) |
+| `icon` | `string\|null` | Icon or emoji displayed in the card corner |
+| `description` | `string\|null` | Small text below the value |
+
+### Custom Charts (Bring Your Own Library)
+
+For full chart visualizations, use the `slots.analytics` render prop. Your charting library is only loaded if you use it — the DataTable package has zero chart dependencies.
+
+```tsx
+import { BarChart, Bar, XAxis, YAxis } from 'recharts'; // or any library
+
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    slots={{
+        analytics: ({ data, columns, analytics }) => (
+            <div className="grid grid-cols-4 gap-4 mb-4">
+                {/* Built-in KPI cards for the first two metrics */}
+                {analytics.slice(0, 2).map((card) => (
+                    <div key={card.label} className="rounded-lg border p-4">
+                        <div className="text-sm text-muted-foreground">{card.label}</div>
+                        <div className="text-2xl font-bold">{card.value}</div>
+                    </div>
+                ))}
+
+                {/* Custom Recharts bar chart */}
+                <div className="col-span-2 rounded-lg border p-4">
+                    <BarChart width={400} height={120} data={data}>
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Bar dataKey="price" fill="hsl(var(--primary))" />
+                    </BarChart>
+                </div>
+            </div>
+        ),
+    }}
+/>
+```
+
+The `slots.analytics` accepts either:
+- A **React node** — static content rendered above the table
+- A **render function** — receives `{ data, columns, analytics }` for dynamic charts built from table data
+
+**Behavior:**
+- If `tableAnalytics()` returns an empty array and no `slots.analytics` is provided, nothing renders
+- If a charting library isn't installed, it simply isn't imported — no silent failures needed
+- The analytics section is hidden in print mode (`print:hidden`)
+- Cards auto-layout in a responsive grid: 1 col on mobile, 2-4 cols on desktop based on card count
+
+---
+
+## Header Filters
+
+Enable inline filters directly below column headers for quick filtering without opening the filter panel:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ headerFilters: true }}
+/>
+```
+
+On the backend, mark columns as header-filterable:
+
+```php
+ColumnBuilder::make('status', 'Status')
+    ->option([['label' => 'Active', 'value' => 'active']])
+    ->headerFilter()
+    ->build();
+```
+
+Header filters render an `<Input>` below each filterable column header. Changes are debounced and applied as URL query parameters via Inertia navigation.
+
+---
+
+## Tree Data (Hierarchical Rows)
+
+Display hierarchical/nested data with expand/collapse controls:
+
+```php
+class CategoryDataTable extends AbstractDataTable
+{
+    protected function tableTreeDataEnabled(): bool { return true; }
+    protected function tableTreeDataParentKey(): string { return 'parent_id'; }
+    protected function tableTreeDataLabelKey(): string { return 'name'; }
+
+    protected function columns(): array
+    {
+        return [
+            ColumnBuilder::make('name', 'Category')
+                ->text()
+                ->treeParent('parent_id')
+                ->build(),
+        ];
+    }
+}
+```
+
+Rows are grouped into a tree hierarchy based on the parent key. Each level is indented, and parent nodes show expand/collapse chevrons.
+
+---
+
+## Infinite Scroll / Lazy Loading
+
+Replace pagination with infinite scroll for continuous data loading:
+
+```php
+class LogDataTable extends AbstractDataTable
+{
+    protected function tableInfiniteScroll(): bool { return true; }
+}
+```
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="logs"
+    options={{ infiniteScroll: true }}
+    onLoadMore={async (page) => {
+        await router.reload({ data: { page }, only: ['tableData'] });
+    }}
+    hasMore={tableData.meta.currentPage < tableData.meta.lastPage}
+/>
+```
+
+An `IntersectionObserver` watches a sentinel element at the bottom of the table and triggers `onLoadMore` when it becomes visible.
+
+---
+
+## Column Auto-Sizing
+
+Double-click a column resize handle to auto-fit the column width to its content:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ columnAutoSize: true, columnResizing: true }}
+/>
+```
+
+The auto-size algorithm measures the rendered width of all cells in the column (including the header) and sets the column to the maximum width found. Also available programmatically via the imperative API:
+
+```tsx
+const apiRef = useRef(null);
+apiRef.current?.autosizeColumns(); // auto-size all columns
+```
+
+---
+
+## Column Virtualization
+
+Only render columns that are currently visible in the viewport for wide tables with many columns:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="wide-table"
+    options={{ columnVirtualization: true }}
+/>
+```
+
+Uses an `IntersectionObserver` to determine which columns are in view and only renders those, significantly improving performance for tables with 50+ columns.
+
+---
+
+## Cell Range Selection
+
+Enable spreadsheet-like cell range selection with mouse drag:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ cellRangeSelection: true }}
+    onCellRangeSelect={(startRow, startCol, endRow, endCol) => {
+        console.log(`Selected from ${startRow}:${startCol} to ${endRow}:${endCol}`);
+    }}
+/>
+```
+
+Selected cells are highlighted with a primary-colored overlay. The selection count is displayed below the table with a clear button.
+
+---
+
+## AutoSizer
+
+Automatically measure and fill the container dimensions using `ResizeObserver`:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ autoSizer: true }}
+/>
+```
+
+The table container automatically resizes to fill its parent element. Useful for dashboard layouts where the table should fill available space.
+
+---
+
+## CellMeasurer
+
+Cache measured cell heights for variable-height row support:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ cellMeasurer: true }}
+/>
+```
+
+The CellMeasurer hook provides `measureCell(key, element)` and `getCellHeight(key, defaultHeight)` functions that cache DOM measurements. Combine with `autoHeight` columns for content-driven row heights.
+
+---
+
+## Imperative API Ref
+
+Programmatically control the table via a React ref:
+
+```tsx
+import { useRef } from 'react';
+import type { DataTableApiRef } from '@/data-table/types';
+
+function MyPage({ tableData }) {
+    const apiRef = useRef<DataTableApiRef>(null);
+
+    return (
+        <>
+            <button onClick={() => apiRef.current?.scrollToRow(0)}>Scroll to Top</button>
+            <button onClick={() => apiRef.current?.autosizeColumns()}>Auto-size</button>
+            <button onClick={() => apiRef.current?.triggerExport('xlsx')}>Export</button>
+            <button onClick={() => apiRef.current?.resetFilters()}>Reset Filters</button>
+            <button onClick={() => apiRef.current?.focusCell(0, 'name')}>Focus Cell</button>
+
+            <DataTable
+                tableData={tableData}
+                tableName="products"
+                apiRef={apiRef}
+            />
+        </>
+    );
+}
+```
+
+**Available methods:**
+
+| Method | Description |
+|---|---|
+| `scrollToRow(index, alignment?)` | Scroll to a specific row by index |
+| `autosizeColumns()` | Auto-fit all columns to content width |
+| `triggerExport(format)` | Programmatically trigger an export (`xlsx`, `csv`, `pdf`) |
+| `resetFilters()` | Clear all active filters |
+| `getState()` | Get the current table state as a plain object |
+| `focusCell(rowIndex, columnId)` | Focus a specific cell for keyboard navigation |
+
+---
+
+## Scroll-Aware Simplified Rendering
+
+Show placeholder rows during fast scrolling for smoother performance:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ scrollAwareRendering: true, virtualScrolling: true }}
+/>
+```
+
+When the user scrolls quickly, rows are replaced with animated pulse placeholders. Normal rendering resumes after scrolling stops (150ms debounce). This dramatically improves scroll performance for complex cell renderers.
+
+---
+
+## Pivot Table Mode
+
+Enable pivot table analysis with row/column grouping and aggregation:
+
+```php
+class SalesDataTable extends AbstractDataTable
+{
+    protected function tablePivotEnabled(): bool { return true; }
+    protected function tablePivotConfig(): array
+    {
+        return [
+            'rowFields' => ['category'],
+            'columnFields' => ['region'],
+            'valueField' => 'revenue',
+            'aggregation' => 'sum',
+        ];
+    }
+}
+```
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="sales"
+    onPivotChange={(config) => {
+        router.reload({ data: { pivot: config }, only: ['tableData'] });
+    }}
+/>
+```
+
+When pivot mode is activated, a control bar appears showing the current pivot configuration (row fields, column fields, value field, and aggregation type).
+
+---
+
+## valueGetter / valueFormatter
+
+Separate data access from display formatting, similar to AG Grid:
+
+```php
+ColumnBuilder::make('full_name', 'Full Name')
+    ->text()
+    ->valueGetter('user.name')  // Dot-path to derive value
+    ->build();
+
+ColumnBuilder::make('price', 'Price')
+    ->number()
+    ->valueFormatter('{value} USD')  // Display format
+    ->build();
+```
+
+- **valueGetter**: A column ID or dot-notation path (e.g., `user.name`, `address.city`) used to derive the cell value from the row data. Enables sorting/filtering on the derived value.
+- **valueFormatter**: A format string where `{value}` is replaced with the actual value. Applied after all other type-specific formatting.
+
+---
+
+## Window Scroller
+
+Make the table scroll with the browser window instead of its own scroll container:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ windowScroller: true }}
+/>
+```
+
+The table tracks `window.scrollY` and `window.innerHeight`. A "scroll to top" button appears (fixed bottom-right) when the user scrolls past 400px.
+
+---
+
+## Sparklines (Charts Integration)
+
+Display inline mini-charts in table cells:
+
+```php
+ColumnBuilder::make('trend', 'Trend')
+    ->text()
+    ->sparkline('line')  // 'line' or 'bar'
+    ->build();
+```
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="stocks"
+    sparklineData={{
+        trend: [
+            [10, 15, 12, 18, 22],  // row 0
+            [5, 8, 3, 12, 9],      // row 1
+            [20, 18, 22, 25, 30],  // row 2
+        ],
+    }}
+/>
+```
+
+Sparklines render as inline SVG charts (80×20px by default). Line charts use a polyline stroke; bar charts use filled rectangles. Both auto-scale to the data range.
+
+---
+
+## AI Assistant
+
+Add a natural language query input for filtering and sorting:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    onAiQuery={async (query) => {
+        const response = await fetch('/api/ai-query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, table: 'products' }),
+        });
+        return response.json();
+        // Expected: { filters: { status: 'active' }, sort: 'price' }
+    }}
+/>
+```
+
+An input field appears below the table. Users type natural language queries like "show me active products sorted by price". The `onAiQuery` callback receives the query string and should return filter/sort configuration that gets applied via URL parameters.
+
+---
+
+## Directional Overscan
+
+Pre-render more rows in the scroll direction for smoother virtual scrolling:
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ virtualScrolling: true, directionalOverscan: true }}
+/>
+```
+
+When enabled, the virtual scroll engine tracks scroll direction and renders extra rows ahead of the scroll position (15 rows in the scroll direction vs. 5 behind). This reduces the white flash that can occur during fast scrolling.
+
+---
+
+## Multi-Layout Switcher
+
+Switch between Table, Grid, Cards, and Kanban views from the toolbar. The selected layout persists to localStorage.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ layoutSwitcher: true, kanbanView: true }}
+    // Optional: configure card/grid appearance
+    cardImageColumn="image_url"     // Column ID used as card thumbnail
+    cardTitleColumn="name"          // Column ID used as card title
+    cardSubtitleColumn="category"   // Column ID used as card subtitle
+    // Required for kanban view:
+    kanbanColumnId="status"         // Column whose values become kanban lanes
+    onKanbanMove={async (rowId, fromLane, toLane) => {
+        await router.patch(`/products/${rowId}`, { status: toLane });
+    }}
+/>
+```
+
+**Table view** — The default data table with all features (sorting, filtering, inline editing, etc.).
+
+**Grid view** — Image-forward responsive card grid (1–4 columns based on screen width). Shows the image, title, subtitle, and up to 4 fields per card. Ideal for product catalogs, user directories, and media libraries.
+
+**Cards view** — Detail-focused stacked cards with a 2-column field layout. Shows all visible columns in a structured format. Ideal for detail-heavy data where each record needs more space.
+
+**Kanban view** — Drag-and-drop board grouped by a status/category column. Lanes are derived from the column's `options` or from unique values in the data. Cards show title, subtitle, and up to 3 fields. Requires `kanbanColumnId` prop and `kanbanView` option.
+
+All layout modes respect the current density setting, support row actions, and work with `onRowClick`/`rowLink`.
+
+---
+
+## Column Statistics Popover
+
+Click the chart icon on any column header to see computed statistics. No backend changes needed — all stats are computed client-side from the current page data.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ columnStatistics: true }}
+/>
+```
+
+The popover shows:
+
+- **Basic stats**: Count, Nulls, Unique values
+- **Numeric stats** (for number/currency/percentage columns): Min, Max, Average, Median, Sum
+- **Distribution chart**: 8-bucket histogram for numeric columns, or top 8 values by frequency for text/badge columns
+
+Statistics are only computed when the popover is opened, so there is zero performance overhead when not in use.
+
+---
+
+## Conditional Formatting Rules Builder
+
+Let users create visual formatting rules via a GUI dialog. Rules are persisted to localStorage per table.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ conditionalFormatting: true }}
+/>
+```
+
+A "Conditional formatting" button appears in the toolbar (with a badge showing the rule count). Clicking it opens a dialog where users can:
+
+1. **Pick a column** from a dropdown
+2. **Choose an operator**: `>`, `>=`, `<`, `<=`, `=`, `!=`, `contains`, `is empty`, `is not empty`
+3. **Enter a value** (for value-based operators)
+4. **Pick a background color** from 6 presets (red, orange, yellow, green, blue, purple)
+5. **Toggle bold** text
+
+Rules are evaluated per-cell during rendering. Multiple rules can target the same or different columns. The first matching rule wins.
+
+This is a pure frontend feature — no backend changes needed. Rules persist to `localStorage` under the key `dt-cond-format-{tableName}`.
+
+---
+
+## Faceted Filters with Counts
+
+Display filter options as clickable chips with item counts, like an e-commerce sidebar filter.
+
+```tsx
+// Backend: return faceted counts with the response
+class ProductsDataTable extends AbstractDataTable
+{
+    protected function buildResponse(): DataTableResponse
+    {
+        $response = parent::buildResponse();
+        $response->facetedCounts = [
+            'status' => ['active' => 42, 'draft' => 18, 'archived' => 3],
+            'category' => ['electronics' => 25, 'clothing' => 30, 'food' => 8],
+        ];
+        return $response;
+    }
+}
+
+// Frontend
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ facetedFilters: true }}
+/>
+
+// Or pass counts as a prop instead of from backend:
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ facetedFilters: true }}
+    facetedCounts={{
+        status: { active: 42, draft: 18, archived: 3 },
+    }}
+/>
+```
+
+- Chips show the option label and count
+- Click a chip to toggle that filter value (supports multi-select)
+- Active chips are highlighted with the primary color
+- Filters are applied via URL parameters, compatible with server-side filtering
+- Requires the column to have `filterable: true` and either `options` defined or counts provided
+
+---
+
+## Collaborative Presence Indicators
+
+Show who else is viewing the same table in real-time using Laravel Echo presence channels.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ presence: true }}
+    presenceChannel="products-table"
+    currentUser={{
+        id: auth.user.id,
+        name: auth.user.name,
+        avatar: auth.user.avatar_url,  // optional
+    }}
+/>
+```
+
+### Backend Setup
+
+Create a presence channel in your `channels/channels.php`:
+
+```php
+Broadcast::channel('products-table', function ($user) {
+    return [
+        'id' => $user->id,
+        'name' => $user->name,
+        'avatar' => $user->avatar_url,
+    ];
+});
+```
+
+### What It Shows
+
+- Avatar circles (or initial badges) with a green online dot
+- Up to 5 avatars with a `+N` overflow count
+- Tooltip with the user's name and "viewing" status
+- Users automatically appear/disappear as they join/leave the page
+
+Requires Laravel Echo and a broadcasting driver (Pusher, Ably, Laravel Reverb, or Soketi).
+
+---
+
+## Spreadsheet Mode
+
+Enable Tab/Enter cell navigation for a spreadsheet-like editing experience.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ spreadsheetMode: true }}
+    onInlineEdit={async (row, columnId, value) => {
+        await router.patch(`/products/${row.id}`, { [columnId]: value });
+    }}
+/>
+```
+
+Keyboard behavior in editable cells:
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Move to the next editable cell (left to right, then next row) |
+| `Shift+Tab` | Move to the previous editable cell |
+| `Enter` | Move down to the same column in the next row |
+| `Escape` | Cancel the current edit |
+
+Works with all editable column types (text, number, select, etc.). Requires `onInlineEdit` and at least one column with `editable: true`.
+
+---
+
+## Kanban Board View
+
+Display table data as a drag-and-drop kanban board grouped by a column's values.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="tasks"
+    options={{ layoutSwitcher: true, kanbanView: true }}
+    kanbanColumnId="status"
+    cardTitleColumn="title"
+    cardSubtitleColumn="assignee"
+    onKanbanMove={async (rowId, fromLane, toLane) => {
+        await router.patch(`/tasks/${rowId}`, { status: toLane });
+    }}
+/>
+```
+
+### Lane Configuration
+
+Lanes are derived from the kanban column's `options` (if defined via `->options([...])` on the PHP column). If no options are set, lanes are auto-generated from unique values in the data.
+
+### Features
+
+- **Drag and drop** cards between lanes (requires `onKanbanMove` callback)
+- **Lane headers** with badge styling (from column options variants) and item counts
+- **Card content** shows title, subtitle, and up to 3 additional fields
+- **Row actions** available on each card
+- **Click handling** works with `onRowClick` and `rowLink`
+- **Density** setting affects card padding
+
+### Props Reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `kanbanColumnId` | `string` | Column ID whose values become lane headers |
+| `onKanbanMove` | `(rowId, from, to) => Promise<void>` | Called when a card is dragged to a new lane |
+| `cardTitleColumn` | `string` | Column ID for card title |
+| `cardSubtitleColumn` | `string` | Column ID for card subtitle |
+| `cardImageColumn` | `string` | Column ID for card image (used in Grid layout) |
+
+---
+
+## Master/Detail (Nested Sub-Tables)
+
+Expand a row to reveal a full nested DataTable inside — perfect for parent-child relationships like Orders → Order Items, Users → Addresses, etc.
+
+```tsx
+<DataTable
+    tableData={orders}
+    tableName="orders"
+    options={{ masterDetail: true }}
+    renderMasterDetail={(order) => (
+        <DataTable
+            tableData={order.items}
+            tableName={`order-${order.id}-items`}
+            options={{ filters: false, exports: false, columnVisibility: false }}
+        />
+    )}
+/>
+```
+
+### How It Works
+
+- A chevron column is automatically added when `masterDetail: true` and `renderMasterDetail` is provided
+- Clicking the chevron expands the row to reveal the nested content below
+- The `renderMasterDetail` callback receives the row data and returns any React content
+- Multiple rows can be expanded simultaneously
+- The nested content has a left border accent for visual hierarchy
+- Works independently from the existing `renderDetailRow` (you can use both)
+
+### Props Reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `options.masterDetail` | `boolean` | Enable master/detail expand column (default: `false`) |
+| `renderMasterDetail` | `(row: TData) => ReactNode` | Render function for nested content |
+
+**Pro tip:** Use another `<DataTable>` inside `renderMasterDetail` for full-featured nested grids with their own sorting, filtering, and pagination — just like AG Grid Enterprise.
+
+---
+
+## Integrated Charts
+
+Instantly chart any numeric column with bar, line, pie, or doughnut charts — zero external dependencies, pure SVG rendering.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ integratedCharts: true }}
+    chartTypes={["bar", "line", "pie"]} // optional: limit available chart types
+/>
+```
+
+### How It Works
+
+- A "Chart" button appears in the toolbar when `integratedCharts: true` and the table has at least one numeric column
+- Click it to open the chart panel above the table
+- Select which numeric column to chart and the chart type (bar/line/pie/doughnut)
+- The first text/option/badge column is automatically used as labels
+- Charts are rendered as pure SVG — no Chart.js, Recharts, or any external dependency required
+- Limited to 50 data points for readability
+- Pie/doughnut charts include a color legend
+
+### Available Chart Types
+
+| Type | Description |
+|------|-------------|
+| `bar` | Vertical bar chart with color coding |
+| `line` | Line chart with data points |
+| `pie` | Pie chart with slices |
+| `doughnut` | Donut chart (pie with center hole) |
+
+### Props Reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `options.integratedCharts` | `boolean` | Enable chart button in toolbar (default: `false`) |
+| `chartTypes` | `("bar"\|"line"\|"pie"\|"doughnut")[]` | Limit available chart types (default: all four) |
+
+---
+
+## Find & Replace
+
+Search within visible table data with match highlighting and optional replace — just like Ctrl+F in Excel or Google Sheets.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ findReplace: true }}
+    onFindReplace={async (rowId, columnId, oldValue, newValue) => {
+        await router.patch(`/products/${rowId}`, { [columnId]: newValue });
+    }}
+/>
+```
+
+### How It Works
+
+- Press **Ctrl+F** (or Cmd+F on Mac) to open the find bar, or click the "Find & Replace" toolbar button
+- Type to search — all matching cells are highlighted in yellow
+- The current match is highlighted with a stronger yellow outline
+- Use **Enter** / **Shift+Enter** to cycle through matches (Next / Previous)
+- Type a replacement and click "Replace" (single) or "Replace All"
+- Toggle "Match case" for case-sensitive searching
+- Press **Escape** to close the find bar
+
+### Searchable Column Types
+
+Find & Replace searches through: `text`, `option`, `badge`, `email`, `link`, `phone` columns. Numeric and date columns are excluded.
+
+### Props Reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `options.findReplace` | `boolean` | Enable find & replace (default: `false`) |
+| `onFindReplace` | `(rowId, columnId, oldValue, newValue) => Promise<void>` | Called when a replacement is made |
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+F` / `Cmd+F` | Open find bar |
+| `Enter` | Go to next match |
+| `Shift+Enter` | Go to previous match |
+| `Escape` | Close find bar |
 
 ---
 

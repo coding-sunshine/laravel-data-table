@@ -62,6 +62,16 @@ export interface DataTableColumnDef {
     colSpan?: number | null;
     /** Whether this column should auto-size row heights based on content */
     autoHeight?: boolean;
+    /** valueGetter: column ID or dot-path to derive value for sorting/filtering */
+    valueGetter?: string | null;
+    /** valueFormatter: format string for display (e.g., '{value} USD') */
+    valueFormatter?: string | null;
+    /** Whether this column has an inline header filter */
+    headerFilter?: boolean;
+    /** Sparkline chart type: 'line' | 'bar' | null */
+    sparkline?: string | null;
+    /** Tree data parent column reference */
+    treeParent?: string | null;
 }
 
 export interface DataTableQuickView {
@@ -102,6 +112,18 @@ export interface DataTableConfig {
     asyncFilterColumns?: string[];
     cascadingFilters?: Record<string, string>;
     rules?: DataTableRule[];
+    /** Whether tree data (hierarchical rows) is enabled */
+    treeDataEnabled?: boolean;
+    /** Column ID holding the parent reference for tree data */
+    treeDataParentKey?: string;
+    /** Column ID used as tree node label */
+    treeDataLabelKey?: string;
+    /** Whether infinite scroll is enabled */
+    infiniteScroll?: boolean;
+    /** Whether pivot mode is available */
+    pivotEnabled?: boolean;
+    /** Pivot configuration */
+    pivotConfig?: { rowFields?: string[]; columnFields?: string[]; valueField?: string; aggregation?: string };
 }
 
 /** Conditional row/cell styling rule */
@@ -114,6 +136,53 @@ export interface DataTableRule {
 }
 
 export type DataTableDensity = "compact" | "comfortable" | "spacious";
+
+export type DataTableLayoutMode = "table" | "grid" | "cards" | "kanban";
+
+/** Conditional formatting rule created by the user via the rules builder UI */
+export interface DataTableConditionalFormatRule {
+    id: string;
+    column: string;
+    operator: "gt" | "gte" | "lt" | "lte" | "eq" | "neq" | "contains" | "between" | "empty" | "notEmpty";
+    value: unknown;
+    value2?: unknown;
+    style: {
+        backgroundColor?: string;
+        textColor?: string;
+        fontWeight?: "normal" | "bold";
+        icon?: string;
+    };
+}
+
+/** User presence for collaborative indicators */
+export interface DataTablePresenceUser {
+    id: string | number;
+    name: string;
+    avatar?: string;
+    color?: string;
+    activeRow?: string | number | null;
+}
+
+/** Faceted filter option with count */
+export interface DataTableFacetedOption {
+    value: string;
+    label: string;
+    count: number;
+    icon?: string;
+}
+
+/** Column statistics computed from data */
+export interface DataTableColumnStats {
+    count: number;
+    nullCount: number;
+    uniqueCount: number;
+    min?: number;
+    max?: number;
+    sum?: number;
+    avg?: number;
+    median?: number;
+    distribution?: { bucket: string; count: number }[];
+}
 
 export interface DataTableOptions {
     quickViews: boolean;
@@ -150,6 +219,46 @@ export interface DataTableOptions {
     clipboardPaste: boolean;
     /** Enable drag-to-fill for editable cells */
     dragToFill: boolean;
+    /** Enable inline header filters below column headers */
+    headerFilters: boolean;
+    /** Enable infinite scroll instead of pagination */
+    infiniteScroll: boolean;
+    /** Enable column auto-sizing (double-click resize handle to fit content) */
+    columnAutoSize: boolean;
+    /** Enable column virtualization (only render visible columns) */
+    columnVirtualization: boolean;
+    /** Enable cell range selection (spreadsheet-like) */
+    cellRangeSelection: boolean;
+    /** Enable AutoSizer (responsive container sizing) */
+    autoSizer: boolean;
+    /** Enable CellMeasurer (content-based variable row heights) */
+    cellMeasurer: boolean;
+    /** Enable scroll-aware simplified rendering during fast scroll */
+    scrollAwareRendering: boolean;
+    /** Enable window scroller (table scrolls with browser window) */
+    windowScroller: boolean;
+    /** Enable directional overscan (more rows pre-rendered in scroll direction) */
+    directionalOverscan: boolean;
+    /** Enable layout switcher (table/grid/cards/kanban) in toolbar */
+    layoutSwitcher: boolean;
+    /** Enable column statistics popover on header click */
+    columnStatistics: boolean;
+    /** Enable conditional formatting rules builder */
+    conditionalFormatting: boolean;
+    /** Enable faceted filters with counts */
+    facetedFilters: boolean;
+    /** Enable collaborative presence indicators */
+    presence: boolean;
+    /** Enable spreadsheet-mode Tab/Enter cell navigation */
+    spreadsheetMode: boolean;
+    /** Enable kanban board view */
+    kanbanView: boolean;
+    /** Enable master/detail nested sub-tables */
+    masterDetail: boolean;
+    /** Enable integrated charts (chart from column/selection) */
+    integratedCharts: boolean;
+    /** Enable find & replace (Ctrl+F with match highlighting) */
+    findReplace: boolean;
 }
 
 /** Server-driven action visibility rule */
@@ -157,6 +266,26 @@ export interface DataTableActionRule {
     column: string;
     operator: string;
     value: unknown;
+}
+
+/** Analytics KPI card definition from the server */
+export interface DataTableAnalytic {
+    label: string;
+    value: number | string;
+    /** Format: 'number' | 'currency' | 'percentage' | 'text' */
+    format?: string | null;
+    /** Percentage change (positive = up, negative = down) */
+    change?: number | null;
+    /** Text before value (e.g., '$') */
+    prefix?: string | null;
+    /** Text after value (e.g., ' units') */
+    suffix?: string | null;
+    /** Tailwind color class (e.g., 'text-emerald-600') */
+    color?: string | null;
+    /** Icon name or emoji */
+    icon?: string | null;
+    /** Description text below the value */
+    description?: string | null;
 }
 
 export interface DataTableResponse<TData = object> {
@@ -188,6 +317,10 @@ export interface DataTableResponse<TData = object> {
     pinnedBottomRows?: Record<string, unknown>[] | null;
     /** Server-driven action visibility rules: action label → condition */
     actionRules?: Record<string, DataTableActionRule> | null;
+    /** Analytics KPI cards displayed above the table */
+    analytics?: DataTableAnalytic[] | null;
+    /** Faceted filter counts: column ID → { optionValue → count } */
+    facetedCounts?: Record<string, Record<string, number>> | null;
 }
 
 export interface DataTableConfirmOptions {
@@ -288,6 +421,8 @@ export interface DataTableProps<TData extends object> {
     /** Slot overrides for composability */
     slots?: {
         toolbar?: React.ReactNode;
+        /** Custom analytics/charts section above the table. Receives data and columns for building custom visualizations. */
+        analytics?: React.ReactNode | ((props: { data: TData[]; columns: import("./types").DataTableColumnDef[]; analytics: import("./types").DataTableAnalytic[] }) => React.ReactNode);
         beforeTable?: React.ReactNode;
         afterTable?: React.ReactNode;
         pagination?: React.ReactNode;
@@ -316,4 +451,56 @@ export interface DataTableProps<TData extends object> {
     onClipboardPaste?: (startRowIndex: number, startColumnId: string, data: string[][]) => Promise<void> | void;
     /** Called when drag-to-fill is completed */
     onDragToFill?: (columnId: string, value: unknown, targetRowIds: unknown[]) => Promise<void> | void;
+    /** Called when cell range is selected */
+    onCellRangeSelect?: (startRow: number, startCol: string, endRow: number, endCol: string) => void;
+    /** Imperative API ref for programmatic control */
+    apiRef?: React.MutableRefObject<DataTableApiRef | null>;
+    /** Called when infinite scroll needs more data */
+    onLoadMore?: (page: number) => Promise<void> | void;
+    /** Whether more data is available for infinite scroll */
+    hasMore?: boolean;
+    /** Sparkline data: maps column ID to an array of values per row */
+    sparklineData?: Record<string, number[][]>;
+    /** AI assistant prompt handler: receives natural language query, returns filter/sort config */
+    onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
+    /** Pivot mode state callback */
+    onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
+    /** Column ID to use as kanban lane grouping (e.g., 'status') */
+    kanbanColumnId?: string;
+    /** Called when a kanban card is moved to a different lane */
+    onKanbanMove?: (rowId: unknown, fromLane: string, toLane: string) => Promise<void> | void;
+    /** Faceted filter counts from server: column ID → option value → count */
+    facetedCounts?: Record<string, Record<string, number>>;
+    /** Laravel Echo presence channel name for collaborative indicators */
+    presenceChannel?: string;
+    /** Current user info for presence tracking */
+    currentUser?: DataTablePresenceUser;
+    /** Image column ID to use as card thumbnail in grid/card layouts */
+    cardImageColumn?: string;
+    /** Column ID to use as card title in grid/card layouts */
+    cardTitleColumn?: string;
+    /** Column ID to use as card subtitle in grid/card layouts */
+    cardSubtitleColumn?: string;
+    /** Render function for master/detail nested sub-table content */
+    renderMasterDetail?: (row: TData) => React.ReactNode;
+    /** Called when find & replace executes a replacement */
+    onFindReplace?: (rowId: unknown, columnId: string, oldValue: unknown, newValue: unknown) => Promise<void> | void;
+    /** Chart types available for integrated charts (default: ['bar', 'line', 'pie']) */
+    chartTypes?: ("bar" | "line" | "pie" | "doughnut")[];
+}
+
+/** Imperative API ref for programmatic grid control */
+export interface DataTableApiRef {
+    /** Scroll to a specific row by index */
+    scrollToRow: (index: number, alignment?: "start" | "center" | "end" | "auto") => void;
+    /** Auto-size all columns to fit content */
+    autosizeColumns: () => void;
+    /** Trigger export programmatically */
+    triggerExport: (format: "xlsx" | "csv" | "pdf") => void;
+    /** Reset all filters */
+    resetFilters: () => void;
+    /** Get current table state */
+    getState: () => Record<string, unknown>;
+    /** Focus a specific cell */
+    focusCell: (rowIndex: number, columnId: string) => void;
 }

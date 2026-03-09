@@ -130,6 +130,16 @@ class ColumnBuilder
 
     private bool $autoHeight = false;
 
+    private ?string $valueGetter = null;
+
+    private ?string $valueFormatter = null;
+
+    private bool $headerFilter = false;
+
+    private ?string $sparkline = null;
+
+    private ?string $treeParent = null;
+
     private function __construct(string $id, string $label)
     {
         $this->id = $id;
@@ -591,6 +601,56 @@ class ColumnBuilder
     }
 
     /**
+     * Set a valueGetter expression for deriving the value used in sorting/filtering.
+     */
+    public function valueGetter(string $getter): self
+    {
+        $this->valueGetter = $getter;
+
+        return $this;
+    }
+
+    /**
+     * Set a valueFormatter expression for display formatting (e.g., '{value} USD').
+     */
+    public function valueFormatter(string $formatter): self
+    {
+        $this->valueFormatter = $formatter;
+
+        return $this;
+    }
+
+    /**
+     * Enable inline header filter for this column.
+     */
+    public function headerFilter(bool $enabled = true): self
+    {
+        $this->headerFilter = $enabled;
+
+        return $this;
+    }
+
+    /**
+     * Set sparkline chart type for this column ('line' or 'bar').
+     */
+    public function sparkline(string $type = 'line'): self
+    {
+        $this->sparkline = $type;
+
+        return $this;
+    }
+
+    /**
+     * Set tree parent column ID for hierarchical tree data.
+     */
+    public function treeParent(string $parentColumnId): self
+    {
+        $this->treeParent = $parentColumnId;
+
+        return $this;
+    }
+
+    /**
      * Build the Column instance.
      */
     public function build(): Column
@@ -648,6 +708,11 @@ class ColumnBuilder
             computedFrom: $this->computedFrom,
             colSpan: $this->colSpan,
             autoHeight: $this->autoHeight,
+            valueGetter: $this->valueGetter,
+            valueFormatter: $this->valueFormatter,
+            headerFilter: $this->headerFilter,
+            sparkline: $this->sparkline,
+            treeParent: $this->treeParent,
         );
     }
 }
