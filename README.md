@@ -609,7 +609,7 @@ All `ColumnBuilder` methods return `$this` for chaining. Call `->build()` at the
 | `currency(?string)` | Set type to currency with code | `->currency('EUR')` |
 | `selectOptions(array)` | Options for inline select dropdown | `->selectOptions([...])` |
 | `prefix(string)` | Text before cell value | `->prefix('$')` |
-| `suffix(string)` | Text after cell value | `->suffix(' kg')` |
+| `suffix(string\|Closure)` | Text after cell value (string or dynamic Closure) | `->suffix(' kg')` or `->suffix(fn($row) => $row['unit'])` |
 | `tooltip(string)` | Hover tooltip (static text or column ID) | `->tooltip('description')` |
 | `description(string)` | Small text below column header | `->description('Before tax')` |
 | `lineClamp(int)` | CSS line-clamp to truncate long text | `->lineClamp(2)` |
@@ -628,6 +628,7 @@ All `ColumnBuilder` methods return `$this` for chaining. Call `->build()` at the
 | `headerFilter(bool)` | Enable inline header filter for this column | `->headerFilter()` |
 | `sparkline(string)` | Sparkline chart type: `'line'` or `'bar'` | `->sparkline('line')` |
 | `treeParent(string)` | Column ID for tree data parent reference | `->treeParent('parent_id')` |
+| `avatar(string)` | Show avatar image alongside text (composite cell) | `->avatar('profile_image')` |
 
 **Static methods:** `getComputedResolvers()`, `clearComputedResolvers()` — manage the computed column resolver registry (same pattern as suffix resolvers).
 
@@ -1100,6 +1101,8 @@ class DataTableResponse extends Data {
     public ?array $pinnedTopRows;        // Rows pinned at the top of the table
     public ?array $pinnedBottomRows;     // Rows pinned at the bottom of the table
     public ?array $actionRules;          // Server-driven action visibility rules
+    public ?array $analytics;            // DataTableAnalytic[] KPI cards above the table
+    public ?array $facetedCounts;        // Faceted filter counts: [columnId => [value => count]]
 }
 ```
 
@@ -1605,6 +1608,13 @@ The `DataTableTranslations` interface has **100+ keys** covering every UI string
 | Pivot | `pivotMode`, `pivotRowFields`, `pivotValueField` | Pivot mode controls |
 | Window scroller | `scrollToTop` | Scroll-to-top button |
 | API ref | `apiScrollToRow`, `apiAutosize`, `apiExport`, `apiResetFilters` | API ref action labels |
+| Layout switcher | `layoutTable`, `layoutGrid`, `layoutCards`, `layoutKanban`, `switchLayout` | Multi-layout toggle |
+| Column statistics | `columnStats`, `statsCount`, `statsNulls`, `statsUnique`, `statsMin`, `statsMax`, `statsSum`, `statsAvg`, `statsMedian`, `statsDistribution` | Column stats popover |
+| Conditional formatting | `conditionalFormatting`, `addRule`, `removeRule`, `formatColumn`, `formatOperator`, `formatValue`, `formatStyle`, `formatBackgroundColor`, `formatTextColor`, `formatFontWeight`, `noRules` | Conditional format rules builder |
+| Faceted filters | `facetedAll`, `facetedClear`, `facetedSelected(count)`, `facetedNoResults` | Faceted filter chips |
+| Presence | `presenceViewing`, `presenceEditing`, `presenceUsers(count)` | Collaborative presence indicators |
+| Spreadsheet mode | `spreadsheetMode`, `tabToNext`, `enterToConfirm`, `escapeToCancel` | Spreadsheet navigation hints |
+| Kanban | `kanbanNoColumn`, `kanbanMoveCard`, `kanbanEmpty`, `kanbanLaneCount(count)` | Kanban board labels |
 
 ### `SavedView` Model
 
@@ -1657,6 +1667,17 @@ interface DataTableConfig {
     asyncFilterColumns?: string[];
     cascadingFilters?: Record<string, string>;
     rules?: DataTableRule[];
+    treeDataEnabled?: boolean;
+    treeDataParentKey?: string;       // Column ID holding parent reference
+    treeDataLabelKey?: string;        // Column ID used as tree node label
+    infiniteScroll?: boolean;
+    pivotEnabled?: boolean;
+    pivotConfig?: {
+        rowFields?: string[];
+        columnFields?: string[];
+        valueField?: string;
+        aggregation?: string;         // "sum" | "avg" | "count" | "min" | "max"
+    };
 }
 
 // Quick view (frontend version — includes computed `active` boolean)
