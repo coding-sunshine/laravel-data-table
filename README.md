@@ -145,9 +145,13 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 ### Responsive
 
+- **Multi-layout switcher** — Toggle between Table, Grid, Cards, and Kanban views from the toolbar
 - **Mobile card layout** — Automatic card-based layout on small screens via `mobileBreakpoint` prop
 - **Responsive column collapse** — Auto-hide columns on small screens based on priority levels
 - **Mobile toolbar stacking** — Toolbar wraps gracefully on small screens with `flex-wrap` and `min-w-0`
+- **Grid layout** — Image-forward responsive card grid (1–4 columns) for products, users, etc.
+- **Cards layout** — Detail-focused stacked cards with 2-column field layout
+- **Kanban board** — Drag-and-drop kanban lanes grouped by a status/category column
 
 ### Real-time & Performance
 
@@ -185,6 +189,11 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Column auto-size** — Auto-fit column widths to content via double-click or API
 - **Analytics / KPI cards** — Built-in zero-dependency KPI cards above the table with delta arrows, formatting, and responsive grid
 - **Custom charts slot** — Bring your own charting library (Recharts, Chart.js, Nivo) via `slots.analytics` render prop
+- **Column statistics** — Click column header for min/max/avg/median/nulls/unique count with distribution histogram
+- **Conditional formatting** — GUI rules builder (if price > 100, highlight green) with localStorage persistence
+- **Faceted filters** — E-commerce style filter chips with counts: `Active (42) | Draft (18)`
+- **Collaborative presence** — Show who else is viewing the table with avatar indicators via Laravel Echo
+- **Spreadsheet mode** — Tab/Enter/Shift+Tab cell navigation for editable cells
 
 ### Internationalization
 
@@ -1346,6 +1355,20 @@ interface DataTableProps<TData extends object> {
     sparklineData?: Record<string, number[][]>; // Sparkline data per column per row
     onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
     onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
+
+    // Layout & views
+    kanbanColumnId?: string;                // Column ID for kanban lane grouping
+    onKanbanMove?: (rowId: unknown, fromLane: string, toLane: string) => Promise<void> | void;
+    cardImageColumn?: string;               // Column ID for card thumbnail (grid layout)
+    cardTitleColumn?: string;               // Column ID for card title (grid/cards/kanban)
+    cardSubtitleColumn?: string;            // Column ID for card subtitle (grid/cards/kanban)
+
+    // Faceted filters
+    facetedCounts?: Record<string, Record<string, number>>; // Column ID → { value → count }
+
+    // Collaborative presence
+    presenceChannel?: string;               // Laravel Echo presence channel name
+    currentUser?: DataTablePresenceUser;    // Current user info for presence tracking
 }
 ```
 
@@ -1400,6 +1423,13 @@ All options default to sensible values. Only override what you need:
         scrollAwareRendering: true,  // Placeholder rows during fast scroll
         windowScroller: true,        // Scroll with browser window
         directionalOverscan: true,   // More rows pre-rendered in scroll direction
+        layoutSwitcher: true,        // Table/Grid/Cards/Kanban view toggle
+        columnStatistics: true,      // Column stats popover on header click
+        conditionalFormatting: true,  // User-defined cell formatting rules
+        facetedFilters: true,        // Filter chips with counts
+        presence: true,              // Collaborative presence indicators
+        spreadsheetMode: true,       // Tab/Enter cell navigation
+        kanbanView: true,            // Kanban board layout option
 
         // Enabled by default:
         loading: true,               // Skeleton during Inertia navigation
@@ -1695,6 +1725,54 @@ interface DataTableHeaderAction {
     icon?: React.ComponentType<{ className?: string }>;
     onClick: () => void;
     variant?: "default" | "outline" | "destructive" | "ghost";
+}
+
+// Layout mode for the multi-layout switcher
+type DataTableLayoutMode = "table" | "grid" | "cards" | "kanban";
+
+// Conditional formatting rule (created by users via the rules builder UI)
+interface DataTableConditionalFormatRule {
+    id: string;
+    column: string;
+    operator: "gt" | "gte" | "lt" | "lte" | "eq" | "neq" | "contains" | "between" | "empty" | "notEmpty";
+    value: unknown;
+    value2?: unknown;
+    style: {
+        backgroundColor?: string;
+        textColor?: string;
+        fontWeight?: "normal" | "bold";
+        icon?: string;
+    };
+}
+
+// User presence for collaborative indicators
+interface DataTablePresenceUser {
+    id: string | number;
+    name: string;
+    avatar?: string;
+    color?: string;
+    activeRow?: string | number | null;
+}
+
+// Faceted filter option with count
+interface DataTableFacetedOption {
+    value: string;
+    label: string;
+    count: number;
+    icon?: string;
+}
+
+// Column statistics computed from data
+interface DataTableColumnStats {
+    count: number;
+    nullCount: number;
+    uniqueCount: number;
+    min?: number;
+    max?: number;
+    sum?: number;
+    avg?: number;
+    median?: number;
+    distribution?: { bucket: string; count: number }[];
 }
 
 // Filter value (from useDataTableFilters hook)
@@ -3522,6 +3600,246 @@ Pre-render more rows in the scroll direction for smoother virtual scrolling:
 ```
 
 When enabled, the virtual scroll engine tracks scroll direction and renders extra rows ahead of the scroll position (15 rows in the scroll direction vs. 5 behind). This reduces the white flash that can occur during fast scrolling.
+
+---
+
+## Multi-Layout Switcher
+
+Switch between Table, Grid, Cards, and Kanban views from the toolbar. The selected layout persists to localStorage.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ layoutSwitcher: true, kanbanView: true }}
+    // Optional: configure card/grid appearance
+    cardImageColumn="image_url"     // Column ID used as card thumbnail
+    cardTitleColumn="name"          // Column ID used as card title
+    cardSubtitleColumn="category"   // Column ID used as card subtitle
+    // Required for kanban view:
+    kanbanColumnId="status"         // Column whose values become kanban lanes
+    onKanbanMove={async (rowId, fromLane, toLane) => {
+        await router.patch(`/products/${rowId}`, { status: toLane });
+    }}
+/>
+```
+
+**Table view** — The default data table with all features (sorting, filtering, inline editing, etc.).
+
+**Grid view** — Image-forward responsive card grid (1–4 columns based on screen width). Shows the image, title, subtitle, and up to 4 fields per card. Ideal for product catalogs, user directories, and media libraries.
+
+**Cards view** — Detail-focused stacked cards with a 2-column field layout. Shows all visible columns in a structured format. Ideal for detail-heavy data where each record needs more space.
+
+**Kanban view** — Drag-and-drop board grouped by a status/category column. Lanes are derived from the column's `options` or from unique values in the data. Cards show title, subtitle, and up to 3 fields. Requires `kanbanColumnId` prop and `kanbanView` option.
+
+All layout modes respect the current density setting, support row actions, and work with `onRowClick`/`rowLink`.
+
+---
+
+## Column Statistics Popover
+
+Click the chart icon on any column header to see computed statistics. No backend changes needed — all stats are computed client-side from the current page data.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ columnStatistics: true }}
+/>
+```
+
+The popover shows:
+
+- **Basic stats**: Count, Nulls, Unique values
+- **Numeric stats** (for number/currency/percentage columns): Min, Max, Average, Median, Sum
+- **Distribution chart**: 8-bucket histogram for numeric columns, or top 8 values by frequency for text/badge columns
+
+Statistics are only computed when the popover is opened, so there is zero performance overhead when not in use.
+
+---
+
+## Conditional Formatting Rules Builder
+
+Let users create visual formatting rules via a GUI dialog. Rules are persisted to localStorage per table.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ conditionalFormatting: true }}
+/>
+```
+
+A "Conditional formatting" button appears in the toolbar (with a badge showing the rule count). Clicking it opens a dialog where users can:
+
+1. **Pick a column** from a dropdown
+2. **Choose an operator**: `>`, `>=`, `<`, `<=`, `=`, `!=`, `contains`, `is empty`, `is not empty`
+3. **Enter a value** (for value-based operators)
+4. **Pick a background color** from 6 presets (red, orange, yellow, green, blue, purple)
+5. **Toggle bold** text
+
+Rules are evaluated per-cell during rendering. Multiple rules can target the same or different columns. The first matching rule wins.
+
+This is a pure frontend feature — no backend changes needed. Rules persist to `localStorage` under the key `dt-cond-format-{tableName}`.
+
+---
+
+## Faceted Filters with Counts
+
+Display filter options as clickable chips with item counts, like an e-commerce sidebar filter.
+
+```tsx
+// Backend: return faceted counts with the response
+class ProductsDataTable extends AbstractDataTable
+{
+    protected function buildResponse(): DataTableResponse
+    {
+        $response = parent::buildResponse();
+        $response->facetedCounts = [
+            'status' => ['active' => 42, 'draft' => 18, 'archived' => 3],
+            'category' => ['electronics' => 25, 'clothing' => 30, 'food' => 8],
+        ];
+        return $response;
+    }
+}
+
+// Frontend
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ facetedFilters: true }}
+/>
+
+// Or pass counts as a prop instead of from backend:
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ facetedFilters: true }}
+    facetedCounts={{
+        status: { active: 42, draft: 18, archived: 3 },
+    }}
+/>
+```
+
+- Chips show the option label and count
+- Click a chip to toggle that filter value (supports multi-select)
+- Active chips are highlighted with the primary color
+- Filters are applied via URL parameters, compatible with server-side filtering
+- Requires the column to have `filterable: true` and either `options` defined or counts provided
+
+---
+
+## Collaborative Presence Indicators
+
+Show who else is viewing the same table in real-time using Laravel Echo presence channels.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ presence: true }}
+    presenceChannel="products-table"
+    currentUser={{
+        id: auth.user.id,
+        name: auth.user.name,
+        avatar: auth.user.avatar_url,  // optional
+    }}
+/>
+```
+
+### Backend Setup
+
+Create a presence channel in your `channels/channels.php`:
+
+```php
+Broadcast::channel('products-table', function ($user) {
+    return [
+        'id' => $user->id,
+        'name' => $user->name,
+        'avatar' => $user->avatar_url,
+    ];
+});
+```
+
+### What It Shows
+
+- Avatar circles (or initial badges) with a green online dot
+- Up to 5 avatars with a `+N` overflow count
+- Tooltip with the user's name and "viewing" status
+- Users automatically appear/disappear as they join/leave the page
+
+Requires Laravel Echo and a broadcasting driver (Pusher, Ably, Laravel Reverb, or Soketi).
+
+---
+
+## Spreadsheet Mode
+
+Enable Tab/Enter cell navigation for a spreadsheet-like editing experience.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    options={{ spreadsheetMode: true }}
+    onInlineEdit={async (row, columnId, value) => {
+        await router.patch(`/products/${row.id}`, { [columnId]: value });
+    }}
+/>
+```
+
+Keyboard behavior in editable cells:
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Move to the next editable cell (left to right, then next row) |
+| `Shift+Tab` | Move to the previous editable cell |
+| `Enter` | Move down to the same column in the next row |
+| `Escape` | Cancel the current edit |
+
+Works with all editable column types (text, number, select, etc.). Requires `onInlineEdit` and at least one column with `editable: true`.
+
+---
+
+## Kanban Board View
+
+Display table data as a drag-and-drop kanban board grouped by a column's values.
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="tasks"
+    options={{ layoutSwitcher: true, kanbanView: true }}
+    kanbanColumnId="status"
+    cardTitleColumn="title"
+    cardSubtitleColumn="assignee"
+    onKanbanMove={async (rowId, fromLane, toLane) => {
+        await router.patch(`/tasks/${rowId}`, { status: toLane });
+    }}
+/>
+```
+
+### Lane Configuration
+
+Lanes are derived from the kanban column's `options` (if defined via `->options([...])` on the PHP column). If no options are set, lanes are auto-generated from unique values in the data.
+
+### Features
+
+- **Drag and drop** cards between lanes (requires `onKanbanMove` callback)
+- **Lane headers** with badge styling (from column options variants) and item counts
+- **Card content** shows title, subtitle, and up to 3 additional fields
+- **Row actions** available on each card
+- **Click handling** works with `onRowClick` and `rowLink`
+- **Density** setting affects card padding
+
+### Props Reference
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `kanbanColumnId` | `string` | Column ID whose values become lane headers |
+| `onKanbanMove` | `(rowId, from, to) => Promise<void>` | Called when a card is dragged to a new lane |
+| `cardTitleColumn` | `string` | Column ID for card title |
+| `cardSubtitleColumn` | `string` | Column ID for card subtitle |
+| `cardImageColumn` | `string` | Column ID for card image (used in Grid layout) |
 
 ---
 
