@@ -45,6 +45,39 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Return pinned rows that appear at the top of the table (before data rows).
+     * Each row is an associative array matching your column IDs.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function tablePinnedTopRows(): array
+    {
+        return [];
+    }
+
+    /**
+     * Return pinned rows that appear at the bottom of the table (after data rows, before footer).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function tablePinnedBottomRows(): array
+    {
+        return [];
+    }
+
+    /**
+     * Server-driven action visibility rules.
+     * Return an array mapping action labels to column-based conditions.
+     * Example: ['Delete' => ['column' => 'status', 'operator' => 'neq', 'value' => 'archived']]
+     *
+     * @return array<string, array{column: string, operator: string, value: mixed}>
+     */
+    public static function tableActionRules(): array
+    {
+        return [];
+    }
+
+    /**
      * @return array<int, Column>
      */
     abstract public static function tableColumns(): array;
@@ -493,14 +526,18 @@ abstract class AbstractDataTable extends Data
 
         $dataCollection = $data instanceof \Illuminate\Support\Collection ? $data : collect($data);
 
-        // Resolve dynamic (closure-based) suffixes per-row
+        // Resolve dynamic (closure-based) suffixes and computed columns per-row
         $suffixResolvers = ColumnBuilder::getSuffixResolvers();
-        if (! empty($suffixResolvers)) {
-            $dataCollection = $dataCollection->map(function ($row) use ($suffixResolvers) {
+        $computedResolvers = ColumnBuilder::getComputedResolvers();
+        if (! empty($suffixResolvers) || ! empty($computedResolvers)) {
+            $dataCollection = $dataCollection->map(function ($row) use ($suffixResolvers, $computedResolvers) {
                 $rowArray = is_array($row) ? $row : (is_object($row) && method_exists($row, 'toArray') ? $row->toArray() : (array) $row);
                 foreach ($suffixResolvers as $colId => $resolver) {
                     $value = $rowArray[$colId] ?? null;
                     $rowArray["_suffix_{$colId}"] = $resolver($value, $rowArray);
+                }
+                foreach ($computedResolvers as $colId => $resolver) {
+                    $rowArray[$colId] = $resolver($rowArray);
                 }
 
                 return $rowArray;
@@ -558,6 +595,13 @@ abstract class AbstractDataTable extends Data
             $importUrl = static::resolveImportUrl();
         }
 
+        // Pinned rows
+        $pinnedTop = static::tablePinnedTopRows();
+        $pinnedBottom = static::tablePinnedBottomRows();
+
+        // Server-driven action rules
+        $actionRules = static::tableActionRules();
+
         return new DataTableResponse(
             data: $dataCollection->all(),
             columns: static::tableColumns(),
@@ -573,6 +617,9 @@ abstract class AbstractDataTable extends Data
             reorderUrl: $reorderUrl,
             importUrl: $importUrl,
             groupByColumn: static::tableGroupByColumn(),
+            pinnedTopRows: ! empty($pinnedTop) ? $pinnedTop : null,
+            pinnedBottomRows: ! empty($pinnedBottom) ? $pinnedBottom : null,
+            actionRules: ! empty($actionRules) ? $actionRules : null,
         );
     }
 

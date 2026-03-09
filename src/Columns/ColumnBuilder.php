@@ -8,11 +8,15 @@ namespace Machour\DataTable\Columns;
  * Usage:
  *   ColumnBuilder::make('price', 'Price')->currency('EUR')->sortable()->summary('sum')->build()
  *   ColumnBuilder::make('status', 'Status')->iconColumn(['active' => 'check-circle', 'inactive' => 'x-circle'])->build()
+ *   ColumnBuilder::make('total', 'Total')->computed(['price', 'quantity'], 'price * quantity')->build()
  */
 class ColumnBuilder
 {
     /** @var array<string, \Closure> Dynamic suffix resolvers keyed by column ID */
     private static array $suffixResolvers = [];
+
+    /** @var array<string, \Closure> Computed column resolvers keyed by column ID */
+    private static array $computedResolvers = [];
 
     /**
      * Get all registered dynamic suffix resolvers.
@@ -30,6 +34,24 @@ class ColumnBuilder
     public static function clearSuffixResolvers(): void
     {
         static::$suffixResolvers = [];
+    }
+
+    /**
+     * Get all registered computed column resolvers.
+     *
+     * @return array<string, \Closure>
+     */
+    public static function getComputedResolvers(): array
+    {
+        return static::$computedResolvers;
+    }
+
+    /**
+     * Clear all registered computed column resolvers.
+     */
+    public static function clearComputedResolvers(): void
+    {
+        static::$computedResolvers = [];
     }
 
     private string $id;
@@ -99,6 +121,14 @@ class ColumnBuilder
     private bool $rowIndex = false;
 
     private ?string $avatarColumn = null;
+
+    private ?array $computedFrom = null;
+
+    private ?\Closure $computedResolver = null;
+
+    private ?int $colSpan = null;
+
+    private bool $autoHeight = false;
 
     private function __construct(string $id, string $label)
     {
@@ -525,6 +555,42 @@ class ColumnBuilder
     }
 
     /**
+     * Define a computed column derived from other columns.
+     *
+     * The closure receives the row array and returns the computed value.
+     *
+     * @param  array<string>  $sourceColumns  Column IDs this column depends on
+     * @param  \Closure  $resolver  fn(array $row): mixed
+     */
+    public function computed(array $sourceColumns, \Closure $resolver): self
+    {
+        $this->computedFrom = $sourceColumns;
+        $this->computedResolver = $resolver;
+
+        return $this;
+    }
+
+    /**
+     * Set the number of columns this cell should span.
+     */
+    public function colSpan(int $span): self
+    {
+        $this->colSpan = $span;
+
+        return $this;
+    }
+
+    /**
+     * Enable dynamic row height auto-sizing for this column's content.
+     */
+    public function autoHeight(bool $autoHeight = true): self
+    {
+        $this->autoHeight = $autoHeight;
+
+        return $this;
+    }
+
+    /**
      * Build the Column instance.
      */
     public function build(): Column
@@ -536,6 +602,11 @@ class ColumnBuilder
             static::$suffixResolvers[$this->id] = $suffixValue;
             $suffixValue = null;
             $hasDynamicSuffix = true;
+        }
+
+        // If computed, register the resolver for server-side resolution
+        if ($this->computedResolver !== null) {
+            static::$computedResolvers[$this->id] = $this->computedResolver;
         }
 
         return new Column(
@@ -574,6 +645,9 @@ class ColumnBuilder
             stacked: $this->stacked,
             rowIndex: $this->rowIndex,
             avatarColumn: $this->avatarColumn,
+            computedFrom: $this->computedFrom,
+            colSpan: $this->colSpan,
+            autoHeight: $this->autoHeight,
         );
     }
 }

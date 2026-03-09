@@ -31,5 +31,11 @@ class DataTableResponse extends Data
         public ?string $importUrl = null,
         /** Column ID to group rows by on frontend */
         public ?string $groupByColumn = null,
+        /** Pinned rows at the top of the table */
+        public ?array $pinnedTopRows = null,
+        /** Pinned rows at the bottom of the table */
+        public ?array $pinnedBottomRows = null,
+        /** Server-driven action visibility rules */
+        public ?array $actionRules = null,
     ) {}
 }

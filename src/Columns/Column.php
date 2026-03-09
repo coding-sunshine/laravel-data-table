@@ -67,5 +67,11 @@ class Column extends Data
         public ?string $avatarColumn = null,
         /** Whether this column has a dynamic (closure-based) suffix resolved server-side */
         public bool $hasDynamicSuffix = false,
+        /** Computed column expression: array of column IDs used in the computation (frontend resolves) */
+        public ?array $computedFrom = null,
+        /** Number of columns this cell should span (column spanning) */
+        public ?int $colSpan = null,
+        /** Whether this column should auto-size row heights based on content */
+        public bool $autoHeight = false,
     ) {}
 }

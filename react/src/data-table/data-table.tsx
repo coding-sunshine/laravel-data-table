@@ -196,6 +196,70 @@ function safeSetItem(key: string, value: string): void {
     catch { /* storage full or unavailable */ }
 }
 
+// ─── Cell flashing hook ──────────────────────────────────────────────────────
+
+/** Track previous cell values and return a set of "rowId:colId" keys that just changed. */
+function useCellFlashing(enabled: boolean, data: unknown[], columns: { id: string }[]) {
+    const prevDataRef = useRef<Map<string, unknown>>(new Map());
+    const [flashingCells, setFlashingCells] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (!enabled || data.length === 0) return;
+        const prev = prevDataRef.current;
+        const changed = new Set<string>();
+        const next = new Map<string, unknown>();
+
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i] as Record<string, unknown>;
+            const rowId = String(row.id ?? i);
+            for (const col of columns) {
+                const key = `${rowId}:${col.id}`;
+                const val = row[col.id];
+                next.set(key, val);
+                if (prev.has(key) && prev.get(key) !== val) {
+                    changed.add(key);
+                }
+            }
+        }
+
+        prevDataRef.current = next;
+        if (changed.size > 0) {
+            setFlashingCells(changed);
+            const timer = setTimeout(() => setFlashingCells(new Set()), 1500);
+            return () => clearTimeout(timer);
+        }
+    }, [enabled, data, columns]);
+
+    return flashingCells;
+}
+
+// ─── Status bar aggregation ──────────────────────────────────────────────────
+
+function computeStatusBarAggregates(
+    selectedRows: Record<string, unknown>[],
+    columns: { id: string; type: string }[],
+): { sum: number; avg: number; count: number; min: number; max: number } | null {
+    const numericValues: number[] = [];
+    for (const row of selectedRows) {
+        for (const col of columns) {
+            if (col.type === "number" || col.type === "currency" || col.type === "percentage") {
+                const val = row[col.id];
+                if (typeof val === "number") numericValues.push(val);
+                else if (typeof val === "string") { const n = parseFloat(val); if (!isNaN(n)) numericValues.push(n); }
+            }
+        }
+    }
+    if (numericValues.length === 0) return null;
+    const sum = numericValues.reduce((a, b) => a + b, 0);
+    return {
+        sum,
+        avg: sum / numericValues.length,
+        count: numericValues.length,
+        min: Math.min(...numericValues),
+        max: Math.max(...numericValues),
+    };
+}
+
 // ─── Column meta type ───────────────────────────────────────────────────────
 
 interface ColumnMeta {
@@ -220,6 +284,9 @@ interface ColumnMeta {
     rowIndex?: boolean;
     avatarColumn?: string | null;
     hasDynamicSuffix?: boolean;
+    computedFrom?: string[] | null;
+    colSpan?: number | null;
+    autoHeight?: boolean;
 }
 
 // ─── Error Boundary ─────────────────────────────────────────────────────────
@@ -1460,6 +1527,7 @@ function DataTableInner<TData extends object>({
     onReorder, onBatchEdit, emptyStateIllustration,
     onStateChange, onRowCreate, mobileBreakpoint = 0, children,
     headerActions, groupByOptions, onGroupByChange,
+    rowSpan, columnSpan, onClipboardPaste, onDragToFill,
 }: DataTableProps<TData>) {
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
@@ -1484,6 +1552,8 @@ function DataTableInner<TData extends object>({
         searchHighlight: false, undoRedo: false, columnPinning: false,
         persistSelection: false, shortcutsOverlay: false,
         exportProgress: false, emptyStateIllustration: false,
+        cellFlashing: false, statusBar: false, clipboardPaste: false,
+        dragToFill: false,
         ...optionsOverride,
     }), [optionsOverride]);
 
@@ -1600,6 +1670,78 @@ function DataTableInner<TData extends object>({
     // Keyboard shortcuts overlay
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
+    // Cell flashing — detect value changes from polling/realtime
+    const flashingCells = useCellFlashing(resolvedOptions.cellFlashing, tableData.data as unknown[], tableData.columns);
+
+    // Drag-to-fill state
+    const [dragFillState, setDragFillState] = useState<{ columnId: string; startRowIndex: number; value: unknown } | null>(null);
+    const [dragFillEndIndex, setDragFillEndIndex] = useState<number | null>(null);
+
+    const handleDragFillStart = useCallback((columnId: string, rowIndex: number, value: unknown) => {
+        setDragFillState({ columnId, startRowIndex: rowIndex, value });
+    }, []);
+
+    const handleDragFillOver = useCallback((_e: React.DragEvent, rowIndex: number) => {
+        if (dragFillState) setDragFillEndIndex(rowIndex);
+    }, [dragFillState]);
+
+    const handleDragFillEnd = useCallback(() => {
+        if (dragFillState && dragFillEndIndex !== null && onDragToFill) {
+            const start = Math.min(dragFillState.startRowIndex, dragFillEndIndex);
+            const end = Math.max(dragFillState.startRowIndex, dragFillEndIndex);
+            const targetIds: unknown[] = [];
+            for (let i = start; i <= end; i++) {
+                if (i !== dragFillState.startRowIndex) {
+                    const row = tableData.data[i] as Record<string, unknown> | undefined;
+                    if (row) targetIds.push(row.id ?? i);
+                }
+            }
+            if (targetIds.length > 0) onDragToFill(dragFillState.columnId, dragFillState.value, targetIds);
+        }
+        setDragFillState(null);
+        setDragFillEndIndex(null);
+    }, [dragFillState, dragFillEndIndex, onDragToFill, tableData.data]);
+
+    // Clipboard paste handler
+    useEffect(() => {
+        if (!resolvedOptions.clipboardPaste || !onClipboardPaste) return;
+        const handlePaste = (e: ClipboardEvent) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+            const text = e.clipboardData?.getData("text/plain");
+            if (!text) return;
+            const rows = text.split("\n").filter(Boolean).map((line) => line.split("\t"));
+            if (rows.length === 0 || rows[0].length === 0) return;
+            e.preventDefault();
+            const startRow = focusedRowIndex ?? 0;
+            const visibleCols = table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id);
+            const editableCols = visibleCols.filter((id) => mergedColumns.find((c) => c.id === id)?.editable);
+            if (editableCols.length === 0) return;
+            onClipboardPaste(startRow, editableCols[0], rows).then(() => showToast(t.pasteSuccess, "success")).catch(() => showToast(t.pasteError, "error"));
+        };
+        document.addEventListener("paste", handlePaste);
+        return () => document.removeEventListener("paste", handlePaste);
+    }, [resolvedOptions.clipboardPaste, onClipboardPaste, focusedRowIndex, table, mergedColumns, t]);
+
+    // Server-driven action rules helper
+    const checkActionRule = useCallback((actionLabel: string, row: Record<string, unknown>): boolean => {
+        const rules = tableData.actionRules;
+        if (!rules || !rules[actionLabel]) return true;
+        const rule = rules[actionLabel];
+        const cellValue = row[rule.column];
+        switch (rule.operator) {
+            case "eq": return cellValue === rule.value;
+            case "neq": return cellValue !== rule.value;
+            case "gt": return Number(cellValue) > Number(rule.value);
+            case "gte": return Number(cellValue) >= Number(rule.value);
+            case "lt": return Number(cellValue) < Number(rule.value);
+            case "lte": return Number(cellValue) <= Number(rule.value);
+            case "in": return Array.isArray(rule.value) && rule.value.includes(cellValue);
+            case "notIn": return Array.isArray(rule.value) && !rule.value.includes(cellValue);
+            default: return true;
+        }
+    }, [tableData.actionRules]);
+
     // User-selectable grouping
     const [userGroupBy, setUserGroupBy] = useState<string | null>(null);
     const handleGroupByChange = useCallback((colId: string | null) => {
@@ -1647,7 +1789,7 @@ function DataTableInner<TData extends object>({
             return {
                 id: col.id, accessorKey: col.id, header: col.label, enableHiding: true,
                 enableResizing: resolvedOptions.columnResizing, size: columnSizing[col.id] || undefined,
-                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix } satisfies ColumnMeta,
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix, computedFrom: col.computedFrom, colSpan: col.colSpan, autoHeight: col.autoHeight } satisfies ColumnMeta,
                 cell: ({ row }) => {
                     const value = row.getValue(col.id);
                     const rowData = row.original as Record<string, unknown>;
@@ -1905,8 +2047,16 @@ function DataTableInner<TData extends object>({
 
         if (actions && actions.length > 0) {
             result.push({ id: "_actions", header: "", enableHiding: false, enableResizing: false, size: 48,
-                cell: ({ row }) => <DataTableRowActions row={row.original} actions={actions} t={t}
-                    onFormAction={(action, r) => setFormAction({ action, row: r })} /> });
+                cell: ({ row }) => {
+                    // Apply server-driven action visibility rules
+                    const filteredActions = tableData.actionRules
+                        ? actions.filter((a) => checkActionRule(a.label, row.original as Record<string, unknown>))
+                        : actions;
+                    return filteredActions.length > 0 ? (
+                        <DataTableRowActions row={row.original} actions={filteredActions} t={t}
+                            onFormAction={(action, r) => setFormAction({ action, row: r })} />
+                    ) : null;
+                } });
         }
 
         return result;
@@ -2354,6 +2504,20 @@ function DataTableInner<TData extends object>({
                                 })}
                             </TableHeader>
                             <TableBody ref={tableBodyRef} role="rowgroup">
+                                {/* Pinned top rows */}
+                                {tableData.pinnedTopRows?.map((pinnedRow, pIdx) => (
+                                    <TableRow key={`pinned-top-${pIdx}`} className="bg-primary/5 border-b border-primary/20 font-medium">
+                                        {visibleLeafColumns.map((col) => {
+                                            const val = (pinnedRow as Record<string, unknown>)[col.id];
+                                            const pin = getColumnPinningProps(col);
+                                            return (
+                                                <TableCell key={col.id} style={pin.style} className={cn("whitespace-nowrap", densityClasses.cell, pin.className)}>
+                                                    {val != null ? String(val) : ""}
+                                                </TableCell>
+                                            );
+                                        })}
+                                    </TableRow>
+                                ))}
                                 {resolvedOptions.loading && isNavigating ? (
                                     <SkeletonRows count={Math.min(meta.perPage, 10)} colCount={table.getVisibleLeafColumns().length} />
                                 ) : table.getRowModel().rows.length > 0 ? (
@@ -2392,20 +2556,47 @@ function DataTableInner<TData extends object>({
                                                             const cellMeta = cell.column.columnDef.meta as ColumnMeta | undefined;
                                                             const cellRuleClass = getCellRuleClass(row.original, cell.column.id);
                                                             const cellContent = flexRender(cell.column.columnDef.cell, cell.getContext());
+                                                            // Column spanning
+                                                            const colSpanVal = columnSpan?.[cell.column.id]?.(row.original) ?? cellMeta?.colSpan ?? undefined;
+                                                            // Row spanning
+                                                            const rowSpanVal = rowSpan?.[cell.column.id]?.(row.original, index, tableData.data as TData[]) ?? undefined;
+                                                            if (rowSpanVal === 0) return null; // Skip cells covered by a previous row's span
+                                                            // Cell flashing
+                                                            const flashKey = `${rowId}:${cell.column.id}`;
+                                                            const isFlashing = flashingCells.has(flashKey);
+                                                            // Dynamic row height
+                                                            const isAutoHeight = cellMeta?.autoHeight;
+                                                            // Drag-to-fill highlight
+                                                            const isDragFillTarget = dragFillState?.columnId === cell.column.id && dragFillEndIndex !== null &&
+                                                                index >= Math.min(dragFillState.startRowIndex, dragFillEndIndex) &&
+                                                                index <= Math.max(dragFillState.startRowIndex, dragFillEndIndex) &&
+                                                                index !== dragFillState.startRowIndex;
                                                             return (
                                                                 <TableCell key={cell.id} role="gridcell"
+                                                                    colSpan={colSpanVal} rowSpan={rowSpanVal}
                                                                     style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
                                                                     className={cn(
-                                                                        "whitespace-nowrap",
+                                                                        isAutoHeight ? "whitespace-normal" : "whitespace-nowrap",
                                                                         densityClasses.cell,
                                                                         cellMeta?.type === "number" && "text-right",
                                                                         cellMeta?.type === "currency" && "text-right",
                                                                         cellMeta?.type === "percentage" && "text-right",
                                                                         cellMeta?.group && groupClassName?.[cellMeta.group],
-                                                                        pin.className, cellRuleClass)}>
-                                                                    {resolvedOptions.copyCell && cell.column.id !== "_select" && cell.column.id !== "_actions" && cell.column.id !== "_expand" && cell.column.id !== "_reorder" ? (
-                                                                        <CopyableCell value={cell.getValue()} enabled={true} t={t}>{cellContent}</CopyableCell>
-                                                                    ) : cellContent}
+                                                                        isFlashing && "animate-cell-flash",
+                                                                        isDragFillTarget && "bg-primary/10 ring-1 ring-inset ring-primary/30",
+                                                                        pin.className, cellRuleClass)}
+                                                                    onDragOver={resolvedOptions.dragToFill && dragFillState ? (e) => { e.preventDefault(); handleDragFillOver(e, index); } : undefined}>
+                                                                    <div className="relative">
+                                                                        {resolvedOptions.copyCell && cell.column.id !== "_select" && cell.column.id !== "_actions" && cell.column.id !== "_expand" && cell.column.id !== "_reorder" ? (
+                                                                            <CopyableCell value={cell.getValue()} enabled={true} t={t}>{cellContent}</CopyableCell>
+                                                                        ) : cellContent}
+                                                                        {/* Drag-to-fill handle */}
+                                                                        {resolvedOptions.dragToFill && cellMeta?.editable && !dragFillState && (
+                                                                            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 cursor-crosshair bg-primary border border-background rounded-sm opacity-0 group-hover/cell:opacity-100 hover:opacity-100 transition-opacity"
+                                                                                draggable onDragStart={(e) => { e.stopPropagation(); handleDragFillStart(cell.column.id, index, cell.getValue()); }}
+                                                                                onDragEnd={handleDragFillEnd} title={t.dragToFill} />
+                                                                        )}
+                                                                    </div>
                                                                 </TableCell>
                                                             );
                                                         })}
@@ -2493,6 +2684,21 @@ function DataTableInner<TData extends object>({
                                 )}
                             </TableBody>
 
+                            {/* Pinned bottom rows */}
+                            {tableData.pinnedBottomRows?.map((pinnedRow, pIdx) => (
+                                <TableRow key={`pinned-bottom-${pIdx}`} className="bg-primary/5 border-t border-primary/20 font-medium">
+                                    {visibleLeafColumns.map((col) => {
+                                        const val = (pinnedRow as Record<string, unknown>)[col.id];
+                                        const pin = getColumnPinningProps(col);
+                                        return (
+                                            <TableCell key={col.id} style={pin.style} className={cn("whitespace-nowrap", densityClasses.cell, pin.className)}>
+                                                {val != null ? String(val) : ""}
+                                            </TableCell>
+                                        );
+                                    })}
+                                </TableRow>
+                            ))}
+
                             {/* Per-page footer */}
                             {tableData.footer && (
                                 <TableFooter>
@@ -2574,6 +2780,26 @@ function DataTableInner<TData extends object>({
                     )}
                 </div>
             </div>
+
+            {/* ── Status bar ── */}
+            {resolvedOptions.statusBar && selectedRows.length > 0 && (
+                slots?.statusBar ?? (() => {
+                    const agg = computeStatusBarAggregates(
+                        selectedRows as unknown as Record<string, unknown>[],
+                        mergedColumns.map((c) => ({ id: c.id, type: c.type })),
+                    );
+                    if (!agg) return null;
+                    return (
+                        <div className="flex items-center gap-4 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground print:hidden">
+                            <span className="font-medium">{t.statusBarCount}: <span className="text-foreground tabular-nums">{agg.count}</span></span>
+                            <span>{t.statusBarSum}: <span className="text-foreground tabular-nums">{agg.sum.toLocaleString()}</span></span>
+                            <span>{t.statusBarAvg}: <span className="text-foreground tabular-nums">{agg.avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></span>
+                            <span>{t.statusBarMin}: <span className="text-foreground tabular-nums">{agg.min.toLocaleString()}</span></span>
+                            <span>{t.statusBarMax}: <span className="text-foreground tabular-nums">{agg.max.toLocaleString()}</span></span>
+                        </div>
+                    );
+                })()
+            )}
 
             {slots?.afterTable}
 
@@ -2660,6 +2886,10 @@ function DataTableInner<TData extends object>({
 
             {resolvedOptions.printable && (
                 <style>{`@media print { body * { visibility: hidden; } .dt-root, .dt-root * { visibility: visible; } .dt-root { position: absolute; left: 0; top: 0; width: 100%; } .print\\:hidden { display: none !important; } table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ddd; padding: 8px; text-align: left; } th { background-color: #f5f5f5; font-weight: bold; } }`}</style>
+            )}
+            {/* Cell flashing animation */}
+            {resolvedOptions.cellFlashing && (
+                <style>{`@keyframes cell-flash { 0% { background-color: hsl(var(--primary) / 0.2); } 100% { background-color: transparent; } } .animate-cell-flash { animation: cell-flash 1.5s ease-out; }`}</style>
             )}
         </div>
     );
