@@ -63,5 +63,9 @@ class Column extends Data
         public ?array $stacked = null,
         /** Whether this is a row index column (auto-incrementing row number) */
         public bool $rowIndex = false,
+        /** Column ID that holds the avatar/image URL for composite avatar+text display */
+        public ?string $avatarColumn = null,
+        /** Whether this column has a dynamic (closure-based) suffix resolved server-side */
+        public bool $hasDynamicSuffix = false,
     ) {}
 }

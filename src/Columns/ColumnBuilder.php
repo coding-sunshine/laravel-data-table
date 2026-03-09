@@ -11,6 +11,27 @@ namespace Machour\DataTable\Columns;
  */
 class ColumnBuilder
 {
+    /** @var array<string, \Closure> Dynamic suffix resolvers keyed by column ID */
+    private static array $suffixResolvers = [];
+
+    /**
+     * Get all registered dynamic suffix resolvers.
+     *
+     * @return array<string, \Closure>
+     */
+    public static function getSuffixResolvers(): array
+    {
+        return static::$suffixResolvers;
+    }
+
+    /**
+     * Clear all registered suffix resolvers (useful between requests/tests).
+     */
+    public static function clearSuffixResolvers(): void
+    {
+        static::$suffixResolvers = [];
+    }
+
     private string $id;
 
     private string $label;
@@ -53,7 +74,7 @@ class ColumnBuilder
 
     private ?string $prefix = null;
 
-    private ?string $suffix = null;
+    private string|\Closure|null $suffix = null;
 
     private ?string $tooltip = null;
 
@@ -76,6 +97,8 @@ class ColumnBuilder
     private ?array $stacked = null;
 
     private bool $rowIndex = false;
+
+    private ?string $avatarColumn = null;
 
     private function __construct(string $id, string $label)
     {
@@ -365,9 +388,12 @@ class ColumnBuilder
     }
 
     /**
-     * Add text after the cell value (e.g., 'kg', '%', ' items').
+     * Add text after the cell value.
+     *
+     * Accepts a static string (e.g., ' kg') or a closure for dynamic suffixes:
+     *   ->suffix(fn($value) => $value === 1 ? ' org' : ' orgs')
      */
-    public function suffix(string $suffix): self
+    public function suffix(string|\Closure $suffix): self
     {
         $this->suffix = $suffix;
 
@@ -487,10 +513,31 @@ class ColumnBuilder
     }
 
     /**
+     * Show an avatar image alongside this column's text value.
+     *
+     * @param  string  $imageColumn  The column ID that holds the avatar/image URL
+     */
+    public function avatar(string $imageColumn): self
+    {
+        $this->avatarColumn = $imageColumn;
+
+        return $this;
+    }
+
+    /**
      * Build the Column instance.
      */
     public function build(): Column
     {
+        // If suffix is a Closure, register it for server-side resolution
+        $suffixValue = $this->suffix;
+        $hasDynamicSuffix = false;
+        if ($suffixValue instanceof \Closure) {
+            static::$suffixResolvers[$this->id] = $suffixValue;
+            $suffixValue = null;
+            $hasDynamicSuffix = true;
+        }
+
         return new Column(
             id: $this->id,
             label: $this->label,
@@ -513,7 +560,8 @@ class ColumnBuilder
             internalName: $this->internalName,
             relation: $this->relation,
             prefix: $this->prefix,
-            suffix: $this->suffix,
+            suffix: $suffixValue,
+            hasDynamicSuffix: $hasDynamicSuffix,
             tooltip: $this->tooltip,
             description: $this->description,
             lineClamp: $this->lineClamp,
@@ -525,6 +573,7 @@ class ColumnBuilder
             bulleted: $this->bulleted,
             stacked: $this->stacked,
             rowIndex: $this->rowIndex,
+            avatarColumn: $this->avatarColumn,
         );
     }
 }

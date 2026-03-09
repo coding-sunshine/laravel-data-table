@@ -52,6 +52,10 @@ export interface DataTableColumnDef {
     stacked?: string[] | null;
     /** Whether this is a row index column (auto-incrementing row number) */
     rowIndex?: boolean;
+    /** Column ID that holds the avatar/image URL for composite avatar+text display */
+    avatarColumn?: string | null;
+    /** Whether this column has a dynamic (closure-based) suffix resolved server-side */
+    hasDynamicSuffix?: boolean;
 }
 
 export interface DataTableQuickView {

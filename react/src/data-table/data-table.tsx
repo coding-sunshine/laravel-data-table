@@ -218,6 +218,8 @@ interface ColumnMeta {
     bulleted?: boolean;
     stacked?: string[] | null;
     rowIndex?: boolean;
+    avatarColumn?: string | null;
+    hasDynamicSuffix?: boolean;
 }
 
 // ─── Error Boundary ─────────────────────────────────────────────────────────
@@ -978,10 +980,10 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
             )}
             {resolvedOptions.undoRedo && (canUndo || canRedo) && (
                 <div className="flex items-center">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canUndo} onClick={onUndo} title={t.undo}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canUndo} onClick={onUndo} title={t.undo} aria-label={t.undo}>
                         <Undo2 className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canRedo} onClick={onRedo} title={t.redo}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canRedo} onClick={onRedo} title={t.redo} aria-label={t.redo}>
                         <Redo2 className="h-3.5 w-3.5" />
                     </Button>
                 </div>
@@ -1000,7 +1002,7 @@ function DataTableToolbar<TData>({ tableData, table, tableName, columnVisibility
                     showOrdering={resolvedOptions.columnOrdering} t={t} />
             )}
             {resolvedOptions.shortcutsOverlay && onShowShortcuts && (
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onShowShortcuts} title={t.keyboardShortcuts}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onShowShortcuts} title={t.keyboardShortcuts} aria-label={t.keyboardShortcuts}>
                     <HelpCircle className="h-3.5 w-3.5" />
                 </Button>
             )}
@@ -1645,7 +1647,7 @@ function DataTableInner<TData extends object>({
             return {
                 id: col.id, accessorKey: col.id, header: col.label, enableHiding: true,
                 enableResizing: resolvedOptions.columnResizing, size: columnSizing[col.id] || undefined,
-                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex } satisfies ColumnMeta,
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix } satisfies ColumnMeta,
                 cell: ({ row }) => {
                     const value = row.getValue(col.id);
                     const rowData = row.original as Record<string, unknown>;
@@ -1664,6 +1666,22 @@ function DataTableInner<TData extends object>({
                                     const stackedValue = rowData[stackedId];
                                     return <span key={stackedId} className="text-sm first:font-medium [&:not(:first-child)]:text-xs [&:not(:first-child)]:text-muted-foreground">{stackedValue != null ? String(stackedValue) : "—"}</span>;
                                 })}
+                            </div>
+                        );
+                    }
+
+                    // Avatar composite cell: avatar image + text name
+                    if (col.avatarColumn) {
+                        const avatarUrl = rowData[col.avatarColumn];
+                        const displayValue = value != null ? String(value) : "—";
+                        return (
+                            <div className="flex items-center gap-2.5">
+                                {avatarUrl ? (
+                                    <img src={String(avatarUrl)} alt={displayValue} className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-border/50" />
+                                ) : (
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground ring-1 ring-border/50">{displayValue.charAt(0).toUpperCase()}</span>
+                                )}
+                                <span className="truncate font-medium">{displayValue}</span>
                             </div>
                         );
                     }
@@ -1698,9 +1716,10 @@ function DataTableInner<TData extends object>({
                     // Wrap helper for prefix/suffix/tooltip/lineClamp/colorMap
                     const wrapCell = (content: React.ReactNode) => {
                         let wrapped = content;
-                        // Prefix/suffix
-                        if (col.prefix || col.suffix) {
-                            wrapped = <span>{col.prefix}{wrapped}{col.suffix}</span>;
+                        // Prefix/suffix (supports dynamic server-resolved suffixes)
+                        const resolvedSuffix = col.hasDynamicSuffix ? (rowData[`_suffix_${col.id}`] as string | null) : col.suffix;
+                        if (col.prefix || resolvedSuffix) {
+                            wrapped = <span>{col.prefix}{wrapped}{resolvedSuffix}</span>;
                         }
                         // Color map
                         if (col.colorMap) {
@@ -2130,6 +2149,10 @@ function DataTableInner<TData extends object>({
 
     return (
         <div className="space-y-4 dt-root">
+            {/* Skip-link for keyboard users to bypass toolbar */}
+            <a href={`#dt-table-${tableName}`} className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-1.5 focus:text-primary-foreground focus:text-sm focus:font-medium focus:shadow-lg">
+                {t.skipToTable}
+            </a>
             {slots?.beforeTable}
 
             {/* ── Toolbar ── */}
@@ -2246,7 +2269,7 @@ function DataTableInner<TData extends object>({
 
             {/* ── Table ── */}
             {!isMobile && (!config?.deferLoading || deferLoaded) && (
-                <div className={cn("rounded-xl border shadow-sm overflow-hidden", className)}
+                <div id={`dt-table-${tableName}`} className={cn("rounded-xl border shadow-sm overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
                     <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}>
@@ -2400,11 +2423,28 @@ function DataTableInner<TData extends object>({
 
                                         // Row grouping mode
                                         if (groupedRows) {
+                                            // Resolve group header display labels using column options/type
+                                            const groupCol = groupByColumn ? mergedColumns.find((c) => c.id === groupByColumn) : null;
+                                            const resolveGroupLabel = (rawValue: string): string => {
+                                                if (!groupCol) return rawValue;
+                                                // Badge/option columns: map value to option label
+                                                if ((groupCol.type === "badge" || groupCol.type === "option") && groupCol.options) {
+                                                    const opt = groupCol.options.find((o) => o.value === rawValue);
+                                                    if (opt) return opt.label;
+                                                }
+                                                // Boolean columns: show Yes/No instead of true/false
+                                                if (groupCol.type === "boolean" || rawValue === "true" || rawValue === "false") {
+                                                    if (rawValue === "true" || rawValue === "1") return t.yes;
+                                                    if (rawValue === "false" || rawValue === "0") return t.no;
+                                                }
+                                                return rawValue;
+                                            };
                                             let rowIdx = 0;
                                             return [...groupedRows.entries()].map(([groupName, rows]) => {
                                                 const isCollapsed = collapsedGroups.has(groupName);
                                                 const startIdx = rowIdx;
                                                 rowIdx += rows.length;
+                                                const displayLabel = resolveGroupLabel(groupName);
                                                 return (
                                                     <>{/* group fragment */}
                                                         <TableRow key={`group-${groupName}`}
@@ -2417,7 +2457,7 @@ function DataTableInner<TData extends object>({
                                                             <TableCell colSpan={table.getVisibleLeafColumns().length} className="py-2 font-medium">
                                                                 <div className="flex items-center gap-2">
                                                                     {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                                                    <span>{groupName}</span>
+                                                                    <span>{displayLabel}</span>
                                                                     <span className="text-muted-foreground text-xs">({rows.length})</span>
                                                                 </div>
                                                             </TableCell>

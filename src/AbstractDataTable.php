@@ -492,6 +492,21 @@ abstract class AbstractDataTable extends Data
         }
 
         $dataCollection = $data instanceof \Illuminate\Support\Collection ? $data : collect($data);
+
+        // Resolve dynamic (closure-based) suffixes per-row
+        $suffixResolvers = ColumnBuilder::getSuffixResolvers();
+        if (! empty($suffixResolvers)) {
+            $dataCollection = $dataCollection->map(function ($row) use ($suffixResolvers) {
+                $rowArray = is_array($row) ? $row : (is_object($row) && method_exists($row, 'toArray') ? $row->toArray() : (array) $row);
+                foreach ($suffixResolvers as $colId => $resolver) {
+                    $value = $rowArray[$colId] ?? null;
+                    $rowArray["_suffix_{$colId}"] = $resolver($value, $rowArray);
+                }
+
+                return $rowArray;
+            });
+        }
+
         $footer = static::tableFooter($dataCollection);
 
         $selectAllUrl = null;

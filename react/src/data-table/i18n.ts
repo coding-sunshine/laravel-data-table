@@ -206,6 +206,9 @@ export interface DataTableTranslations {
     dateGroupWeek: string;
     dateGroupMonth: string;
     dateGroupYear: string;
+
+    // Accessibility
+    skipToTable: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -416,6 +419,9 @@ export const defaultTranslations: DataTableTranslations = {
     dateGroupWeek: "Week",
     dateGroupMonth: "Month",
     dateGroupYear: "Year",
+
+    // Accessibility
+    skipToTable: "Skip to table",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -597,4 +603,7 @@ export const frTranslations: DataTableTranslations = {
     dateGroupWeek: "Semaine",
     dateGroupMonth: "Mois",
     dateGroupYear: "Année",
+
+    // Accessibility
+    skipToTable: "Aller au tableau",
 };
