@@ -52,6 +52,16 @@ export interface DataTableColumnDef {
     stacked?: string[] | null;
     /** Whether this is a row index column (auto-incrementing row number) */
     rowIndex?: boolean;
+    /** Column ID that holds the avatar/image URL for composite avatar+text display */
+    avatarColumn?: string | null;
+    /** Whether this column has a dynamic (closure-based) suffix resolved server-side */
+    hasDynamicSuffix?: boolean;
+    /** Column IDs this computed column depends on */
+    computedFrom?: string[] | null;
+    /** Number of columns this cell should span */
+    colSpan?: number | null;
+    /** Whether this column should auto-size row heights based on content */
+    autoHeight?: boolean;
 }
 
 export interface DataTableQuickView {
@@ -132,6 +142,21 @@ export interface DataTableOptions {
     shortcutsOverlay: boolean;
     exportProgress: boolean;
     emptyStateIllustration: boolean;
+    /** Enable cell flashing when values change (via polling/realtime) */
+    cellFlashing: boolean;
+    /** Enable status bar with aggregate info for selected cells */
+    statusBar: boolean;
+    /** Enable multi-row clipboard paste for editable cells */
+    clipboardPaste: boolean;
+    /** Enable drag-to-fill for editable cells */
+    dragToFill: boolean;
+}
+
+/** Server-driven action visibility rule */
+export interface DataTableActionRule {
+    column: string;
+    operator: string;
+    value: unknown;
 }
 
 export interface DataTableResponse<TData = object> {
@@ -157,6 +182,12 @@ export interface DataTableResponse<TData = object> {
     importUrl?: string | null;
     /** Column ID to group rows by */
     groupByColumn?: string | null;
+    /** Pinned rows displayed at top of table */
+    pinnedTopRows?: Record<string, unknown>[] | null;
+    /** Pinned rows displayed at bottom of table */
+    pinnedBottomRows?: Record<string, unknown>[] | null;
+    /** Server-driven action visibility rules: action label → condition */
+    actionRules?: Record<string, DataTableActionRule> | null;
 }
 
 export interface DataTableConfirmOptions {
@@ -260,6 +291,8 @@ export interface DataTableProps<TData extends object> {
         beforeTable?: React.ReactNode;
         afterTable?: React.ReactNode;
         pagination?: React.ReactNode;
+        /** Custom status bar content */
+        statusBar?: React.ReactNode;
     };
     /** Called whenever table state changes (sorting, filtering, pagination, visibility, etc.) */
     onStateChange?: (state: import("./use-data-table").DataTableState) => void;
@@ -275,4 +308,12 @@ export interface DataTableProps<TData extends object> {
     groupByOptions?: string[];
     /** Callback when user changes the group-by column */
     onGroupByChange?: (columnId: string | null) => void;
+    /** Row spanning configuration: maps column ID to a function that returns span count */
+    rowSpan?: Record<string, (row: TData, index: number, allRows: TData[]) => number>;
+    /** Column spanning configuration: maps column ID to a function that returns span count */
+    columnSpan?: Record<string, (row: TData) => number>;
+    /** Called when cells are pasted from clipboard */
+    onClipboardPaste?: (startRowIndex: number, startColumnId: string, data: string[][]) => Promise<void> | void;
+    /** Called when drag-to-fill is completed */
+    onDragToFill?: (columnId: string, value: unknown, targetRowIds: unknown[]) => Promise<void> | void;
 }

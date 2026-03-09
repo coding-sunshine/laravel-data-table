@@ -206,6 +206,35 @@ export interface DataTableTranslations {
     dateGroupWeek: string;
     dateGroupMonth: string;
     dateGroupYear: string;
+
+    // Accessibility
+    skipToTable: string;
+
+    // Status bar
+    statusBarSum: string;
+    statusBarAvg: string;
+    statusBarCount: string;
+    statusBarMin: string;
+    statusBarMax: string;
+
+    // Clipboard paste
+    pasteSuccess: string;
+    pasteError: string;
+
+    // Drag to fill
+    dragToFill: string;
+
+    // PDF export
+    exportPdf: string;
+
+    // Pinned rows
+    pinnedRow: string;
+
+    // Saved filters (server-persisted)
+    savedFilters: string;
+    saveCurrentFilters: string;
+    filterName: string;
+    filterNamePlaceholder: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -416,6 +445,35 @@ export const defaultTranslations: DataTableTranslations = {
     dateGroupWeek: "Week",
     dateGroupMonth: "Month",
     dateGroupYear: "Year",
+
+    // Accessibility
+    skipToTable: "Skip to table",
+
+    // Status bar
+    statusBarSum: "Sum",
+    statusBarAvg: "Avg",
+    statusBarCount: "Count",
+    statusBarMin: "Min",
+    statusBarMax: "Max",
+
+    // Clipboard paste
+    pasteSuccess: "Pasted successfully",
+    pasteError: "Paste failed",
+
+    // Drag to fill
+    dragToFill: "Drag to fill",
+
+    // PDF export
+    exportPdf: "PDF",
+
+    // Pinned rows
+    pinnedRow: "Pinned",
+
+    // Saved filters (server-persisted)
+    savedFilters: "Saved filters",
+    saveCurrentFilters: "Save current filters",
+    filterName: "Filter name",
+    filterNamePlaceholder: "e.g. Active premium users",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -597,4 +655,33 @@ export const frTranslations: DataTableTranslations = {
     dateGroupWeek: "Semaine",
     dateGroupMonth: "Mois",
     dateGroupYear: "Année",
+
+    // Accessibility
+    skipToTable: "Aller au tableau",
+
+    // Status bar
+    statusBarSum: "Somme",
+    statusBarAvg: "Moy.",
+    statusBarCount: "Nombre",
+    statusBarMin: "Min",
+    statusBarMax: "Max",
+
+    // Clipboard paste
+    pasteSuccess: "Collé avec succès",
+    pasteError: "Échec du collage",
+
+    // Drag to fill
+    dragToFill: "Glisser pour remplir",
+
+    // PDF export
+    exportPdf: "PDF",
+
+    // Pinned rows
+    pinnedRow: "Épinglée",
+
+    // Saved filters (server-persisted)
+    savedFilters: "Filtres sauvegardés",
+    saveCurrentFilters: "Sauvegarder les filtres actuels",
+    filterName: "Nom du filtre",
+    filterNamePlaceholder: "ex. Utilisateurs premium actifs",
 };

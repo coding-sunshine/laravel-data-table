@@ -8,9 +8,52 @@ namespace Machour\DataTable\Columns;
  * Usage:
  *   ColumnBuilder::make('price', 'Price')->currency('EUR')->sortable()->summary('sum')->build()
  *   ColumnBuilder::make('status', 'Status')->iconColumn(['active' => 'check-circle', 'inactive' => 'x-circle'])->build()
+ *   ColumnBuilder::make('total', 'Total')->computed(['price', 'quantity'], 'price * quantity')->build()
  */
 class ColumnBuilder
 {
+    /** @var array<string, \Closure> Dynamic suffix resolvers keyed by column ID */
+    private static array $suffixResolvers = [];
+
+    /** @var array<string, \Closure> Computed column resolvers keyed by column ID */
+    private static array $computedResolvers = [];
+
+    /**
+     * Get all registered dynamic suffix resolvers.
+     *
+     * @return array<string, \Closure>
+     */
+    public static function getSuffixResolvers(): array
+    {
+        return static::$suffixResolvers;
+    }
+
+    /**
+     * Clear all registered suffix resolvers (useful between requests/tests).
+     */
+    public static function clearSuffixResolvers(): void
+    {
+        static::$suffixResolvers = [];
+    }
+
+    /**
+     * Get all registered computed column resolvers.
+     *
+     * @return array<string, \Closure>
+     */
+    public static function getComputedResolvers(): array
+    {
+        return static::$computedResolvers;
+    }
+
+    /**
+     * Clear all registered computed column resolvers.
+     */
+    public static function clearComputedResolvers(): void
+    {
+        static::$computedResolvers = [];
+    }
+
     private string $id;
 
     private string $label;
@@ -53,7 +96,7 @@ class ColumnBuilder
 
     private ?string $prefix = null;
 
-    private ?string $suffix = null;
+    private string|\Closure|null $suffix = null;
 
     private ?string $tooltip = null;
 
@@ -76,6 +119,16 @@ class ColumnBuilder
     private ?array $stacked = null;
 
     private bool $rowIndex = false;
+
+    private ?string $avatarColumn = null;
+
+    private ?array $computedFrom = null;
+
+    private ?\Closure $computedResolver = null;
+
+    private ?int $colSpan = null;
+
+    private bool $autoHeight = false;
 
     private function __construct(string $id, string $label)
     {
@@ -365,9 +418,12 @@ class ColumnBuilder
     }
 
     /**
-     * Add text after the cell value (e.g., 'kg', '%', ' items').
+     * Add text after the cell value.
+     *
+     * Accepts a static string (e.g., ' kg') or a closure for dynamic suffixes:
+     *   ->suffix(fn($value) => $value === 1 ? ' org' : ' orgs')
      */
-    public function suffix(string $suffix): self
+    public function suffix(string|\Closure $suffix): self
     {
         $this->suffix = $suffix;
 
@@ -487,10 +543,72 @@ class ColumnBuilder
     }
 
     /**
+     * Show an avatar image alongside this column's text value.
+     *
+     * @param  string  $imageColumn  The column ID that holds the avatar/image URL
+     */
+    public function avatar(string $imageColumn): self
+    {
+        $this->avatarColumn = $imageColumn;
+
+        return $this;
+    }
+
+    /**
+     * Define a computed column derived from other columns.
+     *
+     * The closure receives the row array and returns the computed value.
+     *
+     * @param  array<string>  $sourceColumns  Column IDs this column depends on
+     * @param  \Closure  $resolver  fn(array $row): mixed
+     */
+    public function computed(array $sourceColumns, \Closure $resolver): self
+    {
+        $this->computedFrom = $sourceColumns;
+        $this->computedResolver = $resolver;
+
+        return $this;
+    }
+
+    /**
+     * Set the number of columns this cell should span.
+     */
+    public function colSpan(int $span): self
+    {
+        $this->colSpan = $span;
+
+        return $this;
+    }
+
+    /**
+     * Enable dynamic row height auto-sizing for this column's content.
+     */
+    public function autoHeight(bool $autoHeight = true): self
+    {
+        $this->autoHeight = $autoHeight;
+
+        return $this;
+    }
+
+    /**
      * Build the Column instance.
      */
     public function build(): Column
     {
+        // If suffix is a Closure, register it for server-side resolution
+        $suffixValue = $this->suffix;
+        $hasDynamicSuffix = false;
+        if ($suffixValue instanceof \Closure) {
+            static::$suffixResolvers[$this->id] = $suffixValue;
+            $suffixValue = null;
+            $hasDynamicSuffix = true;
+        }
+
+        // If computed, register the resolver for server-side resolution
+        if ($this->computedResolver !== null) {
+            static::$computedResolvers[$this->id] = $this->computedResolver;
+        }
+
         return new Column(
             id: $this->id,
             label: $this->label,
@@ -513,7 +631,8 @@ class ColumnBuilder
             internalName: $this->internalName,
             relation: $this->relation,
             prefix: $this->prefix,
-            suffix: $this->suffix,
+            suffix: $suffixValue,
+            hasDynamicSuffix: $hasDynamicSuffix,
             tooltip: $this->tooltip,
             description: $this->description,
             lineClamp: $this->lineClamp,
@@ -525,6 +644,10 @@ class ColumnBuilder
             bulleted: $this->bulleted,
             stacked: $this->stacked,
             rowIndex: $this->rowIndex,
+            avatarColumn: $this->avatarColumn,
+            computedFrom: $this->computedFrom,
+            colSpan: $this->colSpan,
+            autoHeight: $this->autoHeight,
         );
     }
 }
