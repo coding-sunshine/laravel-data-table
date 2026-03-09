@@ -119,6 +119,7 @@ return [
         'toggle' => 60,
         'export' => 10,
         'import' => 5,
+        'ai' => 30,
     ],
 
     /*
@@ -131,5 +132,23 @@ return [
     |
     */
     'audit_table' => 'data_table_audit_log',
+
+    /*
+    |--------------------------------------------------------------------------
+    | AI Features (requires prism-php/prism)
+    |--------------------------------------------------------------------------
+    |
+    | Configure AI-powered features for data tables. Requires Prism PHP:
+    |   composer require prism-php/prism
+    |
+    | Supported models: 'openai:gpt-4o-mini', 'openai:gpt-4o',
+    | 'anthropic:claude-sonnet-4-20250514', 'anthropic:claude-haiku-4-5-20251001', 'ollama:llama3', etc.
+    |
+    */
+    'ai' => [
+        'model' => env('DATA_TABLE_AI_MODEL', 'openai:gpt-4o-mini'),
+        'max_tokens' => 1024,
+        'sample_size' => 50,
+    ],
 
 ];

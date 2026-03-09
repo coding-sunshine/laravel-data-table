@@ -185,7 +185,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Pivot table mode** — Row/column grouping with aggregation (sum, avg, count, min, max)
 - **valueGetter/valueFormatter** — Separate data access from display formatting (like AG Grid)
 - **Sparklines** — Inline SVG mini-charts (line and bar) in table cells
-- **AI assistant** — Natural language query input for filtering and sorting via callback
+- **AI assistant (Prism PHP)** — Natural language query, AI insights, smart suggestions, column summaries, and row enrichment via LLM
 - **Column auto-size** — Auto-fit column widths to content via double-click or API
 - **Analytics / KPI cards** — Built-in zero-dependency KPI cards above the table with delta arrows, formatting, and responsive grid
 - **Custom charts slot** — Bring your own charting library (Recharts, Chart.js, Nivo) via `slots.analytics` render prop
@@ -1081,6 +1081,19 @@ Each trait provides these public methods (most are auto-derived; override for cu
 | `tableAuditLogTable(): string` | Database table name. Default: `'data_table_audit_log'` |
 | `tableAuditLogEnabled(): bool` | Whether logging is enabled. Default: `true` |
 
+**HasAi:**
+
+| Method | Description |
+|--------|-------------|
+| `tableAiModel(): string` | LLM model (e.g., `'openai:gpt-4o-mini'`). Default from config |
+| `tableAiSampleSize(): int` | Max sample rows sent to LLM. Default: `50` |
+| `tableAiSystemContext(): string` | Domain-specific instructions for better AI responses |
+| `handleAiQuery(string, Request): JsonResponse` | NLQ → filters/sort |
+| `handleAiInsights(Request): JsonResponse` | Anomaly/trend/pattern detection |
+| `handleAiSuggest(Request): JsonResponse` | Smart filter/sort suggestions |
+| `handleAiColumnSummary(string, Request): JsonResponse` | Per-column analysis |
+| `handleAiEnrich(string, string, array, Request): JsonResponse` | Generate AI-computed column values |
+
 ### PHP Data Transfer Objects
 
 **`DataTableResponse`** — The Spatie Data DTO returned by `makeTable()`:
@@ -1360,6 +1373,7 @@ interface DataTableProps<TData extends object> {
     hasMore?: boolean;                      // More data available for infinite scroll
     sparklineData?: Record<string, number[][]>; // Sparkline data per column per row
     onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
+    aiBaseUrl?: string;                     // Base URL for built-in AI endpoints (enables insights, suggestions, enrich)
     onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
 
     // Layout & views
@@ -1619,7 +1633,7 @@ The `DataTableTranslations` interface has **100+ keys** covering every UI string
 | Column auto-size | `autosizeColumn`, `autosizeAllColumns` | Auto-size tooltips |
 | Cell range | `cellsSelected`, `clearSelection` | Range selection indicator |
 | Sparklines | `sparklineLabel` | Sparkline chart label |
-| AI assistant | `aiPlaceholder`, `aiAssistant`, `aiQuerying` | AI query input |
+| AI assistant | `aiAssistant`, `aiPlaceholder`, `aiQuerying`, `aiInsights`, `aiInsightsLoading`, `aiSuggestions`, `aiSuggestionsLoading`, `aiColumnSummary`, `aiColumnSummaryLoading`, `aiEnrich`, `aiEnrichPrompt`, `aiEnrichColumnName`, `aiEnrichLoading`, `aiEnrichSuccess`, `aiError`, `aiApply`, `aiAnomaly`, `aiTrend`, `aiPattern`, `aiRecommendation` | AI-native features |
 | Pivot | `pivotMode`, `pivotRowFields`, `pivotValueField` | Pivot mode controls |
 | Window scroller | `scrollToTop` | Scroll-to-top button |
 | API ref | `apiScrollToRow`, `apiAutosize`, `apiExport`, `apiResetFilters` | API ref action labels |
@@ -2833,8 +2847,14 @@ return [
         'toggle' => 60,                    // Max toggle requests per minute per user (0 = disabled)
         'export' => 10,                    // Max exports per minute per user (0 = disabled)
         'import' => 5,                     // Max imports per minute per user (0 = disabled)
+        'ai' => 30,                        // Max AI requests per minute per user (0 = disabled)
     ],
     'audit_table' => 'data_table_audit_log', // Database table for audit log storage
+    'ai' => [
+        'model' => env('DATA_TABLE_AI_MODEL', 'openai:gpt-4o-mini'), // Prism PHP model
+        'max_tokens' => 1024,              // Max tokens per AI response
+        'sample_size' => 50,               // Max rows sent to LLM for context
+    ],
 ];
 ```
 
@@ -2860,6 +2880,11 @@ The service provider registers these routes automatically:
 | POST | `/data-table/saved-views/{tableName}` | Create saved view |
 | PUT | `/data-table/saved-views/{tableName}/{id}` | Update saved view |
 | DELETE | `/data-table/saved-views/{tableName}/{id}` | Delete saved view |
+| POST | `/data-table/ai/{table}/query` | AI natural language query |
+| POST | `/data-table/ai/{table}/insights` | AI data insights |
+| POST | `/data-table/ai/{table}/suggest` | AI smart suggestions |
+| POST | `/data-table/ai/{table}/column-summary` | AI column summary |
+| POST | `/data-table/ai/{table}/enrich` | AI row enrichment |
 
 The route prefix and middleware are configurable via `config/data-table.php`.
 
@@ -3602,9 +3627,85 @@ Sparklines render as inline SVG charts (80×20px by default). Line charts use a 
 
 ---
 
-## AI Assistant
+## AI Assistant (Prism PHP / Laravel AI)
 
-Add a natural language query input for filtering and sorting:
+AI-native data table features powered by [Prism PHP](https://github.com/prism-php/prism). Requires `composer require prism-php/prism` and a configured LLM provider (OpenAI, Anthropic, Ollama, etc.).
+
+### Setup
+
+**1. Install Prism PHP:**
+
+```bash
+composer require prism-php/prism
+```
+
+**2. Add the `HasAi` trait to your DataTable:**
+
+```php
+use Machour\DataTable\Concerns\HasAi;
+
+class ProductDataTable extends AbstractDataTable
+{
+    use HasAi;
+
+    // Optional: override the default AI model
+    public static function tableAiModel(): string
+    {
+        return 'anthropic:claude-sonnet-4-20250514'; // or 'openai:gpt-4o', 'ollama:llama3'
+    }
+
+    // Optional: add domain-specific context for better AI responses
+    public static function tableAiSystemContext(): string
+    {
+        return 'This is an e-commerce product catalog. Prices are in USD.';
+    }
+}
+```
+
+**3. Register the table with the AI controller:**
+
+```php
+// In AppServiceProvider::boot()
+DataTableAiController::register('products', ProductDataTable::class);
+```
+
+**4. Configure the model (optional):**
+
+```env
+DATA_TABLE_AI_MODEL=openai:gpt-4o-mini
+```
+
+Or in `config/data-table.php`:
+
+```php
+'ai' => [
+    'model' => 'openai:gpt-4o-mini',
+    'max_tokens' => 1024,
+    'sample_size' => 50,
+],
+```
+
+### Usage (React)
+
+**Built-in AI (recommended) — uses `aiBaseUrl`:**
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    aiBaseUrl="/data-table/ai/products"
+/>
+```
+
+This enables all 5 AI features with zero custom code:
+
+- Natural language query bar (NLQ)
+- AI Insights panel (anomalies, trends, patterns)
+- AI Smart Suggestions (recommended filters)
+- AI Column Summary (per-column analysis)
+- AI Row Enrichment (generate new column values)
+
+**Custom AI (callback-only) — uses `onAiQuery`:**
 
 ```tsx
 <DataTable
@@ -3617,12 +3718,75 @@ Add a natural language query input for filtering and sorting:
             body: JSON.stringify({ query, table: 'products' }),
         });
         return response.json();
-        // Expected: { filters: { status: 'active' }, sort: 'price' }
+        // Expected: { filters: { status: 'active' }, sort: '-price' }
     }}
 />
 ```
 
-An input field appears below the table. Users type natural language queries like "show me active products sorted by price". The `onAiQuery` callback receives the query string and should return filter/sort configuration that gets applied via URL parameters.
+You can also use both — `onAiQuery` takes precedence for the NLQ bar, while `aiBaseUrl` powers the insights/suggestions/enrich panel.
+
+### AI Features
+
+| Feature | Description | Endpoint |
+|---|---|---|
+| **Natural Language Query** | "Show overdue orders over $500" → auto-applies filters/sort | `POST /ai/{table}/query` |
+| **AI Insights** | Automatic anomaly detection, trends, patterns, recommendations | `POST /ai/{table}/insights` |
+| **AI Smart Suggestions** | Proactive filter/sort recommendations based on your data | `POST /ai/{table}/suggest` |
+| **AI Column Summary** | "Explain this column" — distribution analysis per column | `POST /ai/{table}/column-summary` |
+| **AI Row Enrichment** | Generate new AI-computed column values (sentiment, category, etc.) | `POST /ai/{table}/enrich` |
+
+### AI Endpoints
+
+All endpoints are rate-limited (default: 30 req/min per user) and gated by `tableAuthorize()`:
+
+```
+POST /data-table/ai/{table}/query         { query: "..." }
+POST /data-table/ai/{table}/insights      {}
+POST /data-table/ai/{table}/suggest       { current_filters: {...} }
+POST /data-table/ai/{table}/column-summary { column: "price" }
+POST /data-table/ai/{table}/enrich        { prompt: "...", column_name: "sentiment", row_ids: [1,2,3] }
+```
+
+### Authorization
+
+Gate AI actions via `tableAuthorize()`:
+
+```php
+public static function tableAuthorize(string $action, Request $request): bool
+{
+    return match ($action) {
+        'ai_query', 'ai_insights', 'ai_suggest', 'ai_column_summary' => $request->user()?->can('view_table'),
+        'ai_enrich' => $request->user()?->can('edit_table'),
+        default => true,
+    };
+}
+```
+
+### How It Works
+
+1. The `HasAi` trait builds a schema description from your `tableColumns()` definitions (column types, labels, options, filter operators)
+2. Sample rows from the current filtered dataset are sent as context to the LLM
+3. The LLM generates structured JSON (filters, sorts, insights, summaries) — not raw SQL
+4. Responses are applied via the same URL-parameter system used by all other table features
+5. The AI never sees your full database — only the schema + a configurable sample (default: 50 rows)
+
+### Supported Models
+
+Any model supported by Prism PHP works out of the box:
+
+| Provider | Models |
+|---|---|
+| OpenAI | `openai:gpt-4o-mini`, `openai:gpt-4o`, `openai:gpt-4-turbo` |
+| Anthropic | `anthropic:claude-sonnet-4-20250514`, `anthropic:claude-haiku-4-5-20251001` |
+| Ollama | `ollama:llama3`, `ollama:mistral`, `ollama:codellama` |
+| Any Prism provider | See [Prism PHP docs](https://prismphp.com) |
+
+### Props Reference
+
+| Prop | Type | Description |
+|---|---|---|
+| `aiBaseUrl` | `string` | Base URL for AI endpoints (e.g., `/data-table/ai/products`). Enables built-in AI features. |
+| `onAiQuery` | `(query: string) => Promise<{filters?, sort?}>` | Custom NLQ handler (takes precedence over `aiBaseUrl` for queries) |
 
 ---
 
