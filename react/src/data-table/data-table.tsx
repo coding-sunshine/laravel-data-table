@@ -102,7 +102,7 @@ import { defaultTranslations, type DataTableTranslations } from "./i18n";
 import { DataTablePagination } from "./data-table-pagination";
 import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
-import type { DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableFormField, DataTableHeaderAction, DataTableOptions, DataTableProps, DataTableRule } from "./types";
+import type { DataTableAnalytic, DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableFormField, DataTableHeaderAction, DataTableOptions, DataTableProps, DataTableRule } from "./types";
 import { useDataTable } from "./use-data-table";
 import { DataTableColumn, extractColumnConfigs } from "./data-table-column";
 import {
@@ -412,6 +412,97 @@ function SparklineChart({ data, type = "line", width = 80, height = 20 }: { data
         <svg width={width} height={height} className="inline-block align-middle">
             <polyline points={points} fill="none" className="stroke-primary" strokeWidth="1.5" />
         </svg>
+    );
+}
+
+// ─── Analytics KPI Card (zero dependencies) ─────────────────────────────────
+
+function AnalyticsCard({ card, t }: { card: DataTableAnalytic; t: DataTableTranslations }) {
+    const formattedValue = useMemo(() => {
+        const v = card.value;
+        if (typeof v === "string") return v;
+        const num = typeof v === "number" ? v : parseFloat(String(v));
+        if (isNaN(num)) return String(v);
+
+        switch (card.format) {
+            case "currency":
+                return `${card.prefix ?? "$"}${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            case "percentage":
+                return `${num.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+            default:
+                return num.toLocaleString();
+        }
+    }, [card.value, card.format, card.prefix]);
+
+    const changeColor = card.change != null
+        ? card.change > 0 ? "text-emerald-600 dark:text-emerald-400"
+        : card.change < 0 ? "text-red-600 dark:text-red-400"
+        : "text-muted-foreground"
+        : null;
+
+    const changeArrow = card.change != null
+        ? card.change > 0 ? "\u2191" : card.change < 0 ? "\u2193" : ""
+        : null;
+
+    return (
+        <div className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">{card.label}</span>
+                {card.icon && <span className="text-lg text-muted-foreground/60">{card.icon}</span>}
+            </div>
+            <div className="flex items-baseline gap-2">
+                <span className={cn("text-2xl font-bold tracking-tight", card.color)}>
+                    {card.format !== "currency" && card.prefix}{formattedValue}{card.suffix}
+                </span>
+                {card.change != null && (
+                    <span className={cn("text-sm font-medium", changeColor)}>
+                        {changeArrow} {Math.abs(card.change).toFixed(1)}%
+                    </span>
+                )}
+            </div>
+            {card.description && (
+                <span className="text-xs text-muted-foreground">{card.description}</span>
+            )}
+        </div>
+    );
+}
+
+function AnalyticsSection<TData extends object>({
+    analytics,
+    slot,
+    data,
+    columns,
+    t,
+}: {
+    analytics: DataTableAnalytic[];
+    slot?: React.ReactNode | ((props: { data: TData[]; columns: DataTableColumnDef[]; analytics: DataTableAnalytic[] }) => React.ReactNode);
+    data: TData[];
+    columns: DataTableColumnDef[];
+    t: DataTableTranslations;
+}) {
+    // Custom slot — either a render function or static ReactNode
+    if (slot) {
+        if (typeof slot === "function") {
+            return <>{slot({ data, columns, analytics })}</>;
+        }
+        return <>{slot}</>;
+    }
+
+    // Default: built-in KPI cards grid
+    if (analytics.length === 0) return null;
+
+    return (
+        <div className={cn(
+            "grid gap-4 print:hidden",
+            analytics.length === 1 && "grid-cols-1",
+            analytics.length === 2 && "grid-cols-1 sm:grid-cols-2",
+            analytics.length === 3 && "grid-cols-1 sm:grid-cols-3",
+            analytics.length >= 4 && "grid-cols-2 sm:grid-cols-4",
+        )}>
+            {analytics.map((card, i) => (
+                <AnalyticsCard key={`${card.label}-${i}`} card={card} t={t} />
+            ))}
+        </div>
     );
 }
 
@@ -2721,6 +2812,17 @@ function DataTableInner<TData extends object>({
                 {t.skipToTable}
             </a>
             {slots?.beforeTable}
+
+            {/* ── Analytics section ── */}
+            {(tableData.analytics?.length || slots?.analytics) && (
+                <AnalyticsSection<TData>
+                    analytics={tableData.analytics ?? []}
+                    slot={slots?.analytics}
+                    data={tableData.data}
+                    columns={mergedColumns}
+                    t={t}
+                />
+            )}
 
             {/* ── Toolbar ── */}
             <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 print:hidden">

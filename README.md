@@ -183,6 +183,8 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Sparklines** — Inline SVG mini-charts (line and bar) in table cells
 - **AI assistant** — Natural language query input for filtering and sorting via callback
 - **Column auto-size** — Auto-fit column widths to content via double-click or API
+- **Analytics / KPI cards** — Built-in zero-dependency KPI cards above the table with delta arrows, formatting, and responsive grid
+- **Custom charts slot** — Bring your own charting library (Recharts, Chart.js, Nivo) via `slots.analytics` render prop
 
 ### Internationalization
 
@@ -3045,6 +3047,116 @@ export default function ProductsPage({ tableData }: Props) {
     );
 }
 ```
+
+---
+
+## Analytics / KPI Cards
+
+Display summary KPI cards above the table — zero charting dependencies required. Optionally bring your own charting library for custom visualizations.
+
+### Built-in KPI Cards (Zero Dependencies)
+
+Define analytics in your DataTable class:
+
+```php
+class ProductDataTable extends AbstractDataTable
+{
+    public static function tableAnalytics(): array
+    {
+        return [
+            [
+                'label' => 'Total Revenue',
+                'value' => Product::sum('price'),
+                'format' => 'currency',
+                'prefix' => '$',
+                'change' => 12.5,   // +12.5% positive delta (green arrow)
+                'description' => 'Last 30 days',
+                'icon' => '💰',
+            ],
+            [
+                'label' => 'Active Products',
+                'value' => Product::where('status', 'active')->count(),
+                'format' => 'number',
+                'change' => -3.2,   // -3.2% negative delta (red arrow)
+            ],
+            [
+                'label' => 'Avg Price',
+                'value' => Product::avg('price'),
+                'format' => 'currency',
+                'prefix' => '$',
+            ],
+            [
+                'label' => 'Conversion Rate',
+                'value' => 68.4,
+                'format' => 'percentage',
+                'change' => 2.1,
+                'color' => 'text-blue-600',
+            ],
+        ];
+    }
+}
+```
+
+That's it — KPI cards render automatically above the table with responsive grid layout, delta arrows, and formatting. No React code needed for the basic case.
+
+**Card properties:**
+
+| Property | Type | Description |
+|---|---|---|
+| `label` | `string` | Card title |
+| `value` | `number\|string` | The metric value |
+| `format` | `string` | `'number'`, `'currency'`, `'percentage'`, or `'text'` |
+| `change` | `float\|null` | Percentage change — positive shows green up arrow, negative shows red down arrow |
+| `prefix` | `string\|null` | Text before value (e.g., `'$'`, `'€'`) |
+| `suffix` | `string\|null` | Text after value (e.g., `' units'`) |
+| `color` | `string\|null` | Tailwind color class (e.g., `'text-emerald-600'`) |
+| `icon` | `string\|null` | Icon or emoji displayed in the card corner |
+| `description` | `string\|null` | Small text below the value |
+
+### Custom Charts (Bring Your Own Library)
+
+For full chart visualizations, use the `slots.analytics` render prop. Your charting library is only loaded if you use it — the DataTable package has zero chart dependencies.
+
+```tsx
+import { BarChart, Bar, XAxis, YAxis } from 'recharts'; // or any library
+
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    slots={{
+        analytics: ({ data, columns, analytics }) => (
+            <div className="grid grid-cols-4 gap-4 mb-4">
+                {/* Built-in KPI cards for the first two metrics */}
+                {analytics.slice(0, 2).map((card) => (
+                    <div key={card.label} className="rounded-lg border p-4">
+                        <div className="text-sm text-muted-foreground">{card.label}</div>
+                        <div className="text-2xl font-bold">{card.value}</div>
+                    </div>
+                ))}
+
+                {/* Custom Recharts bar chart */}
+                <div className="col-span-2 rounded-lg border p-4">
+                    <BarChart width={400} height={120} data={data}>
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Bar dataKey="price" fill="hsl(var(--primary))" />
+                    </BarChart>
+                </div>
+            </div>
+        ),
+    }}
+/>
+```
+
+The `slots.analytics` accepts either:
+- A **React node** — static content rendered above the table
+- A **render function** — receives `{ data, columns, analytics }` for dynamic charts built from table data
+
+**Behavior:**
+- If `tableAnalytics()` returns an empty array and no `slots.analytics` is provided, nothing renders
+- If a charting library isn't installed, it simply isn't imported — no silent failures needed
+- The analytics section is hidden in print mode (`print:hidden`)
+- Cards auto-layout in a responsive grid: 1 col on mobile, 2-4 cols on desktop based on card count
 
 ---
 

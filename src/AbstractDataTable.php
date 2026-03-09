@@ -129,6 +129,18 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Return analytics cards to display above the table.
+     * Each card is an array with: label, value, format (number|currency|percentage), change (delta %), prefix, suffix, color, icon.
+     * Override this method in your DataTable to provide KPI cards.
+     *
+     * @return array<int, array{label: string, value: float|int|string, format?: string, change?: float|null, prefix?: string|null, suffix?: string|null, color?: string|null, icon?: string|null, description?: string|null}>
+     */
+    public static function tableAnalytics(): array
+    {
+        return [];
+    }
+
+    /**
      * @return array<int, Column>
      */
     abstract public static function tableColumns(): array;
@@ -659,6 +671,9 @@ abstract class AbstractDataTable extends Data
         // Server-driven action rules
         $actionRules = static::tableActionRules();
 
+        // Analytics KPI cards
+        $analytics = static::tableAnalytics();
+
         return new DataTableResponse(
             data: $dataCollection->all(),
             columns: static::tableColumns(),
@@ -677,6 +692,7 @@ abstract class AbstractDataTable extends Data
             pinnedTopRows: ! empty($pinnedTop) ? $pinnedTop : null,
             pinnedBottomRows: ! empty($pinnedBottom) ? $pinnedBottom : null,
             actionRules: ! empty($actionRules) ? $actionRules : null,
+            analytics: ! empty($analytics) ? $analytics : null,
         );
     }
 

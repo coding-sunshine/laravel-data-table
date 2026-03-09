@@ -201,6 +201,26 @@ export interface DataTableActionRule {
     value: unknown;
 }
 
+/** Analytics KPI card definition from the server */
+export interface DataTableAnalytic {
+    label: string;
+    value: number | string;
+    /** Format: 'number' | 'currency' | 'percentage' | 'text' */
+    format?: string | null;
+    /** Percentage change (positive = up, negative = down) */
+    change?: number | null;
+    /** Text before value (e.g., '$') */
+    prefix?: string | null;
+    /** Text after value (e.g., ' units') */
+    suffix?: string | null;
+    /** Tailwind color class (e.g., 'text-emerald-600') */
+    color?: string | null;
+    /** Icon name or emoji */
+    icon?: string | null;
+    /** Description text below the value */
+    description?: string | null;
+}
+
 export interface DataTableResponse<TData = object> {
     data: TData[];
     columns: DataTableColumnDef[];
@@ -230,6 +250,8 @@ export interface DataTableResponse<TData = object> {
     pinnedBottomRows?: Record<string, unknown>[] | null;
     /** Server-driven action visibility rules: action label → condition */
     actionRules?: Record<string, DataTableActionRule> | null;
+    /** Analytics KPI cards displayed above the table */
+    analytics?: DataTableAnalytic[] | null;
 }
 
 export interface DataTableConfirmOptions {
@@ -330,6 +352,8 @@ export interface DataTableProps<TData extends object> {
     /** Slot overrides for composability */
     slots?: {
         toolbar?: React.ReactNode;
+        /** Custom analytics/charts section above the table. Receives data and columns for building custom visualizations. */
+        analytics?: React.ReactNode | ((props: { data: TData[]; columns: import("./types").DataTableColumnDef[]; analytics: import("./types").DataTableAnalytic[] }) => React.ReactNode);
         beforeTable?: React.ReactNode;
         afterTable?: React.ReactNode;
         pagination?: React.ReactNode;

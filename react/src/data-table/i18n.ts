@@ -277,6 +277,11 @@ export interface DataTableTranslations {
 
     // API ref
     goToRow: string;
+
+    // Analytics
+    analyticsTitle: string;
+    analyticsChange: string;
+    analyticsNoChange: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -558,6 +563,11 @@ export const defaultTranslations: DataTableTranslations = {
 
     // API ref
     goToRow: "Go to row",
+
+    // Analytics
+    analyticsTitle: "Analytics",
+    analyticsChange: "change",
+    analyticsNoChange: "no change",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -810,4 +820,9 @@ export const frTranslations: DataTableTranslations = {
 
     // API ref
     goToRow: "Aller à la ligne",
+
+    // Analytics
+    analyticsTitle: "Analytique",
+    analyticsChange: "variation",
+    analyticsNoChange: "aucune variation",
 };
