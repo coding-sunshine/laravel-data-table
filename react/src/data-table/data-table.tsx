@@ -46,6 +46,7 @@ import {
     AlignJustify,
     ArrowDown,
     ArrowUp,
+    BarChart3,
     Calendar,
     Check,
     ChevronDown,
@@ -61,21 +62,27 @@ import {
     FileDown,
     FileSpreadsheet,
     FileText,
+    Grid3X3,
     GripVertical,
     Hash,
     HelpCircle,
     Image as ImageIcon,
+    Kanban,
     Keyboard,
+    LayoutGrid,
+    LayoutList,
     Link as LinkIcon,
     List,
     Loader2,
     Mail,
+    Paintbrush,
     PanelRight,
     Pencil,
     Percent,
     Phone,
     Pin,
     PinOff,
+    Plus,
     Printer,
     Redo2,
     RefreshCw,
@@ -88,6 +95,7 @@ import {
     Type,
     Undo2,
     Upload,
+    Users,
     X,
 } from "lucide-react";
 import {
@@ -102,7 +110,7 @@ import { defaultTranslations, type DataTableTranslations } from "./i18n";
 import { DataTablePagination } from "./data-table-pagination";
 import { DataTableRowActions } from "./data-table-row-actions";
 import { DataTableQuickViews } from "./data-table-quick-views";
-import type { DataTableAnalytic, DataTableColumnDef, DataTableConfirmOptions, DataTableDensity, DataTableFormField, DataTableHeaderAction, DataTableOptions, DataTableProps, DataTableRule } from "./types";
+import type { DataTableAnalytic, DataTableColumnDef, DataTableColumnStats, DataTableConditionalFormatRule, DataTableConfirmOptions, DataTableDensity, DataTableFormField, DataTableHeaderAction, DataTableLayoutMode, DataTableOptions, DataTablePresenceUser, DataTableProps, DataTableRule } from "./types";
 import { useDataTable } from "./use-data-table";
 import { DataTableColumn, extractColumnConfigs } from "./data-table-column";
 import {
@@ -1609,6 +1617,792 @@ function MobileCardLayout<TData>({ rows, columns, renderCell, actions, onRowClic
     );
 }
 
+// ─── Layout Switcher ─────────────────────────────────────────────────────
+
+function LayoutSwitcher({ layout, onLayoutChange, showKanban, t }: {
+    layout: DataTableLayoutMode; onLayoutChange: (mode: DataTableLayoutMode) => void;
+    showKanban: boolean; t: DataTableTranslations;
+}) {
+    const modes: { mode: DataTableLayoutMode; icon: React.ReactNode; label: string }[] = [
+        { mode: "table", icon: <LayoutList className="h-3.5 w-3.5" />, label: t.layoutTable },
+        { mode: "grid", icon: <LayoutGrid className="h-3.5 w-3.5" />, label: t.layoutGrid },
+        { mode: "cards", icon: <Rows3 className="h-3.5 w-3.5" />, label: t.layoutCards },
+        ...(showKanban ? [{ mode: "kanban" as const, icon: <Kanban className="h-3.5 w-3.5" />, label: t.layoutKanban }] : []),
+    ];
+    return (
+        <div className="inline-flex items-center rounded-lg border bg-muted/30 p-0.5">
+            {modes.map(({ mode, icon, label }) => (
+                <button key={mode} type="button" title={label}
+                    className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-all",
+                        layout === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                    onClick={() => onLayoutChange(mode)}>
+                    {icon}
+                    <span className="hidden sm:inline">{label}</span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// ─── Grid Layout ─────────────────────────────────────────────────────────
+
+function GridLayout<TData>({ rows, columns, renderCell, actions, onRowClick, rowLink, t, density,
+    imageColumn, titleColumn, subtitleColumn }: {
+    rows: TData[]; columns: DataTableColumnDef[];
+    renderCell?: (columnId: string, value: unknown, row: TData) => React.ReactNode | undefined;
+    actions?: import("./types").DataTableAction<TData>[];
+    onRowClick?: (row: TData) => void; rowLink?: (row: TData) => string;
+    t: DataTableTranslations; density: DataTableDensity;
+    imageColumn?: string; titleColumn?: string; subtitleColumn?: string;
+}) {
+    return (
+        <div className={cn("grid gap-4",
+            "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
+            {rows.length === 0 ? (
+                <div className="col-span-full text-center py-12 text-muted-foreground">{t.noData}</div>
+            ) : rows.map((row, idx) => {
+                const rowData = row as Record<string, unknown>;
+                const handleClick = () => {
+                    if (rowLink) window.location.href = rowLink(row);
+                    else if (onRowClick) onRowClick(row);
+                };
+                const isClickable = !!onRowClick || !!rowLink;
+                const imgSrc = imageColumn ? rowData[imageColumn] as string | undefined : undefined;
+                const title = titleColumn ? String(rowData[titleColumn] ?? "") : null;
+                const subtitle = subtitleColumn ? String(rowData[subtitleColumn] ?? "") : null;
+                const visibleCols = columns.filter(c => c.visible !== false && c.id !== imageColumn && c.id !== titleColumn && c.id !== subtitleColumn);
+
+                return (
+                    <div key={rowData.id != null ? String(rowData.id) : idx}
+                        className={cn("group rounded-xl border bg-card shadow-sm overflow-hidden transition-all",
+                            isClickable && "cursor-pointer hover:shadow-md hover:border-primary/30",
+                            density === "compact" && "text-xs")}
+                        onClick={isClickable ? handleClick : undefined}>
+                        {imgSrc && (
+                            <div className="aspect-video bg-muted overflow-hidden">
+                                <img src={imgSrc} alt={title ?? ""} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                            </div>
+                        )}
+                        <div className={cn("p-4 space-y-2", density === "compact" && "p-2.5 space-y-1", density === "spacious" && "p-5 space-y-3")}>
+                            {title && <h3 className="font-semibold text-sm truncate">{title}</h3>}
+                            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
+                            {visibleCols.slice(0, 4).map(col => {
+                                const value = rowData[col.id];
+                                const custom = renderCell?.(col.id, value, row);
+                                return (
+                                    <div key={col.id} className="flex items-center justify-between gap-2">
+                                        <span className="text-[11px] text-muted-foreground shrink-0">{col.label}</span>
+                                        <span className="text-xs text-right truncate">
+                                            {custom !== undefined ? custom : value == null ? "—" : String(value)}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                            {actions && actions.length > 0 && (
+                                <div className="flex justify-end gap-1 pt-2 border-t">
+                                    <DataTableRowActions row={row} actions={actions} t={t} />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Enhanced Card Layout ────────────────────────────────────────────────
+
+function CardLayout<TData>({ rows, columns, renderCell, actions, onRowClick, rowLink, t, density,
+    titleColumn, subtitleColumn }: {
+    rows: TData[]; columns: DataTableColumnDef[];
+    renderCell?: (columnId: string, value: unknown, row: TData) => React.ReactNode | undefined;
+    actions?: import("./types").DataTableAction<TData>[];
+    onRowClick?: (row: TData) => void; rowLink?: (row: TData) => string;
+    t: DataTableTranslations; density: DataTableDensity;
+    titleColumn?: string; subtitleColumn?: string;
+}) {
+    const visibleCols = columns.filter(c => c.visible !== false && c.id !== titleColumn && c.id !== subtitleColumn);
+    return (
+        <div className="space-y-3">
+            {rows.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">{t.noData}</div>
+            ) : rows.map((row, idx) => {
+                const rowData = row as Record<string, unknown>;
+                const handleClick = () => {
+                    if (rowLink) window.location.href = rowLink(row);
+                    else if (onRowClick) onRowClick(row);
+                };
+                const isClickable = !!onRowClick || !!rowLink;
+                const title = titleColumn ? String(rowData[titleColumn] ?? "") : null;
+                const subtitle = subtitleColumn ? String(rowData[subtitleColumn] ?? "") : null;
+
+                return (
+                    <div key={rowData.id != null ? String(rowData.id) : idx}
+                        className={cn("rounded-xl border bg-card shadow-sm transition-all",
+                            isClickable && "cursor-pointer hover:shadow-md hover:border-primary/30",
+                            density === "compact" && "text-xs")}
+                        onClick={isClickable ? handleClick : undefined}>
+                        <div className={cn("p-4", density === "compact" && "p-3", density === "spacious" && "p-6")}>
+                            {(title || subtitle) && (
+                                <div className="mb-3 pb-3 border-b">
+                                    {title && <h3 className="font-semibold text-base">{title}</h3>}
+                                    {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                                {visibleCols.map(col => {
+                                    const value = rowData[col.id];
+                                    const custom = renderCell?.(col.id, value, row);
+                                    return (
+                                        <div key={col.id} className="space-y-0.5">
+                                            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{col.label}</span>
+                                            <div className="text-sm">
+                                                {custom !== undefined ? custom : value == null ? "—" : String(value)}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {actions && actions.length > 0 && (
+                                <div className="flex justify-end gap-1 pt-3 mt-3 border-t">
+                                    <DataTableRowActions row={row} actions={actions} t={t} />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Column Statistics Popover ───────────────────────────────────────────
+
+function computeColumnStats(data: Record<string, unknown>[], columnId: string, columnType: string): DataTableColumnStats {
+    const values = data.map(row => row[columnId]);
+    const count = values.length;
+    const nullCount = values.filter(v => v === null || v === undefined || v === "").length;
+    const nonNull = values.filter(v => v !== null && v !== undefined && v !== "");
+    const uniqueCount = new Set(nonNull.map(v => String(v))).size;
+
+    const stats: DataTableColumnStats = { count, nullCount, uniqueCount };
+
+    // Numeric stats
+    if (columnType === "number" || columnType === "currency" || columnType === "percentage") {
+        const nums = nonNull.map(v => typeof v === "number" ? v : parseFloat(String(v))).filter(n => !isNaN(n));
+        if (nums.length > 0) {
+            const sorted = [...nums].sort((a, b) => a - b);
+            stats.min = sorted[0];
+            stats.max = sorted[sorted.length - 1];
+            stats.sum = nums.reduce((a, b) => a + b, 0);
+            stats.avg = stats.sum / nums.length;
+            const mid = Math.floor(sorted.length / 2);
+            stats.median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+
+            // Distribution: 8 buckets
+            const range = stats.max - stats.min;
+            if (range > 0) {
+                const bucketCount = Math.min(8, uniqueCount);
+                const bucketSize = range / bucketCount;
+                const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+                    bucket: `${(stats.min! + i * bucketSize).toFixed(1)}`,
+                    count: 0,
+                }));
+                for (const n of nums) {
+                    const idx = Math.min(Math.floor((n - stats.min!) / bucketSize), bucketCount - 1);
+                    buckets[idx].count++;
+                }
+                stats.distribution = buckets;
+            }
+        }
+    } else {
+        // Categorical distribution: top 8 values by frequency
+        const freq = new Map<string, number>();
+        for (const v of nonNull) {
+            const key = String(v);
+            freq.set(key, (freq.get(key) ?? 0) + 1);
+        }
+        stats.distribution = [...freq.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([bucket, count]) => ({ bucket, count }));
+    }
+
+    return stats;
+}
+
+function ColumnStatsPopover({ columnId, columnLabel, columnType, data, t }: {
+    columnId: string; columnLabel: string; columnType: string;
+    data: Record<string, unknown>[]; t: DataTableTranslations;
+}) {
+    const [open, setOpen] = useState(false);
+    const stats = useMemo(() => open ? computeColumnStats(data, columnId, columnType) : null, [open, data, columnId, columnType]);
+    const isNumeric = columnType === "number" || columnType === "currency" || columnType === "percentage";
+    const maxDistCount = stats?.distribution ? Math.max(...stats.distribution.map(d => d.count)) : 0;
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <button type="button" className="p-0.5 rounded hover:bg-muted transition-colors" title={t.columnStats}>
+                    <BarChart3 className="h-3 w-3 text-muted-foreground/60" />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-0">
+                <div className="p-3 border-b">
+                    <h4 className="font-semibold text-sm">{columnLabel}</h4>
+                    <p className="text-xs text-muted-foreground">{t.columnStats}</p>
+                </div>
+                {stats && (
+                    <div className="p-3 space-y-3">
+                        {/* Basic stats */}
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="text-center p-1.5 rounded bg-muted/50">
+                                <div className="text-xs text-muted-foreground">{t.statsCount}</div>
+                                <div className="text-sm font-semibold tabular-nums">{stats.count}</div>
+                            </div>
+                            <div className="text-center p-1.5 rounded bg-muted/50">
+                                <div className="text-xs text-muted-foreground">{t.statsNulls}</div>
+                                <div className="text-sm font-semibold tabular-nums">{stats.nullCount}</div>
+                            </div>
+                            <div className="text-center p-1.5 rounded bg-muted/50">
+                                <div className="text-xs text-muted-foreground">{t.statsUnique}</div>
+                                <div className="text-sm font-semibold tabular-nums">{stats.uniqueCount}</div>
+                            </div>
+                        </div>
+
+                        {/* Numeric stats */}
+                        {isNumeric && stats.min !== undefined && (
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { label: t.summaryMin, value: stats.min },
+                                    { label: t.summaryMax, value: stats.max },
+                                    { label: t.summaryAvg, value: stats.avg },
+                                    { label: t.statsMedian, value: stats.median },
+                                    { label: t.summarySum, value: stats.sum },
+                                ].filter(s => s.value !== undefined).map(({ label, value }) => (
+                                    <div key={label} className="flex justify-between text-xs py-0.5">
+                                        <span className="text-muted-foreground">{label}</span>
+                                        <span className="font-medium tabular-nums">{Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Distribution chart */}
+                        {stats.distribution && stats.distribution.length > 0 && (
+                            <div className="space-y-1">
+                                <h5 className="text-xs font-medium text-muted-foreground">{t.statsDistribution}</h5>
+                                <div className="space-y-0.5">
+                                    {stats.distribution.map((d, i) => (
+                                        <div key={i} className="flex items-center gap-2 text-xs">
+                                            <span className="w-16 truncate text-muted-foreground text-right shrink-0" title={d.bucket}>{d.bucket}</span>
+                                            <div className="flex-1 h-4 bg-muted/50 rounded overflow-hidden">
+                                                <div className="h-full bg-primary/40 rounded transition-all"
+                                                    style={{ width: `${maxDistCount > 0 ? (d.count / maxDistCount) * 100 : 0}%` }} />
+                                            </div>
+                                            <span className="w-8 text-right tabular-nums text-muted-foreground">{d.count}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+// ─── Conditional Formatting Rules Builder ────────────────────────────────
+
+const COND_FORMAT_OPERATORS = [
+    { value: "gt", label: ">" },
+    { value: "gte", label: ">=" },
+    { value: "lt", label: "<" },
+    { value: "lte", label: "<=" },
+    { value: "eq", label: "=" },
+    { value: "neq", label: "!=" },
+    { value: "contains", label: "contains" },
+    { value: "empty", label: "is empty" },
+    { value: "notEmpty", label: "is not empty" },
+];
+
+const COND_FORMAT_COLORS = [
+    { bg: "bg-red-100 dark:bg-red-900/30", label: "Red", value: "#fee2e2" },
+    { bg: "bg-orange-100 dark:bg-orange-900/30", label: "Orange", value: "#ffedd5" },
+    { bg: "bg-yellow-100 dark:bg-yellow-900/30", label: "Yellow", value: "#fef9c3" },
+    { bg: "bg-green-100 dark:bg-green-900/30", label: "Green", value: "#dcfce7" },
+    { bg: "bg-blue-100 dark:bg-blue-900/30", label: "Blue", value: "#dbeafe" },
+    { bg: "bg-purple-100 dark:bg-purple-900/30", label: "Purple", value: "#f3e8ff" },
+];
+
+function useConditionalFormatRules(tableName: string, enabled: boolean) {
+    const key = `dt-cond-format-${tableName}`;
+    const [rules, setRules] = useState<DataTableConditionalFormatRule[]>(() => {
+        if (!enabled) return [];
+        const stored = safeGetItem(key);
+        if (stored) { try { return JSON.parse(stored); } catch { return []; } }
+        return [];
+    });
+
+    const saveRules = useCallback((newRules: DataTableConditionalFormatRule[]) => {
+        setRules(newRules);
+        safeSetItem(key, JSON.stringify(newRules));
+    }, [key]);
+
+    const addRule = useCallback(() => {
+        saveRules([...rules, {
+            id: `cf-${Date.now()}`,
+            column: "", operator: "gt", value: "",
+            style: { backgroundColor: "#dcfce7" },
+        }]);
+    }, [rules, saveRules]);
+
+    const updateRule = useCallback((id: string, patch: Partial<DataTableConditionalFormatRule>) => {
+        saveRules(rules.map(r => r.id === id ? { ...r, ...patch } : r));
+    }, [rules, saveRules]);
+
+    const removeRule = useCallback((id: string) => {
+        saveRules(rules.filter(r => r.id !== id));
+    }, [rules, saveRules]);
+
+    return { rules, addRule, updateRule, removeRule };
+}
+
+function evaluateConditionalFormat(rule: DataTableConditionalFormatRule, cellValue: unknown): boolean {
+    const val = cellValue;
+    const ruleVal = rule.value;
+    switch (rule.operator) {
+        case "gt": return Number(val) > Number(ruleVal);
+        case "gte": return Number(val) >= Number(ruleVal);
+        case "lt": return Number(val) < Number(ruleVal);
+        case "lte": return Number(val) <= Number(ruleVal);
+        case "eq": return String(val) === String(ruleVal);
+        case "neq": return String(val) !== String(ruleVal);
+        case "contains": return String(val).toLowerCase().includes(String(ruleVal).toLowerCase());
+        case "empty": return val === null || val === undefined || val === "";
+        case "notEmpty": return val !== null && val !== undefined && val !== "";
+        case "between": return Number(val) >= Number(ruleVal) && Number(val) <= Number(rule.value2);
+        default: return false;
+    }
+}
+
+function ConditionalFormatDialog({ open, onOpenChange, columns, rules, onAddRule, onUpdateRule, onRemoveRule, t }: {
+    open: boolean; onOpenChange: (open: boolean) => void;
+    columns: DataTableColumnDef[];
+    rules: DataTableConditionalFormatRule[];
+    onAddRule: () => void;
+    onUpdateRule: (id: string, patch: Partial<DataTableConditionalFormatRule>) => void;
+    onRemoveRule: (id: string) => void;
+    t: DataTableTranslations;
+}) {
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Paintbrush className="h-5 w-5" />{t.conditionalFormatting}
+                    </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 py-2">
+                    {rules.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4">{t.noRules}</p>
+                    )}
+                    {rules.map((rule) => (
+                        <div key={rule.id} className="flex flex-wrap items-end gap-2 rounded-lg border p-3 bg-muted/20">
+                            <div className="grid gap-1 flex-1 min-w-[120px]">
+                                <Label className="text-xs">{t.formatColumn}</Label>
+                                <Select value={rule.column} onValueChange={(v) => onUpdateRule(rule.id, { column: v })}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Column..." /></SelectTrigger>
+                                    <SelectContent>
+                                        {columns.map(col => (
+                                            <SelectItem key={col.id} value={col.id}>{col.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-1 min-w-[100px]">
+                                <Label className="text-xs">{t.formatOperator}</Label>
+                                <Select value={rule.operator} onValueChange={(v) => onUpdateRule(rule.id, { operator: v as DataTableConditionalFormatRule["operator"] })}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        {COND_FORMAT_OPERATORS.map(op => (
+                                            <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {rule.operator !== "empty" && rule.operator !== "notEmpty" && (
+                                <div className="grid gap-1 min-w-[80px]">
+                                    <Label className="text-xs">{t.formatValue}</Label>
+                                    <Input className="h-8 text-xs w-24" value={String(rule.value ?? "")}
+                                        onChange={e => onUpdateRule(rule.id, { value: e.target.value })} />
+                                </div>
+                            )}
+                            <div className="grid gap-1">
+                                <Label className="text-xs">{t.formatBackground}</Label>
+                                <div className="flex gap-1">
+                                    {COND_FORMAT_COLORS.map(color => (
+                                        <button key={color.value} type="button"
+                                            className={cn("h-6 w-6 rounded border transition-all", color.bg,
+                                                rule.style.backgroundColor === color.value && "ring-2 ring-primary ring-offset-1")}
+                                            onClick={() => onUpdateRule(rule.id, { style: { ...rule.style, backgroundColor: color.value } })} />
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <label className="flex items-center gap-1 text-xs">
+                                    <Checkbox checked={rule.style.fontWeight === "bold"}
+                                        onCheckedChange={checked => onUpdateRule(rule.id, { style: { ...rule.style, fontWeight: checked ? "bold" : "normal" } })} />
+                                    <span className="font-bold">B</span>
+                                </label>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => onRemoveRule(rule.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+                <DialogFoot>
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddRule}>
+                        <Plus className="h-3.5 w-3.5" />{t.addRule}
+                    </Button>
+                    <Button onClick={() => onOpenChange(false)}>{t.done}</Button>
+                </DialogFoot>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── Faceted Filter ──────────────────────────────────────────────────────
+
+function FacetedFilterSection({ columns, facetedCounts, serverFilters, prefix, partialReloadKey, t }: {
+    columns: DataTableColumnDef[];
+    facetedCounts: Record<string, Record<string, number>>;
+    serverFilters: Record<string, unknown>;
+    prefix?: string; partialReloadKey?: string;
+    t: DataTableTranslations;
+}) {
+    const facetedColumns = columns.filter(c => c.filterable && facetedCounts[c.id]);
+    if (facetedColumns.length === 0) return null;
+
+    const handleToggle = useCallback((columnId: string, value: string) => {
+        const p = prefix ? `${prefix}_` : "";
+        const filterKey = `${p}filter[${columnId}]`;
+        const url = new URL(window.location.href);
+        const current = url.searchParams.get(filterKey) ?? "";
+        const currentValues = current.startsWith("in:") ? current.slice(3).split(",").filter(Boolean) : current ? [current] : [];
+
+        let newValues: string[];
+        if (currentValues.includes(value)) {
+            newValues = currentValues.filter(v => v !== value);
+        } else {
+            newValues = [...currentValues, value];
+        }
+
+        if (newValues.length === 0) {
+            url.searchParams.delete(filterKey);
+        } else {
+            url.searchParams.set(filterKey, newValues.length === 1 ? `is:${newValues[0]}` : `in:${newValues.join(",")}`);
+        }
+        url.searchParams.set(`${p}page`, "1");
+        router.visit(url.toString(), { preserveState: true, preserveScroll: true, only: partialReloadKey ? [partialReloadKey] : undefined });
+    }, [prefix, partialReloadKey]);
+
+    return (
+        <div className="flex flex-wrap gap-4 print:hidden">
+            {facetedColumns.map(col => {
+                const counts = facetedCounts[col.id];
+                const options = col.options ?? Object.keys(counts).map(k => ({ label: k, value: k }));
+                const p = prefix ? `${prefix}_` : "";
+                const filterKey = `${p}filter[${col.id}]`;
+                const currentFilter = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get(filterKey) ?? "" : "";
+                const selectedValues = new Set(currentFilter.startsWith("in:") ? currentFilter.slice(3).split(",") : currentFilter.startsWith("is:") ? [currentFilter.slice(3)] : []);
+
+                return (
+                    <div key={col.id} className="space-y-1.5">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{col.label}</h4>
+                        <div className="flex flex-wrap gap-1">
+                            {options.map(opt => {
+                                const count = counts[opt.value] ?? 0;
+                                const isActive = selectedValues.has(opt.value);
+                                return (
+                                    <button key={opt.value} type="button"
+                                        className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all border",
+                                            isActive
+                                                ? "bg-primary text-primary-foreground border-primary"
+                                                : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-accent/50")}
+                                        onClick={() => handleToggle(col.id, opt.value)}>
+                                        <span>{opt.label}</span>
+                                        <span className={cn("tabular-nums rounded-full px-1.5 py-0.5 text-[10px] min-w-[1.25rem] text-center",
+                                            isActive ? "bg-primary-foreground/20" : "bg-muted")}>
+                                            {count}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Collaborative Presence Indicators ───────────────────────────────────
+
+const PRESENCE_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#06b6d4"];
+
+function usePresence(channel: string | undefined, currentUser: DataTablePresenceUser | undefined): DataTablePresenceUser[] {
+    const [users, setUsers] = useState<DataTablePresenceUser[]>([]);
+
+    useEffect(() => {
+        if (!channel || !currentUser) return;
+        const Echo = (window as unknown as { Echo?: {
+            join: (name: string) => {
+                here: (cb: (users: DataTablePresenceUser[]) => void) => unknown;
+                joining: (cb: (user: DataTablePresenceUser) => void) => unknown;
+                leaving: (cb: (user: DataTablePresenceUser) => void) => unknown;
+                leave: () => void;
+            }
+        } }).Echo;
+        if (!Echo) return;
+
+        const presenceChannel = Echo.join(channel);
+        presenceChannel.here((members: DataTablePresenceUser[]) => {
+            setUsers(members.filter(m => m.id !== currentUser.id).map((m, i) => ({
+                ...m, color: m.color ?? PRESENCE_COLORS[i % PRESENCE_COLORS.length]
+            })));
+        });
+        presenceChannel.joining((user: DataTablePresenceUser) => {
+            setUsers(prev => {
+                if (prev.find(u => u.id === user.id)) return prev;
+                return [...prev, { ...user, color: user.color ?? PRESENCE_COLORS[prev.length % PRESENCE_COLORS.length] }];
+            });
+        });
+        presenceChannel.leaving((user: DataTablePresenceUser) => {
+            setUsers(prev => prev.filter(u => u.id !== user.id));
+        });
+
+        return () => { presenceChannel.leave(); };
+    }, [channel, currentUser]);
+
+    return users;
+}
+
+function PresenceIndicator({ users, t }: { users: DataTablePresenceUser[]; t: DataTableTranslations }) {
+    if (users.length === 0) return null;
+    const maxShow = 5;
+    const shown = users.slice(0, maxShow);
+    const overflow = users.length - maxShow;
+
+    return (
+        <div className="flex items-center gap-1.5 print:hidden" title={t.presenceUsers(users.length)}>
+            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+            <div className="flex -space-x-2">
+                {shown.map(user => (
+                    <div key={user.id} className="relative" title={`${user.name} — ${t.presenceViewing}`}>
+                        {user.avatar ? (
+                            <img src={user.avatar} alt={user.name}
+                                className="h-6 w-6 rounded-full ring-2 ring-background object-cover"
+                                style={{ borderColor: user.color }} />
+                        ) : (
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full ring-2 ring-background text-[10px] font-bold text-white"
+                                style={{ backgroundColor: user.color }}>
+                                {user.name.charAt(0).toUpperCase()}
+                            </div>
+                        )}
+                        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-background" />
+                    </div>
+                ))}
+            </div>
+            {overflow > 0 && <span className="text-xs text-muted-foreground">+{overflow}</span>}
+        </div>
+    );
+}
+
+// ─── Spreadsheet Mode: Tab/Enter cell navigation ─────────────────────────
+
+function useSpreadsheetMode(enabled: boolean, tableRef: React.RefObject<HTMLElement | null>) {
+    useEffect(() => {
+        if (!enabled || !tableRef.current) return;
+        const table = tableRef.current;
+
+        const getEditableCells = (): HTMLElement[] => {
+            return Array.from(table.querySelectorAll("[data-editable-cell]")) as HTMLElement[];
+        };
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest("[data-editable-cell]")) return;
+
+            const cells = getEditableCells();
+            const currentIndex = cells.findIndex(cell => cell.contains(target));
+            if (currentIndex === -1) return;
+
+            if (e.key === "Tab") {
+                e.preventDefault();
+                const nextIndex = e.shiftKey ? currentIndex - 1 : currentIndex + 1;
+                if (nextIndex >= 0 && nextIndex < cells.length) {
+                    const nextCell = cells[nextIndex];
+                    const input = nextCell.querySelector("input, [contenteditable]") as HTMLElement;
+                    if (input) input.focus();
+                    else nextCell.click();
+                }
+            } else if (e.key === "Enter" && !e.shiftKey) {
+                // Move down to next row, same column
+                const currentCell = cells[currentIndex];
+                const colId = currentCell.dataset.columnId;
+                const rowIdx = parseInt(currentCell.dataset.rowIndex ?? "0", 10);
+                const nextRowCell = cells.find(c => c.dataset.columnId === colId && parseInt(c.dataset.rowIndex ?? "0", 10) === rowIdx + 1);
+                if (nextRowCell) {
+                    e.preventDefault();
+                    const input = nextRowCell.querySelector("input, [contenteditable]") as HTMLElement;
+                    if (input) input.focus();
+                    else nextRowCell.click();
+                }
+            }
+        };
+
+        table.addEventListener("keydown", handleKeyDown);
+        return () => table.removeEventListener("keydown", handleKeyDown);
+    }, [enabled, tableRef]);
+}
+
+// ─── Kanban Board View ───────────────────────────────────────────────────
+
+function KanbanLayout<TData>({ rows, columns, kanbanColumnId, renderCell, actions,
+    onRowClick, rowLink, onKanbanMove, t, density, titleColumn, subtitleColumn }: {
+    rows: TData[]; columns: DataTableColumnDef[];
+    kanbanColumnId: string;
+    renderCell?: (columnId: string, value: unknown, row: TData) => React.ReactNode | undefined;
+    actions?: import("./types").DataTableAction<TData>[];
+    onRowClick?: (row: TData) => void; rowLink?: (row: TData) => string;
+    onKanbanMove?: (rowId: unknown, fromLane: string, toLane: string) => Promise<void> | void;
+    t: DataTableTranslations; density: DataTableDensity;
+    titleColumn?: string; subtitleColumn?: string;
+}) {
+    const kanbanCol = columns.find(c => c.id === kanbanColumnId);
+    const lanes: { value: string; label: string }[] = kanbanCol?.options ?? [];
+
+    // If no options defined, derive from data
+    const derivedLanes = useMemo(() => {
+        if (lanes.length > 0) return lanes;
+        const uniqueValues = new Set<string>();
+        for (const row of rows) {
+            const val = (row as Record<string, unknown>)[kanbanColumnId];
+            if (val != null) uniqueValues.add(String(val));
+        }
+        return [...uniqueValues].map(v => ({ value: v, label: v }));
+    }, [lanes, rows, kanbanColumnId]);
+
+    // Group rows by lane
+    const laneRows = useMemo(() => {
+        const map = new Map<string, TData[]>();
+        for (const lane of derivedLanes) map.set(lane.value, []);
+        for (const row of rows) {
+            const val = String((row as Record<string, unknown>)[kanbanColumnId] ?? "");
+            if (!map.has(val)) map.set(val, []);
+            map.get(val)!.push(row);
+        }
+        return map;
+    }, [rows, kanbanColumnId, derivedLanes]);
+
+    const [draggedCard, setDraggedCard] = useState<{ rowId: unknown; fromLane: string } | null>(null);
+    const [dragOverLane, setDragOverLane] = useState<string | null>(null);
+
+    const handleDragStart = useCallback((rowId: unknown, fromLane: string) => {
+        setDraggedCard({ rowId, fromLane });
+    }, []);
+
+    const handleDrop = useCallback((toLane: string) => {
+        if (draggedCard && draggedCard.fromLane !== toLane && onKanbanMove) {
+            onKanbanMove(draggedCard.rowId, draggedCard.fromLane, toLane);
+        }
+        setDraggedCard(null);
+        setDragOverLane(null);
+    }, [draggedCard, onKanbanMove]);
+
+    const visibleCols = columns.filter(c => c.visible !== false && c.id !== kanbanColumnId && c.id !== titleColumn && c.id !== subtitleColumn).slice(0, 3);
+
+    return (
+        <div className="flex gap-4 overflow-x-auto pb-4 print:hidden">
+            {derivedLanes.map(lane => {
+                const laneItems = laneRows.get(lane.value) ?? [];
+                const badge = kanbanCol?.options?.find(o => o.value === lane.value);
+                return (
+                    <div key={lane.value} className={cn("flex-shrink-0 w-72 rounded-xl border bg-muted/20",
+                        dragOverLane === lane.value && "ring-2 ring-primary/50 bg-primary/5")}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverLane(lane.value); }}
+                        onDragLeave={() => setDragOverLane(null)}
+                        onDrop={() => handleDrop(lane.value)}>
+                        {/* Lane header */}
+                        <div className="flex items-center justify-between p-3 border-b">
+                            <div className="flex items-center gap-2">
+                                {badge && (
+                                    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                        BADGE_VARIANTS[badge.variant ?? "default"] ?? BADGE_VARIANTS.default)}>
+                                        {lane.label}
+                                    </span>
+                                )}
+                                {!badge && <span className="text-sm font-semibold">{lane.label}</span>}
+                            </div>
+                            <span className="text-xs text-muted-foreground tabular-nums bg-muted rounded-full px-2 py-0.5">{laneItems.length}</span>
+                        </div>
+                        {/* Cards */}
+                        <div className="p-2 space-y-2 min-h-[100px]">
+                            {laneItems.length === 0 && (
+                                <div className="text-center py-6 text-xs text-muted-foreground">{t.kanbanEmpty}</div>
+                            )}
+                            {laneItems.map((row, idx) => {
+                                const rowData = row as Record<string, unknown>;
+                                const rowId = rowData.id ?? idx;
+                                const title = titleColumn ? String(rowData[titleColumn] ?? "") : null;
+                                const subtitle = subtitleColumn ? String(rowData[subtitleColumn] ?? "") : null;
+                                const isClickable = !!onRowClick || !!rowLink;
+                                return (
+                                    <div key={String(rowId)} draggable={!!onKanbanMove}
+                                        onDragStart={() => handleDragStart(rowId, lane.value)}
+                                        onDragEnd={() => { setDraggedCard(null); setDragOverLane(null); }}
+                                        className={cn("rounded-lg border bg-card p-3 shadow-sm transition-all",
+                                            "hover:shadow-md hover:border-primary/30",
+                                            isClickable && "cursor-pointer",
+                                            !!onKanbanMove && "cursor-grab active:cursor-grabbing",
+                                            density === "compact" && "p-2 text-xs")}
+                                        onClick={() => {
+                                            if (rowLink) window.location.href = rowLink(row);
+                                            else if (onRowClick) onRowClick(row);
+                                        }}>
+                                        {title && <div className="font-medium text-sm mb-1 truncate">{title}</div>}
+                                        {subtitle && <div className="text-xs text-muted-foreground mb-2 truncate">{subtitle}</div>}
+                                        {visibleCols.map(col => {
+                                            const value = rowData[col.id];
+                                            const custom = renderCell?.(col.id, value, row);
+                                            return (
+                                                <div key={col.id} className="flex justify-between text-xs py-0.5">
+                                                    <span className="text-muted-foreground">{col.label}</span>
+                                                    <span className="truncate ml-2">{custom !== undefined ? custom : value == null ? "—" : String(value)}</span>
+                                                </div>
+                                            );
+                                        })}
+                                        {actions && actions.length > 0 && (
+                                            <div className="flex justify-end pt-2 mt-1 border-t">
+                                                <DataTableRowActions row={row} actions={actions} t={t} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 // ─── Active filter chips ─────────────────────────────────────────────────────
 
 function FilterChips({ filters, columns, onClear, onClearAll, t }: {
@@ -1857,6 +2651,9 @@ function DataTableInner<TData extends object>({
     rowSpan, columnSpan, onClipboardPaste, onDragToFill,
     onCellRangeSelect, apiRef, onLoadMore, hasMore,
     sparklineData, onAiQuery, onPivotChange,
+    kanbanColumnId, onKanbanMove, facetedCounts: facetedCountsProp,
+    presenceChannel, currentUser,
+    cardImageColumn, cardTitleColumn, cardSubtitleColumn,
 }: DataTableProps<TData>) {
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
@@ -1887,6 +2684,9 @@ function DataTableInner<TData extends object>({
         cellRangeSelection: false, autoSizer: false, cellMeasurer: false,
         scrollAwareRendering: false, windowScroller: false,
         directionalOverscan: false,
+        layoutSwitcher: false, columnStatistics: false,
+        conditionalFormatting: false, facetedFilters: false,
+        presence: false, spreadsheetMode: false, kanbanView: false,
         ...optionsOverride,
     }), [optionsOverride]);
 
@@ -1957,6 +2757,9 @@ function DataTableInner<TData extends object>({
     );
     const tableElementRef = useRef<HTMLTableElement>(null);
 
+    // Spreadsheet mode (Tab/Enter navigation)
+    useSpreadsheetMode(resolvedOptions.spreadsheetMode, tableElementRef);
+
     // AutoSizer
     const autoSizerDimensions = useAutoSizer(resolvedOptions.autoSizer, virtualContainerRef);
 
@@ -1992,6 +2795,31 @@ function DataTableInner<TData extends object>({
 
     // Pivot mode state
     const [pivotActive, setPivotActive] = useState(false);
+
+    // Layout mode state (persisted to localStorage)
+    const [layoutMode, setLayoutMode] = useState<DataTableLayoutMode>(() => {
+        if (!resolvedOptions.layoutSwitcher) return "table";
+        const stored = safeGetItem(`dt-layout-${tableName}`);
+        if (stored === "grid" || stored === "cards" || stored === "kanban" || stored === "table") return stored;
+        return "table";
+    });
+    const handleLayoutChange = useCallback((mode: DataTableLayoutMode) => {
+        setLayoutMode(mode);
+        safeSetItem(`dt-layout-${tableName}`, mode);
+    }, [tableName]);
+
+    // Conditional formatting rules
+    const condFormat = useConditionalFormatRules(tableName, resolvedOptions.conditionalFormatting);
+    const [condFormatOpen, setCondFormatOpen] = useState(false);
+
+    // Presence
+    const presenceUsers = usePresence(
+        resolvedOptions.presence ? presenceChannel : undefined,
+        resolvedOptions.presence ? currentUser : undefined,
+    );
+
+    // Faceted counts: merge from prop and server response
+    const facetedCounts = facetedCountsProp ?? tableData.facetedCounts ?? null;
 
     // Imperative API ref
     useEffect(() => {
@@ -2672,6 +3500,23 @@ function DataTableInner<TData extends object>({
 
     const editableColumns = useMemo(() => mergedColumns.filter((c) => c.editable), [mergedColumns]);
 
+    // Conditional formatting: compute cell styles from user-created rules
+    const getCondFormatStyle = useCallback((row: TData, columnId: string): React.CSSProperties => {
+        if (condFormat.rules.length === 0) return {};
+        const rowData = row as Record<string, unknown>;
+        for (const rule of condFormat.rules) {
+            if (rule.column !== columnId) continue;
+            if (evaluateConditionalFormat(rule, rowData[columnId])) {
+                return {
+                    backgroundColor: rule.style.backgroundColor,
+                    color: rule.style.textColor,
+                    fontWeight: rule.style.fontWeight === "bold" ? "bold" : undefined,
+                };
+            }
+        }
+        return {};
+    }, [condFormat.rules]);
+
     // Undo/Redo handlers
     const handleUndo = useCallback(() => {
         const action = undoEdit();
@@ -2845,39 +3690,68 @@ function DataTableInner<TData extends object>({
                         </Button>
                     )}
                 </div>
-                {slots?.toolbar ?? (
-                    <>
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 md:hidden"><EllipsisVertical className="h-4 w-4" /></Button>
-                            </PopoverTrigger>
-                            <PopoverContent align="end" className="flex w-auto flex-col gap-2 p-2"><DataTableToolbar {...toolbarProps} /></PopoverContent>
-                        </Popover>
-                        <div className="hidden items-center gap-2 md:flex">
-                            {/* Header actions */}
-                            {headerActions?.map((action, i) => {
-                                const Icon = action.icon;
-                                return (
-                                    <Button key={i} variant={action.variant ?? "outline"} size="sm" className="h-8 gap-1.5" onClick={action.onClick}>
-                                        {Icon && <Icon className="h-3.5 w-3.5" />}
-                                        <span className="hidden sm:inline">{action.label}</span>
-                                    </Button>
-                                );
-                            })}
-                            {/* User-selectable grouping */}
-                            {groupByOptions && groupByOptions.length > 0 && (
-                                <GroupBySelector options={groupByOptions} columns={mergedColumns}
-                                    currentGroupBy={userGroupBy} onChange={handleGroupByChange} t={t} />
+                <div className="flex items-center gap-2">
+                    {/* Presence indicators */}
+                    {resolvedOptions.presence && <PresenceIndicator users={presenceUsers} t={t} />}
+
+                    {/* Layout switcher */}
+                    {resolvedOptions.layoutSwitcher && (
+                        <LayoutSwitcher layout={layoutMode} onLayoutChange={handleLayoutChange}
+                            showKanban={resolvedOptions.kanbanView && !!kanbanColumnId} t={t} />
+                    )}
+
+                    {/* Conditional formatting button */}
+                    {resolvedOptions.conditionalFormatting && (
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => setCondFormatOpen(true)}>
+                            <Paintbrush className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">{t.conditionalFormatting}</span>
+                            {condFormat.rules.length > 0 && (
+                                <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 text-[10px] font-medium text-primary">{condFormat.rules.length}</span>
                             )}
-                            <DataTableToolbar {...toolbarProps} />
-                        </div>
-                    </>
-                )}
+                        </Button>
+                    )}
+
+                    {slots?.toolbar ?? (
+                        <>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 md:hidden"><EllipsisVertical className="h-4 w-4" /></Button>
+                                </PopoverTrigger>
+                                <PopoverContent align="end" className="flex w-auto flex-col gap-2 p-2"><DataTableToolbar {...toolbarProps} /></PopoverContent>
+                            </Popover>
+                            <div className="hidden items-center gap-2 md:flex">
+                                {/* Header actions */}
+                                {headerActions?.map((action, i) => {
+                                    const Icon = action.icon;
+                                    return (
+                                        <Button key={i} variant={action.variant ?? "outline"} size="sm" className="h-8 gap-1.5" onClick={action.onClick}>
+                                            {Icon && <Icon className="h-3.5 w-3.5" />}
+                                            <span className="hidden sm:inline">{action.label}</span>
+                                        </Button>
+                                    );
+                                })}
+                                {/* User-selectable grouping */}
+                                {groupByOptions && groupByOptions.length > 0 && (
+                                    <GroupBySelector options={groupByOptions} columns={mergedColumns}
+                                        currentGroupBy={userGroupBy} onChange={handleGroupByChange} t={t} />
+                                )}
+                                <DataTableToolbar {...toolbarProps} />
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* ── Active filter chips ── */}
             <FilterChips filters={meta.filters as Record<string, unknown>} columns={mergedColumns}
                 onClear={handleClearFilterChip} onClearAll={handleClearAllFilterChips} t={t} />
+
+            {/* ── Faceted filters with counts ── */}
+            {resolvedOptions.facetedFilters && facetedCounts && (
+                <FacetedFilterSection columns={mergedColumns} facetedCounts={facetedCounts}
+                    serverFilters={meta.filters as Record<string, unknown>}
+                    prefix={prefix} partialReloadKey={partialReloadKey} t={t} />
+            )}
 
             {/* ── Inline row creation ── */}
             {onRowCreate && (
@@ -2936,8 +3810,34 @@ function DataTableInner<TData extends object>({
                     rowLink={rowLink} t={t} density={density} />
             )}
 
+            {/* ── Grid Layout ── */}
+            {!isMobile && layoutMode === "grid" && (!config?.deferLoading || deferLoaded) && (
+                <GridLayout rows={tableData.data} columns={mergedColumns}
+                    renderCell={renderCell} actions={actions} onRowClick={onRowClick}
+                    rowLink={rowLink} t={t} density={density}
+                    imageColumn={cardImageColumn} titleColumn={cardTitleColumn}
+                    subtitleColumn={cardSubtitleColumn} />
+            )}
+
+            {/* ── Cards Layout ── */}
+            {!isMobile && layoutMode === "cards" && (!config?.deferLoading || deferLoaded) && (
+                <CardLayout rows={tableData.data} columns={mergedColumns}
+                    renderCell={renderCell} actions={actions} onRowClick={onRowClick}
+                    rowLink={rowLink} t={t} density={density}
+                    titleColumn={cardTitleColumn} subtitleColumn={cardSubtitleColumn} />
+            )}
+
+            {/* ── Kanban Layout ── */}
+            {!isMobile && layoutMode === "kanban" && kanbanColumnId && (!config?.deferLoading || deferLoaded) && (
+                <KanbanLayout rows={tableData.data} columns={mergedColumns}
+                    kanbanColumnId={kanbanColumnId} renderCell={renderCell}
+                    actions={actions} onRowClick={onRowClick} rowLink={rowLink}
+                    onKanbanMove={onKanbanMove} t={t} density={density}
+                    titleColumn={cardTitleColumn} subtitleColumn={cardSubtitleColumn} />
+            )}
+
             {/* ── Table ── */}
-            {!isMobile && (!config?.deferLoading || deferLoaded) && (
+            {!isMobile && layoutMode === "table" && (!config?.deferLoading || deferLoaded) && (
                 <div id={`dt-table-${tableName}`} className={cn("rounded-xl border shadow-sm overflow-hidden", className)}
                     tabIndex={resolvedOptions.keyboardNavigation ? 0 : undefined}
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
@@ -2981,6 +3881,10 @@ function DataTableInner<TData extends object>({
                                                                         {renderHeader?.[colDef.id]}
                                                                     </DataTableColumnHeader>
                                                                     {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                                    {resolvedOptions.columnStatistics && colDef && (
+                                                                        <ColumnStatsPopover columnId={colDef.id} columnLabel={colDef.label}
+                                                                            columnType={colDef.type} data={tableData.data as Record<string, unknown>[]} t={t} />
+                                                                    )}
                                                                 </div>
                                                                 {colDef.description && <span className="text-[10px] font-normal text-muted-foreground/70 leading-tight">{colDef.description}</span>}
                                                             </div>
@@ -2989,6 +3893,10 @@ function DataTableInner<TData extends object>({
                                                                 <div className="flex items-center gap-1">
                                                                     {renderHeader?.[header.column.id] ?? flexRender(header.column.columnDef.header, header.getContext())}
                                                                     {hasActiveFilter && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                                                                    {resolvedOptions.columnStatistics && colDef && (
+                                                                        <ColumnStatsPopover columnId={colDef.id} columnLabel={colDef.label}
+                                                                            columnType={colDef.type} data={tableData.data as Record<string, unknown>[]} t={t} />
+                                                                    )}
                                                                 </div>
                                                                 {colDef?.description && <span className="text-[10px] font-normal text-muted-foreground/70 leading-tight">{colDef.description}</span>}
                                                             </div>
@@ -3131,10 +4039,15 @@ function DataTableInner<TData extends object>({
                                                                 index !== dragFillState.startRowIndex;
                                                             // Cell range selection highlight
                                                             const isCellInRange = resolvedOptions.cellRangeSelection && cellRange.isCellInRange(index, cell.column.id);
+                                                            // Conditional formatting styles
+                                                            const condStyle = resolvedOptions.conditionalFormatting ? getCondFormatStyle(row.original, cell.column.id) : {};
                                                             return (
                                                                 <TableCell key={cell.id} role="gridcell"
                                                                     colSpan={colSpanVal} rowSpan={rowSpanVal}
-                                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}) }}
+                                                                    data-editable-cell={cellMeta?.editable ? "" : undefined}
+                                                                    data-column-id={cell.column.id}
+                                                                    data-row-index={index}
+                                                                    style={{ ...pin.style, ...(resolvedOptions.columnResizing ? { width: cell.column.getSize() } : {}), ...condStyle }}
                                                                     className={cn(
                                                                         isAutoHeight ? "whitespace-normal" : "whitespace-nowrap",
                                                                         densityClasses.cell,
@@ -3548,6 +4461,14 @@ function DataTableInner<TData extends object>({
             {formAction && formAction.action.form && (
                 <FormActionDialog open={!!formAction} onOpenChange={(open) => { if (!open) setFormAction(null); }}
                     action={formAction.action} row={formAction.row} t={t} />
+            )}
+
+            {/* ── Conditional formatting dialog ── */}
+            {resolvedOptions.conditionalFormatting && (
+                <ConditionalFormatDialog open={condFormatOpen} onOpenChange={setCondFormatOpen}
+                    columns={mergedColumns} rules={condFormat.rules}
+                    onAddRule={condFormat.addRule} onUpdateRule={condFormat.updateRule}
+                    onRemoveRule={condFormat.removeRule} t={t} />
             )}
 
             {resolvedOptions.printable && (

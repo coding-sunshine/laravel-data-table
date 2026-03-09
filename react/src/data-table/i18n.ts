@@ -282,6 +282,53 @@ export interface DataTableTranslations {
     analyticsTitle: string;
     analyticsChange: string;
     analyticsNoChange: string;
+
+    // Layout switcher
+    layoutTable: string;
+    layoutGrid: string;
+    layoutCards: string;
+    layoutKanban: string;
+    switchLayout: string;
+
+    // Column statistics
+    columnStats: string;
+    statsCount: string;
+    statsNulls: string;
+    statsUnique: string;
+    statsMedian: string;
+    statsDistribution: string;
+
+    // Conditional formatting
+    conditionalFormatting: string;
+    addRule: string;
+    removeRule: string;
+    formatColumn: string;
+    formatOperator: string;
+    formatValue: string;
+    formatBackground: string;
+    formatTextColor: string;
+    formatBold: string;
+    noRules: string;
+
+    // Faceted filters
+    facetedAll: string;
+    facetedClear: string;
+
+    // Presence
+    presenceViewing: string;
+    presenceEditing: string;
+    presenceUsers: (count: number) => string;
+
+    // Spreadsheet mode
+    spreadsheetMode: string;
+    tabToNext: string;
+    enterToConfirm: string;
+    escapeToCancel: string;
+
+    // Kanban
+    kanbanNoColumn: string;
+    kanbanMoveCard: string;
+    kanbanEmpty: string;
 }
 
 export const defaultTranslations: DataTableTranslations = {
@@ -568,6 +615,53 @@ export const defaultTranslations: DataTableTranslations = {
     analyticsTitle: "Analytics",
     analyticsChange: "change",
     analyticsNoChange: "no change",
+
+    // Layout switcher
+    layoutTable: "Table",
+    layoutGrid: "Grid",
+    layoutCards: "Cards",
+    layoutKanban: "Kanban",
+    switchLayout: "Switch layout",
+
+    // Column statistics
+    columnStats: "Column statistics",
+    statsCount: "Count",
+    statsNulls: "Nulls",
+    statsUnique: "Unique",
+    statsMedian: "Median",
+    statsDistribution: "Distribution",
+
+    // Conditional formatting
+    conditionalFormatting: "Conditional formatting",
+    addRule: "Add rule",
+    removeRule: "Remove",
+    formatColumn: "Column",
+    formatOperator: "Condition",
+    formatValue: "Value",
+    formatBackground: "Background",
+    formatTextColor: "Text color",
+    formatBold: "Bold",
+    noRules: "No formatting rules yet",
+
+    // Faceted filters
+    facetedAll: "All",
+    facetedClear: "Clear",
+
+    // Presence
+    presenceViewing: "viewing",
+    presenceEditing: "editing",
+    presenceUsers: (count) => `${count} user${count !== 1 ? "s" : ""} online`,
+
+    // Spreadsheet mode
+    spreadsheetMode: "Spreadsheet mode",
+    tabToNext: "Tab to next cell",
+    enterToConfirm: "Enter to confirm",
+    escapeToCancel: "Escape to cancel",
+
+    // Kanban
+    kanbanNoColumn: "Select a column for kanban lanes",
+    kanbanMoveCard: "Move card",
+    kanbanEmpty: "No items",
 };
 
 export const frTranslations: DataTableTranslations = {
@@ -825,4 +919,51 @@ export const frTranslations: DataTableTranslations = {
     analyticsTitle: "Analytique",
     analyticsChange: "variation",
     analyticsNoChange: "aucune variation",
+
+    // Layout switcher
+    layoutTable: "Tableau",
+    layoutGrid: "Grille",
+    layoutCards: "Cartes",
+    layoutKanban: "Kanban",
+    switchLayout: "Changer la disposition",
+
+    // Column statistics
+    columnStats: "Statistiques de colonne",
+    statsCount: "Nombre",
+    statsNulls: "Valeurs nulles",
+    statsUnique: "Valeurs uniques",
+    statsMedian: "Médiane",
+    statsDistribution: "Distribution",
+
+    // Conditional formatting
+    conditionalFormatting: "Mise en forme conditionnelle",
+    addRule: "Ajouter une règle",
+    removeRule: "Supprimer",
+    formatColumn: "Colonne",
+    formatOperator: "Condition",
+    formatValue: "Valeur",
+    formatBackground: "Arrière-plan",
+    formatTextColor: "Couleur du texte",
+    formatBold: "Gras",
+    noRules: "Aucune règle de formatage",
+
+    // Faceted filters
+    facetedAll: "Tous",
+    facetedClear: "Effacer",
+
+    // Presence
+    presenceViewing: "en consultation",
+    presenceEditing: "en édition",
+    presenceUsers: (count) => `${count} utilisateur${count !== 1 ? "s" : ""} en ligne`,
+
+    // Spreadsheet mode
+    spreadsheetMode: "Mode tableur",
+    tabToNext: "Tab pour la cellule suivante",
+    enterToConfirm: "Entrée pour confirmer",
+    escapeToCancel: "Échap pour annuler",
+
+    // Kanban
+    kanbanNoColumn: "Sélectionnez une colonne pour les colonnes kanban",
+    kanbanMoveCard: "Déplacer la carte",
+    kanbanEmpty: "Aucun élément",
 };

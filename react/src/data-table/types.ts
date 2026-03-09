@@ -137,6 +137,53 @@ export interface DataTableRule {
 
 export type DataTableDensity = "compact" | "comfortable" | "spacious";
 
+export type DataTableLayoutMode = "table" | "grid" | "cards" | "kanban";
+
+/** Conditional formatting rule created by the user via the rules builder UI */
+export interface DataTableConditionalFormatRule {
+    id: string;
+    column: string;
+    operator: "gt" | "gte" | "lt" | "lte" | "eq" | "neq" | "contains" | "between" | "empty" | "notEmpty";
+    value: unknown;
+    value2?: unknown;
+    style: {
+        backgroundColor?: string;
+        textColor?: string;
+        fontWeight?: "normal" | "bold";
+        icon?: string;
+    };
+}
+
+/** User presence for collaborative indicators */
+export interface DataTablePresenceUser {
+    id: string | number;
+    name: string;
+    avatar?: string;
+    color?: string;
+    activeRow?: string | number | null;
+}
+
+/** Faceted filter option with count */
+export interface DataTableFacetedOption {
+    value: string;
+    label: string;
+    count: number;
+    icon?: string;
+}
+
+/** Column statistics computed from data */
+export interface DataTableColumnStats {
+    count: number;
+    nullCount: number;
+    uniqueCount: number;
+    min?: number;
+    max?: number;
+    sum?: number;
+    avg?: number;
+    median?: number;
+    distribution?: { bucket: string; count: number }[];
+}
+
 export interface DataTableOptions {
     quickViews: boolean;
     customQuickViews: boolean;
@@ -192,6 +239,20 @@ export interface DataTableOptions {
     windowScroller: boolean;
     /** Enable directional overscan (more rows pre-rendered in scroll direction) */
     directionalOverscan: boolean;
+    /** Enable layout switcher (table/grid/cards/kanban) in toolbar */
+    layoutSwitcher: boolean;
+    /** Enable column statistics popover on header click */
+    columnStatistics: boolean;
+    /** Enable conditional formatting rules builder */
+    conditionalFormatting: boolean;
+    /** Enable faceted filters with counts */
+    facetedFilters: boolean;
+    /** Enable collaborative presence indicators */
+    presence: boolean;
+    /** Enable spreadsheet-mode Tab/Enter cell navigation */
+    spreadsheetMode: boolean;
+    /** Enable kanban board view */
+    kanbanView: boolean;
 }
 
 /** Server-driven action visibility rule */
@@ -252,6 +313,8 @@ export interface DataTableResponse<TData = object> {
     actionRules?: Record<string, DataTableActionRule> | null;
     /** Analytics KPI cards displayed above the table */
     analytics?: DataTableAnalytic[] | null;
+    /** Faceted filter counts: column ID → { optionValue → count } */
+    facetedCounts?: Record<string, Record<string, number>> | null;
 }
 
 export interface DataTableConfirmOptions {
@@ -396,6 +459,22 @@ export interface DataTableProps<TData extends object> {
     onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
     /** Pivot mode state callback */
     onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
+    /** Column ID to use as kanban lane grouping (e.g., 'status') */
+    kanbanColumnId?: string;
+    /** Called when a kanban card is moved to a different lane */
+    onKanbanMove?: (rowId: unknown, fromLane: string, toLane: string) => Promise<void> | void;
+    /** Faceted filter counts from server: column ID → option value → count */
+    facetedCounts?: Record<string, Record<string, number>>;
+    /** Laravel Echo presence channel name for collaborative indicators */
+    presenceChannel?: string;
+    /** Current user info for presence tracking */
+    currentUser?: DataTablePresenceUser;
+    /** Image column ID to use as card thumbnail in grid/card layouts */
+    cardImageColumn?: string;
+    /** Column ID to use as card title in grid/card layouts */
+    cardTitleColumn?: string;
+    /** Column ID to use as card subtitle in grid/card layouts */
+    cardSubtitleColumn?: string;
 }
 
 /** Imperative API ref for programmatic grid control */
