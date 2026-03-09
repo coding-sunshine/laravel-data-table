@@ -3843,7 +3843,7 @@ function DataTableInner<TData extends object>({
                     onKeyDown={resolvedOptions.keyboardNavigation ? handleTableKeyDown : undefined}>
                     <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}
                         style={autoSizerDimensions ? { width: autoSizerDimensions.width, height: autoSizerDimensions.height } : undefined}>
-                        <Table style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
+                        <Table ref={tableElementRef} style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
                             role="grid" aria-rowcount={meta.total} aria-colcount={table.getVisibleLeafColumns().length}>
                             <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background shadow-[0_1px_3px_-1px_rgba(0,0,0,0.1)]")}>
                                 {table.getHeaderGroups().map((headerGroup, groupIdx) => {
