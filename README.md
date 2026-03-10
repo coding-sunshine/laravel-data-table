@@ -1093,6 +1093,7 @@ Each trait provides these public methods (most are auto-derived; override for cu
 | `handleAiSuggest(Request): JsonResponse` | Smart filter/sort suggestions |
 | `handleAiColumnSummary(string, Request): JsonResponse` | Per-column analysis |
 | `handleAiEnrich(string, string, array, Request): JsonResponse` | Generate AI-computed column values |
+| `handleAiVisualize(Request): JsonResponse` | Thesys C1 generative UI visualization |
 
 ### PHP Data Transfer Objects
 

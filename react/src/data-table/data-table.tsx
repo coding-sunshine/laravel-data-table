@@ -3353,7 +3353,7 @@ function AiAssistantPanel({ ai, t, onApplyAction, onClose, columns, selectedRowI
                         {ai.visualizeHtml && (
                             <div
                                 className="rounded-md border bg-background p-3"
-                                dangerouslySetInnerHTML={{ __html: ai.visualizeHtml }}
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(ai.visualizeHtml) }}
                             />
                         )}
                     </div>
