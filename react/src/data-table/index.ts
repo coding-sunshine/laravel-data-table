@@ -5,7 +5,7 @@ export { useDataTable } from "./use-data-table";
 export type { UseDataTableOptions, UseDataTableReturn } from "./use-data-table";
 
 export { useDataTableFilters } from "./use-data-table-filters";
-export type { UseDataTableFiltersOptions, UseDataTableFiltersReturn } from "./use-data-table-filters";
+export type { UseDataTableFiltersOptions, UseDataTableFiltersReturn, FilterValue, ActiveFilters } from "./use-data-table-filters";
 
 export type { DataTableState } from "./use-data-table";
 

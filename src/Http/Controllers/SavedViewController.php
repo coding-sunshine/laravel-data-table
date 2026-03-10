@@ -13,8 +13,14 @@ class SavedViewController
      */
     public function index(string $tableName, Request $request): JsonResponse
     {
+        $user = $request->user();
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthenticated.'], 401);
+        }
+
         $views = SavedView::forTable($tableName)
-            ->forUser($request->user()->id)
+            ->forUser($user->id)
             ->orderBy('name')
             ->get();
 
@@ -26,6 +32,12 @@ class SavedViewController
      */
     public function store(string $tableName, Request $request): JsonResponse
     {
+        $user = $request->user();
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthenticated.'], 401);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'filters' => 'nullable|array',
@@ -38,12 +50,12 @@ class SavedViewController
         // If marking as default, unset other defaults
         if ($validated['is_default'] ?? false) {
             SavedView::forTable($tableName)
-                ->forUser($request->user()->id)
+                ->forUser($user->id)
                 ->update(['is_default' => false]);
         }
 
         $view = SavedView::create([
-            'user_id' => $request->user()->id,
+            'user_id' => $user->id,
             'table_name' => $tableName,
             ...$validated,
         ]);
@@ -56,8 +68,14 @@ class SavedViewController
      */
     public function update(string $tableName, int $viewId, Request $request): JsonResponse
     {
+        $user = $request->user();
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthenticated.'], 401);
+        }
+
         $view = SavedView::forTable($tableName)
-            ->forUser($request->user()->id)
+            ->forUser($user->id)
             ->findOrFail($viewId);
 
         $validated = $request->validate([
@@ -71,7 +89,7 @@ class SavedViewController
 
         if ($validated['is_default'] ?? false) {
             SavedView::forTable($tableName)
-                ->forUser($request->user()->id)
+                ->forUser($user->id)
                 ->where('id', '!=', $viewId)
                 ->update(['is_default' => false]);
         }
@@ -86,8 +104,14 @@ class SavedViewController
      */
     public function destroy(string $tableName, int $viewId, Request $request): JsonResponse
     {
+        $user = $request->user();
+
+        if (! $user) {
+            return response()->json(['error' => 'Unauthenticated.'], 401);
+        }
+
         $view = SavedView::forTable($tableName)
-            ->forUser($request->user()->id)
+            ->forUser($user->id)
             ->findOrFail($viewId);
 
         $view->delete();
