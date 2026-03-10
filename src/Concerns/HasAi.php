@@ -33,12 +33,31 @@ use Machour\DataTable\Columns\Column;
 trait HasAi
 {
     /**
-     * The AI model to use. For Laravel AI SDK this sets the default;
-     * for Prism this is the provider:model string.
+     * The AI model to use (provider:model string for Prism).
+     *
+     * When using Laravel AI SDK, this is ignored — the SDK uses whatever
+     * model the parent application has configured in its ai.php config.
+     *
+     * When using Prism, this defaults to the parent app's prism.php
+     * config, then falls back to data-table.ai.model if set.
+     *
+     * Override in your DataTable class to use a specific model.
      */
-    public static function tableAiModel(): string
+    public static function tableAiModel(): ?string
     {
-        return config('data-table.ai.model', 'openai:gpt-4o-mini');
+        // Explicit override in data-table config takes priority
+        $override = config('data-table.ai.model');
+        if ($override !== null) {
+            return $override;
+        }
+
+        // Fall back to parent app's Prism default model
+        $prismModel = config('prism.default_model');
+        if ($prismModel) {
+            return $prismModel;
+        }
+
+        return null;
     }
 
     /**
@@ -155,6 +174,10 @@ trait HasAi
 
     /**
      * Resolve Prism text generator. Returns null if Prism is not installed.
+     *
+     * Uses the model from tableAiModel() which respects the parent app's
+     * prism.php configuration. Max tokens defaults to the parent app's
+     * Prism config, then data-table config.
      */
     protected static function resolvePrism(): ?object
     {
@@ -162,9 +185,20 @@ trait HasAi
             return null;
         }
 
+        $model = static::tableAiModel();
+        if (! $model) {
+            throw new \RuntimeException(
+                'No AI model configured. Set a default model in config/prism.php or config/data-table.php (ai.model).'
+            );
+        }
+
+        $maxTokens = config('data-table.ai.max_tokens')
+            ?? config('prism.max_tokens')
+            ?? 1024;
+
         return \PrismPHP\Prism::text()
-            ->using(static::tableAiModel())
-            ->withMaxTokens((int) config('data-table.ai.max_tokens', 1024));
+            ->using($model)
+            ->withMaxTokens((int) $maxTokens);
     }
 
     /**

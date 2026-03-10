@@ -143,7 +143,14 @@ return [
     | Preferred: composer require laravel/ai
     | Fallback:  composer require prism-php/prism
     |
-    | Supported models: 'openai:gpt-4o-mini', 'openai:gpt-4o',
+    | By default, the package respects your parent application's AI config:
+    |   - Laravel AI SDK: uses the model configured in config/ai.php
+    |   - Prism PHP: uses the default model from config/prism.php
+    |
+    | Set 'model' below only if you want to override the parent app's
+    | default specifically for data table AI features.
+    |
+    | Supported model strings (for Prism): 'openai:gpt-4o-mini', 'openai:gpt-4o',
     | 'anthropic:claude-sonnet-4-20250514', 'anthropic:claude-haiku-4-5-20251001', 'ollama:llama3', etc.
     |
     | For Thesys C1 generative UI, set DATA_TABLE_THESYS_API_KEY in .env.
@@ -151,8 +158,8 @@ return [
     |
     */
     'ai' => [
-        'model' => env('DATA_TABLE_AI_MODEL', 'openai:gpt-4o-mini'),
-        'max_tokens' => 1024,
+        'model' => env('DATA_TABLE_AI_MODEL'),
+        'max_tokens' => null, // Falls back to parent app's Prism config, then 1024
         'sample_size' => 50,
         'thesys_api_key' => env('DATA_TABLE_THESYS_API_KEY'),
         'thesys_model' => env('DATA_TABLE_THESYS_MODEL', 'c1-nightly'),

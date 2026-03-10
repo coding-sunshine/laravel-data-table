@@ -1085,7 +1085,7 @@ Each trait provides these public methods (most are auto-derived; override for cu
 
 | Method | Description |
 |--------|-------------|
-| `tableAiModel(): string` | LLM model (e.g., `'openai:gpt-4o-mini'`). Default from config |
+| `tableAiModel(): ?string` | LLM model override. Default: uses parent app's AI/Prism config |
 | `tableAiSampleSize(): int` | Max sample rows sent to LLM. Default: `50` |
 | `tableAiSystemContext(): string` | Domain-specific instructions for better AI responses |
 | `handleAiQuery(string, Request): JsonResponse` | NLQ → filters/sort |
@@ -2853,8 +2853,8 @@ return [
     ],
     'audit_table' => 'data_table_audit_log', // Database table for audit log storage
     'ai' => [
-        'model' => env('DATA_TABLE_AI_MODEL', 'openai:gpt-4o-mini'), // Laravel AI SDK / Prism PHP model
-        'max_tokens' => 1024,              // Max tokens per AI response
+        'model' => env('DATA_TABLE_AI_MODEL'), // Override model (default: uses parent app's AI/Prism config)
+        'max_tokens' => null,              // Falls back to parent app's Prism config, then 1024
         'sample_size' => 50,               // Max rows sent to LLM for context
         'thesys_api_key' => env('DATA_TABLE_THESYS_API_KEY'), // Thesys C1 API key
         'thesys_model' => 'c1-nightly',    // Thesys C1 model
@@ -3664,8 +3664,8 @@ class ProductDataTable extends AbstractDataTable
 {
     use HasAi;
 
-    // Optional: override the default AI model
-    public static function tableAiModel(): string
+    // Optional: override the AI model (by default uses your app's AI/Prism config)
+    public static function tableAiModel(): ?string
     {
         return 'anthropic:claude-sonnet-4-20250514'; // or 'openai:gpt-4o', 'ollama:llama3'
     }
@@ -3687,8 +3687,14 @@ DataTableAiController::register('products', ProductDataTable::class);
 
 **4. Configure (optional):**
 
+By default, the package respects your parent app's AI configuration:
+- **Laravel AI SDK**: uses the model configured in `config/ai.php`
+- **Prism PHP**: uses the default model from `config/prism.php`
+
+Only set `DATA_TABLE_AI_MODEL` if you want to override the parent app's default specifically for data table AI features:
+
 ```env
-DATA_TABLE_AI_MODEL=openai:gpt-4o-mini
+# DATA_TABLE_AI_MODEL=openai:gpt-4o-mini  # Only set to override parent app's default
 DATA_TABLE_THESYS_API_KEY=your-thesys-key    # Optional: for generative UI
 ```
 
@@ -3696,8 +3702,8 @@ Or in `config/data-table.php`:
 
 ```php
 'ai' => [
-    'model' => 'openai:gpt-4o-mini',
-    'max_tokens' => 1024,
+    'model' => env('DATA_TABLE_AI_MODEL'), // null = use parent app's AI/Prism config
+    'max_tokens' => null,                  // null = use parent app's config, then 1024
     'sample_size' => 50,
     'thesys_api_key' => env('DATA_TABLE_THESYS_API_KEY'),
     'thesys_model' => 'c1-nightly',
