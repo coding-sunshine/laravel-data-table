@@ -104,7 +104,7 @@ function FilterPill({
             {/* Operator section */}
             <Popover
                 open={openSection === "operator"}
-                onOpenChange={(open) => onSectionChange(open ? "operator" : null)}
+                onOpenChange={(open: boolean) => onSectionChange(open ? "operator" : null)}
             >
                 <PopoverTrigger asChild>
                     <button
@@ -141,7 +141,7 @@ function FilterPill({
             {/* Value section */}
             <Popover
                 open={openSection === "value"}
-                onOpenChange={(open) => onSectionChange(open ? "value" : null)}
+                onOpenChange={(open: boolean) => onSectionChange(open ? "value" : null)}
             >
                 <PopoverTrigger asChild>
                     <button
@@ -301,7 +301,7 @@ export function Filters({ columns, serverFilters, t, prefix, debounceMs, partial
                     ) : (
                         <Command
                             loop
-                            filter={(value, searchTerm, keywords) => {
+                            filter={(value: string, searchTerm: string, keywords?: string[]) => {
                                 const ext = `${value} ${keywords?.join(" ")}`;
                                 return ext.toLowerCase().includes(searchTerm.toLowerCase())
                                     ? 1
