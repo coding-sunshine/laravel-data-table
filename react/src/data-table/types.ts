@@ -463,6 +463,10 @@ export interface DataTableProps<TData extends object> {
     sparklineData?: Record<string, number[][]>;
     /** AI assistant prompt handler: receives natural language query, returns filter/sort config */
     onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
+    /** Base URL for AI endpoints (e.g., '/data-table/ai/products'). Enables built-in AI features. */
+    aiBaseUrl?: string;
+    /** Enable Thesys C1 generative UI visualizations (requires Thesys API key on the backend). */
+    aiThesys?: boolean;
     /** Pivot mode state callback */
     onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
     /** Column ID to use as kanban lane grouping (e.g., 'status') */

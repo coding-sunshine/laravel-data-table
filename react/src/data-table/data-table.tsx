@@ -43,6 +43,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { type Column, type ColumnDef, type ColumnOrderState, type Table as TanStackTable, type VisibilityState, flexRender } from "@tanstack/react-table";
 import {
+    AlertTriangle,
     AlignJustify,
     ArrowDown,
     ArrowUp,
@@ -73,8 +74,10 @@ import {
     LayoutList,
     Link as LinkIcon,
     List,
+    Lightbulb,
     Loader2,
     Mail,
+    MessageSquare,
     Paintbrush,
     PanelRight,
     Pencil,
@@ -88,8 +91,10 @@ import {
     RefreshCw,
     Rows3,
     Search,
+    Sparkles,
     SlidersHorizontal,
     Tag,
+    TrendingUp,
     ToggleLeft,
     Trash2,
     Type,
@@ -2927,6 +2932,570 @@ function FindReplaceBar({ state, onReplace, onReplaceAll, onClose, t }: {
     );
 }
 
+// ─── AI Assistant ────────────────────────────────────────────────────────────
+
+interface AiInsight {
+    type: "anomaly" | "trend" | "pattern" | "recommendation";
+    title: string;
+    description: string;
+    severity?: "info" | "warning" | "critical";
+    column?: string;
+    action?: { filters?: Record<string, unknown>; sort?: string };
+}
+
+interface AiSuggestion {
+    label: string;
+    description: string;
+    action: { filters?: Record<string, unknown>; sort?: string };
+    icon?: string;
+}
+
+interface AiColumnSummaryResult {
+    summary: string;
+    highlights: string[];
+    suggestion?: string;
+}
+
+interface AiEnrichResult {
+    column_name: string;
+    enrichments: Record<string, string>;
+}
+
+function useAiAssistant(aiBaseUrl: string | undefined) {
+    const [insights, setInsights] = useState<AiInsight[]>([]);
+    const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
+    const [columnSummary, setColumnSummary] = useState<AiColumnSummaryResult | null>(null);
+    const [enrichResult, setEnrichResult] = useState<AiEnrichResult | null>(null);
+    const [visualizeHtml, setVisualizeHtml] = useState<string | null>(null);
+    const [loadingInsights, setLoadingInsights] = useState(false);
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const [loadingColumnSummary, setLoadingColumnSummary] = useState(false);
+    const [loadingEnrich, setLoadingEnrich] = useState(false);
+    const [loadingVisualize, setLoadingVisualize] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchJson = useCallback(async (endpoint: string, body: Record<string, unknown>) => {
+        if (!aiBaseUrl) throw new Error("AI base URL not configured");
+        const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content;
+        const res = await fetch(`${aiBaseUrl}/${endpoint}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                ...(csrfToken ? { "X-CSRF-TOKEN": csrfToken } : {}),
+            },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => null);
+            throw new Error(data?.error || `Request failed (${res.status})`);
+        }
+        return res.json();
+    }, [aiBaseUrl]);
+
+    const queryNlp = useCallback(async (query: string) => {
+        setError(null);
+        return fetchJson("query", { query });
+    }, [fetchJson]);
+
+    const fetchInsights = useCallback(async () => {
+        setLoadingInsights(true);
+        setError(null);
+        try {
+            const data = await fetchJson("insights", {});
+            setInsights(data.insights || []);
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setLoadingInsights(false);
+        }
+    }, [fetchJson]);
+
+    const fetchSuggestions = useCallback(async (currentFilters?: Record<string, unknown>) => {
+        setLoadingSuggestions(true);
+        setError(null);
+        try {
+            const data = await fetchJson("suggest", { current_filters: currentFilters || {} });
+            setSuggestions(data.suggestions || []);
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setLoadingSuggestions(false);
+        }
+    }, [fetchJson]);
+
+    const fetchColumnSummary = useCallback(async (columnId: string) => {
+        setLoadingColumnSummary(true);
+        setError(null);
+        setColumnSummary(null);
+        try {
+            const data = await fetchJson("column-summary", { column: columnId });
+            setColumnSummary(data);
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setLoadingColumnSummary(false);
+        }
+    }, [fetchJson]);
+
+    const enrichRows = useCallback(async (prompt: string, columnName: string, rowIds: unknown[]) => {
+        setLoadingEnrich(true);
+        setError(null);
+        setEnrichResult(null);
+        try {
+            const data = await fetchJson("enrich", { prompt, column_name: columnName, row_ids: rowIds });
+            setEnrichResult(data);
+            return data as AiEnrichResult;
+        } catch (e) {
+            setError((e as Error).message);
+            return null;
+        } finally {
+            setLoadingEnrich(false);
+        }
+    }, [fetchJson]);
+
+    const fetchVisualize = useCallback(async (prompt?: string) => {
+        setLoadingVisualize(true);
+        setError(null);
+        setVisualizeHtml(null);
+        try {
+            const data = await fetchJson("visualize", { prompt: prompt || "" });
+            setVisualizeHtml(data.html || null);
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setLoadingVisualize(false);
+        }
+    }, [fetchJson]);
+
+    return {
+        insights, suggestions, columnSummary, enrichResult, visualizeHtml,
+        loadingInsights, loadingSuggestions, loadingColumnSummary, loadingEnrich, loadingVisualize,
+        error, queryNlp, fetchInsights, fetchSuggestions, fetchColumnSummary, enrichRows, fetchVisualize,
+        clearError: () => setError(null),
+    };
+}
+
+/** AI Assistant Panel — displays insights, suggestions, NLQ input, and enrichment */
+function AiAssistantPanel({ ai, t, onApplyAction, onClose, columns, selectedRowIds, hasThesys }: {
+    ai: ReturnType<typeof useAiAssistant>;
+    t: DataTableTranslations;
+    onApplyAction: (action: { filters?: Record<string, unknown>; sort?: string }) => void;
+    onClose: () => void;
+    columns: DataTableColumnDef[];
+    selectedRowIds: unknown[];
+    hasThesys?: boolean;
+}) {
+    const tabs = [
+        { id: "insights" as const, label: t.aiInsights, icon: Lightbulb },
+        { id: "suggestions" as const, label: t.aiSuggestions, icon: TrendingUp },
+        { id: "summary" as const, label: t.aiColumnSummary, icon: BarChart3 },
+        { id: "enrich" as const, label: t.aiEnrich, icon: Sparkles },
+        ...(hasThesys ? [{ id: "visualize" as const, label: t.aiVisualize, icon: BarChart3 }] : []),
+    ];
+
+    type TabId = typeof tabs[number]["id"];
+    const [activeTab, setActiveTab] = useState<TabId>("insights");
+    const [enrichPrompt, setEnrichPrompt] = useState("");
+    const [vizPrompt, setVizPrompt] = useState("");
+    const [enrichColName, setEnrichColName] = useState("");
+    const [summaryColumnId, setSummaryColumnId] = useState<string | null>(null);
+
+    const insightTypeIcon = (type: string) => {
+        switch (type) {
+            case "anomaly": return <AlertTriangle className="h-4 w-4 text-amber-500" />;
+            case "trend": return <TrendingUp className="h-4 w-4 text-blue-500" />;
+            case "pattern": return <BarChart3 className="h-4 w-4 text-purple-500" />;
+            case "recommendation": return <Lightbulb className="h-4 w-4 text-emerald-500" />;
+            default: return <MessageSquare className="h-4 w-4 text-muted-foreground" />;
+        }
+    };
+
+    const insightTypeLabel = (type: string) => {
+        switch (type) {
+            case "anomaly": return t.aiAnomaly;
+            case "trend": return t.aiTrend;
+            case "pattern": return t.aiPattern;
+            case "recommendation": return t.aiRecommendation;
+            default: return type;
+        }
+    };
+
+    const severityColor = (severity?: string) => {
+        switch (severity) {
+            case "critical": return "border-destructive/50 bg-destructive/5";
+            case "warning": return "border-amber-500/50 bg-amber-500/5";
+            default: return "border-border bg-card";
+        }
+    };
+
+    // Badge dot for tabs that have loaded data
+    const hasData = (tab: TabId) => {
+        switch (tab) {
+            case "insights": return ai.insights.length > 0;
+            case "suggestions": return ai.suggestions.length > 0;
+            case "summary": return !!ai.columnSummary;
+            case "enrich": return !!ai.enrichResult;
+            case "visualize": return !!ai.visualizeHtml;
+        }
+    };
+
+    return (
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm print:hidden">
+            {/* ── Header ── */}
+            <div className="flex items-center gap-2 border-b px-4 py-3">
+                <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4" />
+                    <span className="text-sm font-semibold">{t.aiAssistant}</span>
+                </div>
+                {ai.error && (
+                    <div className="ml-3 flex items-center gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-0.5">
+                        <AlertTriangle className="h-3 w-3 text-destructive" />
+                        <span className="text-xs text-destructive">{ai.error}</span>
+                    </div>
+                )}
+                <Button variant="ghost" size="icon" className="ml-auto h-7 w-7" onClick={onClose}>
+                    <X className="h-3.5 w-3.5" />
+                </Button>
+            </div>
+
+            {/* ── Tab navigation ── */}
+            <div className="border-b">
+                <div className="flex gap-0 overflow-x-auto px-2">
+                    {tabs.map(tab => {
+                        const Icon = tab.icon;
+                        const active = activeTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                className={`relative flex items-center gap-1.5 whitespace-nowrap px-3 py-2.5 text-xs font-medium transition-colors ${
+                                    active
+                                        ? "text-foreground"
+                                        : "text-muted-foreground hover:text-foreground"
+                                }`}
+                                onClick={() => {
+                                    setActiveTab(tab.id);
+                                    if (tab.id === "insights" && ai.insights.length === 0 && !ai.loadingInsights) ai.fetchInsights();
+                                    if (tab.id === "suggestions" && ai.suggestions.length === 0 && !ai.loadingSuggestions) ai.fetchSuggestions();
+                                }}
+                            >
+                                <Icon className="h-3.5 w-3.5" />
+                                {tab.label}
+                                {hasData(tab.id) && (
+                                    <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-primary" />
+                                )}
+                                {/* Active indicator bar */}
+                                {active && (
+                                    <span className="absolute inset-x-0 -bottom-px h-0.5 bg-primary" />
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* ── Content area ── */}
+            <div className="max-h-[28rem] overflow-y-auto p-4">
+
+                {/* ── Insights tab ── */}
+                {activeTab === "insights" && (
+                    <div className="space-y-3">
+                        {/* Header with refresh */}
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-medium text-muted-foreground">{t.aiInsights}</p>
+                            <Button
+                                variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs text-muted-foreground"
+                                disabled={ai.loadingInsights}
+                                onClick={() => ai.fetchInsights()}
+                            >
+                                <RefreshCw className={`h-3 w-3 ${ai.loadingInsights ? "animate-spin" : ""}`} />
+                                {t.aiRefresh}
+                            </Button>
+                        </div>
+
+                        {/* Loading state */}
+                        {ai.loadingInsights && ai.insights.length === 0 && (
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                <p className="text-xs text-muted-foreground">{t.aiInsightsLoading}</p>
+                            </div>
+                        )}
+
+                        {/* Empty state */}
+                        {!ai.loadingInsights && ai.insights.length === 0 && (
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <Lightbulb className="h-8 w-8 text-muted-foreground/30" />
+                                <p className="text-xs text-muted-foreground">{t.aiNoInsights}</p>
+                                <Button variant="outline" size="sm" className="mt-1 h-7 text-xs" onClick={() => ai.fetchInsights()}>
+                                    <Sparkles className="mr-1.5 h-3 w-3" />
+                                    {t.aiInsights}
+                                </Button>
+                            </div>
+                        )}
+
+                        {/* Insight cards */}
+                        {ai.insights.map((insight, i) => (
+                            <div key={i} className={`rounded-lg border p-3 text-sm ${severityColor(insight.severity)}`}>
+                                <div className="flex items-start gap-2.5">
+                                    <div className="mt-0.5 shrink-0">{insightTypeIcon(insight.type)}</div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                                {insightTypeLabel(insight.type)}
+                                            </span>
+                                        </div>
+                                        <p className="mt-1.5 text-xs font-semibold">{insight.title}</p>
+                                        <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{insight.description}</p>
+                                        {insight.action && (
+                                            <Button variant="outline" size="sm" className="mt-2 h-6 gap-1 px-2.5 text-[11px]" onClick={() => onApplyAction(insight.action!)}>
+                                                {t.aiApply}
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* ── Suggestions tab ── */}
+                {activeTab === "suggestions" && (
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-medium text-muted-foreground">{t.aiSuggestions}</p>
+                            <Button
+                                variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs text-muted-foreground"
+                                disabled={ai.loadingSuggestions}
+                                onClick={() => ai.fetchSuggestions()}
+                            >
+                                <RefreshCw className={`h-3 w-3 ${ai.loadingSuggestions ? "animate-spin" : ""}`} />
+                                {t.aiRefresh}
+                            </Button>
+                        </div>
+
+                        {ai.loadingSuggestions && ai.suggestions.length === 0 && (
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                <p className="text-xs text-muted-foreground">{t.aiSuggestionsLoading}</p>
+                            </div>
+                        )}
+
+                        {!ai.loadingSuggestions && ai.suggestions.length === 0 && (
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <TrendingUp className="h-8 w-8 text-muted-foreground/30" />
+                                <p className="text-xs text-muted-foreground">{t.aiNoSuggestions}</p>
+                                <Button variant="outline" size="sm" className="mt-1 h-7 text-xs" onClick={() => ai.fetchSuggestions()}>
+                                    <Sparkles className="mr-1.5 h-3 w-3" />
+                                    {t.aiSuggestions}
+                                </Button>
+                            </div>
+                        )}
+
+                        <div className="grid gap-2">
+                            {ai.suggestions.map((suggestion, i) => (
+                                <button
+                                    key={i}
+                                    className="group flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
+                                    onClick={() => onApplyAction(suggestion.action)}
+                                >
+                                    <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-semibold">{suggestion.label}</p>
+                                        <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{suggestion.description}</p>
+                                    </div>
+                                    <ChevronRight className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Column Summary tab ── */}
+                {activeTab === "summary" && (
+                    <div className="space-y-3">
+                        <p className="text-xs font-medium text-muted-foreground">{t.aiColumnSummary}</p>
+                        <select
+                            className="h-8 w-full rounded-md border bg-background px-3 text-xs"
+                            value={summaryColumnId ?? ""}
+                            onChange={(e) => {
+                                const colId = e.target.value;
+                                setSummaryColumnId(colId);
+                                if (colId) ai.fetchColumnSummary(colId);
+                            }}
+                        >
+                            <option value="">{t.aiSelectColumn}</option>
+                            {columns.map(col => (
+                                <option key={col.id} value={col.id}>{col.label}</option>
+                            ))}
+                        </select>
+
+                        {ai.loadingColumnSummary && (
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                <p className="text-xs text-muted-foreground">{t.aiColumnSummaryLoading}</p>
+                            </div>
+                        )}
+
+                        {!summaryColumnId && !ai.columnSummary && (
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <BarChart3 className="h-8 w-8 text-muted-foreground/30" />
+                                <p className="text-xs text-muted-foreground">{t.aiSelectColumn}</p>
+                            </div>
+                        )}
+
+                        {ai.columnSummary && (
+                            <div className="space-y-3">
+                                <div className="rounded-lg border p-3">
+                                    <p className="text-xs leading-relaxed">{ai.columnSummary.summary}</p>
+                                </div>
+                                {ai.columnSummary.highlights.length > 0 && (
+                                    <div className="rounded-lg border p-3">
+                                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Highlights</p>
+                                        <ul className="space-y-1.5">
+                                            {ai.columnSummary.highlights.map((h, i) => (
+                                                <li key={i} className="flex items-start gap-2 text-xs">
+                                                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />
+                                                    <span className="leading-relaxed">{h}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                                {ai.columnSummary.suggestion && (
+                                    <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                                        <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                                        <p className="text-xs leading-relaxed">{ai.columnSummary.suggestion}</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── Enrich tab ── */}
+                {activeTab === "enrich" && (
+                    <div className="space-y-3">
+                        <p className="text-xs text-muted-foreground">
+                            {t.aiEnrichDescription(selectedRowIds.length)}
+                        </p>
+
+                        <div className="space-y-2">
+                            <label className="text-[11px] font-medium text-muted-foreground">{t.aiEnrichColumnName}</label>
+                            <Input
+                                placeholder={t.aiEnrichColumnName}
+                                value={enrichColName}
+                                onChange={(e) => setEnrichColName(e.target.value)}
+                                className="h-8 text-xs"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[11px] font-medium text-muted-foreground">{t.aiEnrichPrompt}</label>
+                            <Input
+                                placeholder={t.aiEnrichPrompt}
+                                value={enrichPrompt}
+                                onChange={(e) => setEnrichPrompt(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && enrichPrompt.trim() && enrichColName.trim()) {
+                                        ai.enrichRows(enrichPrompt, enrichColName, selectedRowIds);
+                                    }
+                                }}
+                                className="h-8 text-xs"
+                            />
+                        </div>
+
+                        <Button
+                            size="sm" className="h-8 text-xs"
+                            disabled={!enrichPrompt.trim() || !enrichColName.trim() || ai.loadingEnrich}
+                            onClick={() => ai.enrichRows(enrichPrompt, enrichColName, selectedRowIds)}
+                        >
+                            {ai.loadingEnrich ? (
+                                <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />{t.aiEnrichLoading}</>
+                            ) : (
+                                <><Sparkles className="mr-1.5 h-3 w-3" />{t.aiEnrich}</>
+                            )}
+                        </Button>
+
+                        {ai.enrichResult && (
+                            <div className="rounded-lg border">
+                                <div className="border-b px-3 py-2">
+                                    <p className="text-xs font-semibold">{t.aiEnrichSuccess(Object.keys(ai.enrichResult.enrichments).length)}</p>
+                                </div>
+                                <div className="max-h-40 overflow-y-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                                            <tr>
+                                                <th className="px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground">ID</th>
+                                                <th className="px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground">{ai.enrichResult.column_name}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {Object.entries(ai.enrichResult.enrichments).map(([id, val]) => (
+                                                <tr key={id} className="border-t">
+                                                    <td className="px-3 py-1.5 font-mono text-muted-foreground">{id}</td>
+                                                    <td className="px-3 py-1.5">{val}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── Visualize tab (Thesys C1) ── */}
+                {activeTab === "visualize" && hasThesys && (
+                    <div className="space-y-3">
+                        <p className="text-xs text-muted-foreground">{t.aiVisualize}</p>
+                        <div className="flex gap-2">
+                            <Input
+                                placeholder={t.aiVisualizePrompt}
+                                value={vizPrompt}
+                                onChange={(e) => setVizPrompt(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") ai.fetchVisualize(vizPrompt || undefined); }}
+                                className="h-8 text-xs"
+                            />
+                            <Button
+                                size="sm" className="h-8 shrink-0 text-xs"
+                                disabled={ai.loadingVisualize}
+                                onClick={() => ai.fetchVisualize(vizPrompt || undefined)}
+                            >
+                                {ai.loadingVisualize ? (
+                                    <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />{t.aiVisualizeLoading}</>
+                                ) : (
+                                    <><BarChart3 className="mr-1.5 h-3 w-3" />{t.aiVisualizeGenerate}</>
+                                )}
+                            </Button>
+                        </div>
+
+                        {!ai.visualizeHtml && !ai.loadingVisualize && (
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <BarChart3 className="h-8 w-8 text-muted-foreground/30" />
+                                <p className="text-xs text-muted-foreground">{t.aiVisualizePrompt}</p>
+                            </div>
+                        )}
+
+                        {ai.loadingVisualize && !ai.visualizeHtml && (
+                            <div className="flex flex-col items-center gap-2 py-8 text-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                <p className="text-xs text-muted-foreground">{t.aiVisualizeLoading}</p>
+                            </div>
+                        )}
+
+                        {ai.visualizeHtml && (
+                            <div
+                                className="rounded-lg border bg-background p-4"
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(ai.visualizeHtml) }}
+                            />
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // ─── Main DataTable component ───────────────────────────────────────────────
 
 function DataTableInner<TData extends object>({
@@ -2947,7 +3516,7 @@ function DataTableInner<TData extends object>({
     kanbanColumnId, onKanbanMove, facetedCounts: facetedCountsProp,
     presenceChannel, currentUser,
     cardImageColumn, cardTitleColumn, cardSubtitleColumn,
-    renderMasterDetail, onFindReplace, chartTypes,
+    renderMasterDetail, onFindReplace, chartTypes, aiBaseUrl, aiThesys,
 }: DataTableProps<TData>) {
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
@@ -3087,6 +3656,8 @@ function DataTableInner<TData extends object>({
     // AI assistant state
     const [aiQuery, setAiQuery] = useState("");
     const [aiQuerying, setAiQuerying] = useState(false);
+    const [aiPanelOpen, setAiPanelOpen] = useState(false);
+    const ai = useAiAssistant(aiBaseUrl);
 
     // Pivot mode state
     const [pivotActive, setPivotActive] = useState(false);
@@ -3259,12 +3830,18 @@ function DataTableInner<TData extends object>({
         router.visit(url.toString(), { preserveState: true, preserveScroll: true, only: partialReloadKey ? [partialReloadKey] : undefined });
     }, [prefix, partialReloadKey]);
 
-    // AI assistant handler
+    // AI assistant handler (supports both onAiQuery prop and built-in aiBaseUrl)
     const handleAiQuery = useCallback(async () => {
-        if (!onAiQuery || !aiQuery.trim()) return;
+        if (!aiQuery.trim()) return;
+        if (!onAiQuery && !aiBaseUrl) return;
         setAiQuerying(true);
         try {
-            const result = await onAiQuery(aiQuery.trim());
+            let result: { filters?: Record<string, unknown>; sort?: string } | void;
+            if (onAiQuery) {
+                result = await onAiQuery(aiQuery.trim());
+            } else if (aiBaseUrl) {
+                result = await ai.queryNlp(aiQuery.trim());
+            }
             if (result) {
                 const url = new URL(window.location.href);
                 const p = prefix ? `${prefix}_` : "";
@@ -3282,7 +3859,23 @@ function DataTableInner<TData extends object>({
         } finally {
             setAiQuerying(false);
         }
-    }, [onAiQuery, aiQuery, prefix]);
+    }, [onAiQuery, aiBaseUrl, ai, aiQuery, prefix]);
+
+    // Apply AI action (from insights/suggestions panel)
+    const handleAiApplyAction = useCallback((action: { filters?: Record<string, unknown>; sort?: string }) => {
+        const url = new URL(window.location.href);
+        const p = prefix ? `${prefix}_` : "";
+        if (action.filters) {
+            Object.entries(action.filters).forEach(([key, value]) => {
+                url.searchParams.set(`${p}filter[${key}]`, String(value));
+            });
+        }
+        if (action.sort) {
+            url.searchParams.set(`${p}sort`, action.sort);
+        }
+        url.searchParams.set(`${p}page`, "1");
+        router.visit(url.toString(), { preserveState: true });
+    }, [prefix]);
 
     // Tree data: build hierarchy from flat data
     const treeConfig = config;
@@ -4117,6 +4710,14 @@ function DataTableInner<TData extends object>({
                         </Button>
                     )}
 
+                    {/* AI Assistant button (only when aiBaseUrl is set) */}
+                    {aiBaseUrl && (
+                        <Button variant={aiPanelOpen ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => setAiPanelOpen(v => !v)}>
+                            <Sparkles className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">{t.aiAssistant}</span>
+                        </Button>
+                    )}
+
                     {slots?.toolbar ?? (
                         <>
                             <Popover>
@@ -4770,22 +5371,50 @@ function DataTableInner<TData extends object>({
                 </div>
             )}
 
-            {/* ── AI Assistant input ── */}
-            {onAiQuery && (
-                <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 print:hidden">
-                    <Search className="h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder={t.aiPlaceholder}
-                        value={aiQuery}
-                        onChange={(e) => setAiQuery(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleAiQuery(); }}
-                        className="h-7 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
-                        disabled={aiQuerying}
-                    />
-                    {aiQuerying && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={handleAiQuery} disabled={aiQuerying || !aiQuery.trim()}>
-                        {aiQuerying ? t.aiQuerying : t.aiAssistant}
-                    </Button>
+            {/* ── AI Assistant ── */}
+            {(onAiQuery || aiBaseUrl) && (
+                <div className="space-y-3 print:hidden">
+                    {/* NLQ input bar */}
+                    <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                        <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <Input
+                            placeholder={t.aiPlaceholder}
+                            value={aiQuery}
+                            onChange={(e) => setAiQuery(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleAiQuery(); }}
+                            className="h-8 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
+                            disabled={aiQuerying}
+                        />
+                        {aiQuerying ? (
+                            <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                <span>{t.aiQuerying}</span>
+                            </div>
+                        ) : (
+                            <Button
+                                variant="ghost" size="sm"
+                                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                                onClick={handleAiQuery}
+                                disabled={!aiQuery.trim()}
+                            >
+                                <MessageSquare className="h-3 w-3" />
+                                {t.aiAssistant}
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* AI Panel */}
+                    {aiBaseUrl && aiPanelOpen && (
+                        <AiAssistantPanel
+                            ai={ai}
+                            t={t}
+                            onApplyAction={handleAiApplyAction}
+                            onClose={() => setAiPanelOpen(false)}
+                            columns={mergedColumns}
+                            selectedRowIds={Object.keys(rowSelection).filter(k => rowSelection[k])}
+                            hasThesys={!!aiThesys}
+                        />
+                    )}
                 </div>
             )}
 

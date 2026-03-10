@@ -185,7 +185,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 - **Pivot table mode** — Row/column grouping with aggregation (sum, avg, count, min, max)
 - **valueGetter/valueFormatter** — Separate data access from display formatting (like AG Grid)
 - **Sparklines** — Inline SVG mini-charts (line and bar) in table cells
-- **AI assistant** — Natural language query input for filtering and sorting via callback
+- **AI assistant (Laravel AI SDK / Prism PHP)** — Natural language query, AI insights, smart suggestions, column summaries, row enrichment, and Thesys C1 generative UI visualizations
 - **Column auto-size** — Auto-fit column widths to content via double-click or API
 - **Analytics / KPI cards** — Built-in zero-dependency KPI cards above the table with delta arrows, formatting, and responsive grid
 - **Custom charts slot** — Bring your own charting library (Recharts, Chart.js, Nivo) via `slots.analytics` render prop
@@ -1081,6 +1081,20 @@ Each trait provides these public methods (most are auto-derived; override for cu
 | `tableAuditLogTable(): string` | Database table name. Default: `'data_table_audit_log'` |
 | `tableAuditLogEnabled(): bool` | Whether logging is enabled. Default: `true` |
 
+**HasAi:**
+
+| Method | Description |
+|--------|-------------|
+| `tableAiModel(): ?string` | LLM model override. Default: uses parent app's AI/Prism config |
+| `tableAiSampleSize(): int` | Max sample rows sent to LLM. Default: `50` |
+| `tableAiSystemContext(): string` | Domain-specific instructions for better AI responses |
+| `handleAiQuery(string, Request): JsonResponse` | NLQ → filters/sort |
+| `handleAiInsights(Request): JsonResponse` | Anomaly/trend/pattern detection |
+| `handleAiSuggest(Request): JsonResponse` | Smart filter/sort suggestions |
+| `handleAiColumnSummary(string, Request): JsonResponse` | Per-column analysis |
+| `handleAiEnrich(string, string, array, Request): JsonResponse` | Generate AI-computed column values |
+| `handleAiVisualize(Request): JsonResponse` | Thesys C1 generative UI visualization |
+
 ### PHP Data Transfer Objects
 
 **`DataTableResponse`** — The Spatie Data DTO returned by `makeTable()`:
@@ -1360,6 +1374,8 @@ interface DataTableProps<TData extends object> {
     hasMore?: boolean;                      // More data available for infinite scroll
     sparklineData?: Record<string, number[][]>; // Sparkline data per column per row
     onAiQuery?: (query: string) => Promise<{ filters?: Record<string, unknown>; sort?: string } | void>;
+    aiBaseUrl?: string;                     // Base URL for built-in AI endpoints (enables insights, suggestions, enrich, visualize)
+    aiThesys?: boolean;                     // Enable Thesys C1 generative UI tab
     onPivotChange?: (config: { rowFields: string[]; columnFields: string[]; valueField: string; aggregation: string }) => void;
 
     // Layout & views
@@ -1619,7 +1635,7 @@ The `DataTableTranslations` interface has **100+ keys** covering every UI string
 | Column auto-size | `autosizeColumn`, `autosizeAllColumns` | Auto-size tooltips |
 | Cell range | `cellsSelected`, `clearSelection` | Range selection indicator |
 | Sparklines | `sparklineLabel` | Sparkline chart label |
-| AI assistant | `aiPlaceholder`, `aiAssistant`, `aiQuerying` | AI query input |
+| AI assistant | `aiAssistant`, `aiPlaceholder`, `aiQuerying`, `aiInsights`, `aiInsightsLoading`, `aiSuggestions`, `aiSuggestionsLoading`, `aiColumnSummary`, `aiColumnSummaryLoading`, `aiEnrich`, `aiEnrichPrompt`, `aiEnrichColumnName`, `aiEnrichLoading`, `aiEnrichSuccess`, `aiError`, `aiApply`, `aiAnomaly`, `aiTrend`, `aiPattern`, `aiRecommendation`, `aiVisualize`, `aiVisualizePrompt`, `aiVisualizeLoading`, `aiVisualizeGenerate`, `aiNoInsights`, `aiNoSuggestions`, `aiEnrichDescription`, `aiSelectColumn`, `aiRefresh` | AI-native features |
 | Pivot | `pivotMode`, `pivotRowFields`, `pivotValueField` | Pivot mode controls |
 | Window scroller | `scrollToTop` | Scroll-to-top button |
 | API ref | `apiScrollToRow`, `apiAutosize`, `apiExport`, `apiResetFilters` | API ref action labels |
@@ -2833,8 +2849,16 @@ return [
         'toggle' => 60,                    // Max toggle requests per minute per user (0 = disabled)
         'export' => 10,                    // Max exports per minute per user (0 = disabled)
         'import' => 5,                     // Max imports per minute per user (0 = disabled)
+        'ai' => 30,                        // Max AI requests per minute per user (0 = disabled)
     ],
     'audit_table' => 'data_table_audit_log', // Database table for audit log storage
+    'ai' => [
+        'model' => env('DATA_TABLE_AI_MODEL'), // Override model (default: uses parent app's AI/Prism config)
+        'max_tokens' => null,              // Falls back to parent app's Prism config, then 1024
+        'sample_size' => 50,               // Max rows sent to LLM for context
+        'thesys_api_key' => env('DATA_TABLE_THESYS_API_KEY'), // Thesys C1 API key
+        'thesys_model' => 'c1-nightly',    // Thesys C1 model
+    ],
 ];
 ```
 
@@ -2860,6 +2884,12 @@ The service provider registers these routes automatically:
 | POST | `/data-table/saved-views/{tableName}` | Create saved view |
 | PUT | `/data-table/saved-views/{tableName}/{id}` | Update saved view |
 | DELETE | `/data-table/saved-views/{tableName}/{id}` | Delete saved view |
+| POST | `/data-table/ai/{table}/query` | AI natural language query |
+| POST | `/data-table/ai/{table}/insights` | AI data insights |
+| POST | `/data-table/ai/{table}/suggest` | AI smart suggestions |
+| POST | `/data-table/ai/{table}/column-summary` | AI column summary |
+| POST | `/data-table/ai/{table}/enrich` | AI row enrichment |
+| POST | `/data-table/ai/{table}/visualize` | AI generative UI (Thesys C1) |
 
 The route prefix and middleware are configurable via `config/data-table.php`.
 
@@ -3602,9 +3632,145 @@ Sparklines render as inline SVG charts (80×20px by default). Line charts use a 
 
 ---
 
-## AI Assistant
+## AI Assistant (Laravel AI SDK / Prism PHP / Thesys)
 
-Add a natural language query input for filtering and sorting:
+AI-native data table features with automatic backend detection. The `HasAi` trait auto-detects your installed AI package:
+
+| Priority | Package | Install |
+|---|---|---|
+| 1st (preferred) | [Laravel AI SDK](https://laravel.com/docs/ai) | `composer require laravel/ai` |
+| 2nd (fallback) | [Prism PHP](https://github.com/prism-php/prism) | `composer require prism-php/prism` |
+
+Laravel AI SDK provides structured output guarantees, streaming, queueing, and testing fakes. Prism PHP works as a reliable fallback. Both use the same `HasAi` trait — zero code changes needed when switching.
+
+### Setup
+
+**1. Install an AI backend:**
+
+```bash
+# Preferred: Laravel AI SDK (built on top of Prism)
+composer require laravel/ai
+
+# OR fallback: Prism PHP directly
+composer require prism-php/prism
+```
+
+**2. Add the `HasAi` trait to your DataTable:**
+
+```php
+use Machour\DataTable\Concerns\HasAi;
+
+class ProductDataTable extends AbstractDataTable
+{
+    use HasAi;
+
+    // Optional: override the AI model (by default uses your app's AI/Prism config)
+    public static function tableAiModel(): ?string
+    {
+        return 'anthropic:claude-sonnet-4-20250514'; // or 'openai:gpt-4o', 'ollama:llama3'
+    }
+
+    // Optional: add domain-specific context for better AI responses
+    public static function tableAiSystemContext(): string
+    {
+        return 'This is an e-commerce product catalog. Prices are in USD.';
+    }
+}
+```
+
+**3. Register the table with the AI controller:**
+
+```php
+// In AppServiceProvider::boot()
+DataTableAiController::register('products', ProductDataTable::class);
+```
+
+**4. Configure (optional):**
+
+By default, the package respects your parent app's AI configuration:
+- **Laravel AI SDK**: uses the model configured in `config/ai.php`
+- **Prism PHP**: uses the default model from `config/prism.php`
+
+Only set `DATA_TABLE_AI_MODEL` if you want to override the parent app's default specifically for data table AI features:
+
+```env
+# DATA_TABLE_AI_MODEL=openai:gpt-4o-mini  # Only set to override parent app's default
+DATA_TABLE_THESYS_API_KEY=your-thesys-key    # Optional: for generative UI
+```
+
+Or in `config/data-table.php`:
+
+```php
+'ai' => [
+    'model' => env('DATA_TABLE_AI_MODEL'), // null = use parent app's AI/Prism config
+    'max_tokens' => null,                  // null = use parent app's config, then 1024
+    'sample_size' => 50,
+    'thesys_api_key' => env('DATA_TABLE_THESYS_API_KEY'),
+    'thesys_model' => 'c1-nightly',
+],
+```
+
+### Laravel AI SDK Agents
+
+When Laravel AI SDK is installed, the trait uses dedicated Agent classes with structured output for guaranteed valid JSON responses:
+
+| Agent | Purpose |
+|---|---|
+| `DataTableQueryAgent` | NLQ → filters/sort with `HasStructuredOutput` |
+| `DataTableInsightsAgent` | Anomaly/trend/pattern detection |
+| `DataTableSuggestAgent` | Smart filter/sort suggestions |
+| `DataTableColumnSummaryAgent` | Per-column distribution analysis |
+| `DataTableEnrichAgent` | Generate new column values |
+| `DataTableVisualizationAgent` | Prompt generation for Thesys C1 |
+
+You can extend any agent for custom behavior:
+
+```php
+use Machour\DataTable\Ai\Agents\DataTableQueryAgent;
+
+class CustomQueryAgent extends DataTableQueryAgent
+{
+    public function instructions(): string
+    {
+        return parent::instructions() . "\n\nAlways prioritize filters over sorting.";
+    }
+}
+```
+
+### Usage (React)
+
+**Built-in AI (recommended) — uses `aiBaseUrl`:**
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    aiBaseUrl="/data-table/ai/products"
+/>
+```
+
+This enables all 6 AI features with zero custom code:
+
+- Natural language query bar (NLQ)
+- AI Insights panel (anomalies, trends, patterns)
+- AI Smart Suggestions (recommended filters)
+- AI Column Summary (per-column analysis)
+- AI Row Enrichment (generate new column values)
+
+**With Thesys C1 generative UI:**
+
+```tsx
+<DataTable
+    tableData={tableData}
+    tableName="products"
+    aiBaseUrl="/data-table/ai/products"
+    aiThesys={true}
+/>
+```
+
+Adds a "Visualize" tab that sends your data to [Thesys C1](https://www.thesys.dev) to generate interactive charts, cards, and dashboards rendered directly in the table UI.
+
+**Custom AI (callback-only) — uses `onAiQuery`:**
 
 ```tsx
 <DataTable
@@ -3617,12 +3783,80 @@ Add a natural language query input for filtering and sorting:
             body: JSON.stringify({ query, table: 'products' }),
         });
         return response.json();
-        // Expected: { filters: { status: 'active' }, sort: 'price' }
+        // Expected: { filters: { status: 'active' }, sort: '-price' }
     }}
 />
 ```
 
-An input field appears below the table. Users type natural language queries like "show me active products sorted by price". The `onAiQuery` callback receives the query string and should return filter/sort configuration that gets applied via URL parameters.
+You can also use both — `onAiQuery` takes precedence for the NLQ bar, while `aiBaseUrl` powers the insights/suggestions/enrich/visualize panel.
+
+### AI Features
+
+| Feature | Description | Endpoint |
+|---|---|---|
+| **Natural Language Query** | "Show overdue orders over $500" → auto-applies filters/sort | `POST /ai/{table}/query` |
+| **AI Insights** | Automatic anomaly detection, trends, patterns, recommendations | `POST /ai/{table}/insights` |
+| **AI Smart Suggestions** | Proactive filter/sort recommendations based on your data | `POST /ai/{table}/suggest` |
+| **AI Column Summary** | "Explain this column" — distribution analysis per column | `POST /ai/{table}/column-summary` |
+| **AI Row Enrichment** | Generate new AI-computed column values (sentiment, category, etc.) | `POST /ai/{table}/enrich` |
+| **AI Visualize** | Thesys C1 generative UI — interactive charts/dashboards from data | `POST /ai/{table}/visualize` |
+
+### AI Endpoints
+
+All endpoints are rate-limited (default: 30 req/min per user) and gated by `tableAuthorize()`:
+
+```
+POST /data-table/ai/{table}/query         { query: "..." }
+POST /data-table/ai/{table}/insights      {}
+POST /data-table/ai/{table}/suggest       { current_filters: {...} }
+POST /data-table/ai/{table}/column-summary { column: "price" }
+POST /data-table/ai/{table}/enrich        { prompt: "...", column_name: "sentiment", row_ids: [1,2,3] }
+POST /data-table/ai/{table}/visualize     { prompt: "Create a sales dashboard" }
+```
+
+### Authorization
+
+Gate AI actions via `tableAuthorize()`:
+
+```php
+public static function tableAuthorize(string $action, Request $request): bool
+{
+    return match ($action) {
+        'ai_query', 'ai_insights', 'ai_suggest', 'ai_column_summary' => $request->user()?->can('view_table'),
+        'ai_enrich' => $request->user()?->can('edit_table'),
+        'ai_visualize' => $request->user()?->can('view_table'),
+        default => true,
+    };
+}
+```
+
+### How It Works
+
+1. The `HasAi` trait auto-detects whether Laravel AI SDK or Prism PHP is installed
+2. With Laravel AI SDK: dedicated Agent classes with `HasStructuredOutput` guarantee valid JSON
+3. With Prism PHP: raw text generation with JSON parsing + markdown fence stripping
+4. Schema is built from your `tableColumns()` definitions (types, labels, options, operators)
+5. Sample rows (configurable, default: 50) are sent as context — never your full database
+6. Responses are applied via the same URL-parameter system used by all other features
+7. Thesys C1 (optional) renders interactive UI components from your data via their API
+
+### Supported Models
+
+| Provider | Models |
+|---|---|
+| OpenAI | `openai:gpt-4o-mini`, `openai:gpt-4o`, `openai:gpt-4-turbo` |
+| Anthropic | `anthropic:claude-sonnet-4-20250514`, `anthropic:claude-haiku-4-5-20251001` |
+| Ollama | `ollama:llama3`, `ollama:mistral`, `ollama:codellama` |
+| Gemini | `gemini:gemini-2.0-flash` |
+| Any Laravel AI / Prism provider | See [Laravel AI docs](https://laravel.com/docs/ai) or [Prism PHP docs](https://prismphp.com) |
+
+### Props Reference
+
+| Prop | Type | Description |
+|---|---|---|
+| `aiBaseUrl` | `string` | Base URL for AI endpoints (e.g., `/data-table/ai/products`). Enables built-in AI features. |
+| `aiThesys` | `boolean` | Enable Thesys C1 generative UI tab (requires `DATA_TABLE_THESYS_API_KEY` on backend). |
+| `onAiQuery` | `(query: string) => Promise<{filters?, sort?}>` | Custom NLQ handler (takes precedence over `aiBaseUrl` for queries). |
 
 ---
 

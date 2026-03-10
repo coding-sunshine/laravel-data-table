@@ -264,6 +264,32 @@ export interface DataTableTranslations {
     aiAssistant: string;
     aiPlaceholder: string;
     aiQuerying: string;
+    aiInsights: string;
+    aiInsightsLoading: string;
+    aiSuggestions: string;
+    aiSuggestionsLoading: string;
+    aiColumnSummary: string;
+    aiColumnSummaryLoading: string;
+    aiEnrich: string;
+    aiEnrichPrompt: string;
+    aiEnrichColumnName: string;
+    aiEnrichLoading: string;
+    aiEnrichSuccess: (count: number) => string;
+    aiError: string;
+    aiApply: string;
+    aiAnomaly: string;
+    aiTrend: string;
+    aiPattern: string;
+    aiRecommendation: string;
+    aiVisualize: string;
+    aiVisualizePrompt: string;
+    aiVisualizeLoading: string;
+    aiVisualizeGenerate: string;
+    aiNoInsights: string;
+    aiNoSuggestions: string;
+    aiEnrichDescription: (count: number) => string;
+    aiSelectColumn: string;
+    aiRefresh: string;
 
     // Pivot
     pivotMode: string;
@@ -626,6 +652,32 @@ export const defaultTranslations: DataTableTranslations = {
     aiAssistant: "AI Assistant",
     aiPlaceholder: "Ask about your data...",
     aiQuerying: "Analyzing...",
+    aiInsights: "AI Insights",
+    aiInsightsLoading: "Generating insights...",
+    aiSuggestions: "Suggestions",
+    aiSuggestionsLoading: "Getting suggestions...",
+    aiColumnSummary: "AI Summary",
+    aiColumnSummaryLoading: "Analyzing column...",
+    aiEnrich: "AI Enrich",
+    aiEnrichPrompt: "Describe what to generate...",
+    aiEnrichColumnName: "New column name",
+    aiEnrichLoading: "Enriching rows...",
+    aiEnrichSuccess: (count) => `Enriched ${count} row${count !== 1 ? "s" : ""}`,
+    aiError: "AI request failed",
+    aiApply: "Apply",
+    aiAnomaly: "Anomaly",
+    aiTrend: "Trend",
+    aiPattern: "Pattern",
+    aiRecommendation: "Recommendation",
+    aiVisualize: "Visualize",
+    aiVisualizePrompt: "Describe the visualization you want...",
+    aiVisualizeLoading: "Generating visualization...",
+    aiVisualizeGenerate: "Generate",
+    aiNoInsights: "No insights yet. Click to analyze your data.",
+    aiNoSuggestions: "No suggestions yet. Click to get recommendations.",
+    aiEnrichDescription: (count) => count > 0 ? `Generate AI values for ${count} selected row${count !== 1 ? "s" : ""}.` : "Generate AI values for all visible rows.",
+    aiSelectColumn: "Select a column...",
+    aiRefresh: "Refresh",
 
     // Pivot
     pivotMode: "Pivot mode",
@@ -959,6 +1011,32 @@ export const frTranslations: DataTableTranslations = {
     aiAssistant: "Assistant IA",
     aiPlaceholder: "Posez une question sur vos données...",
     aiQuerying: "Analyse en cours...",
+    aiInsights: "Analyses IA",
+    aiInsightsLoading: "Génération des analyses...",
+    aiSuggestions: "Suggestions",
+    aiSuggestionsLoading: "Recherche de suggestions...",
+    aiColumnSummary: "Résumé IA",
+    aiColumnSummaryLoading: "Analyse de la colonne...",
+    aiEnrich: "Enrichissement IA",
+    aiEnrichPrompt: "Décrivez ce qu'il faut générer...",
+    aiEnrichColumnName: "Nom de la nouvelle colonne",
+    aiEnrichLoading: "Enrichissement en cours...",
+    aiEnrichSuccess: (count) => `${count} ligne${count !== 1 ? "s" : ""} enrichie${count !== 1 ? "s" : ""}`,
+    aiError: "La requête IA a échoué",
+    aiApply: "Appliquer",
+    aiAnomaly: "Anomalie",
+    aiTrend: "Tendance",
+    aiPattern: "Motif",
+    aiRecommendation: "Recommandation",
+    aiVisualize: "Visualiser",
+    aiVisualizePrompt: "Décrivez la visualisation souhaitée...",
+    aiVisualizeLoading: "Génération de la visualisation...",
+    aiVisualizeGenerate: "Générer",
+    aiNoInsights: "Aucune analyse pour l'instant. Cliquez pour analyser vos données.",
+    aiNoSuggestions: "Aucune suggestion pour l'instant. Cliquez pour obtenir des recommandations.",
+    aiEnrichDescription: (count) => count > 0 ? `Générer des valeurs IA pour ${count} ligne${count !== 1 ? "s" : ""} sélectionnée${count !== 1 ? "s" : ""}.` : "Générer des valeurs IA pour toutes les lignes visibles.",
+    aiSelectColumn: "Sélectionner une colonne...",
+    aiRefresh: "Actualiser",
 
     // Pivot
     pivotMode: "Mode tableau croisé",

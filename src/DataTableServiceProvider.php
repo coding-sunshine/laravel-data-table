@@ -16,6 +16,7 @@ use Machour\DataTable\Http\Controllers\DataTableInlineEditController;
 use Machour\DataTable\Http\Controllers\DataTableSelectAllController;
 use Machour\DataTable\Http\Controllers\DataTableImportController;
 use Machour\DataTable\Http\Controllers\DataTableReorderController;
+use Machour\DataTable\Http\Controllers\DataTableAiController;
 use Machour\DataTable\Http\Controllers\DataTableToggleController;
 use Machour\DataTable\Http\Controllers\SavedViewController;
 
@@ -95,6 +96,20 @@ class DataTableServiceProvider extends ServiceProvider
             // Export status endpoint (for queued exports)
             Route::get($prefix . '/export-status', [DataTableExportController::class, 'status'])
                 ->name('data-table.export-status');
+
+            // AI endpoints (requires HasAi trait on the DataTable class)
+            Route::post($prefix . '/ai/{table}/query', [DataTableAiController::class, 'query'])
+                ->name('data-table.ai.query');
+            Route::post($prefix . '/ai/{table}/insights', [DataTableAiController::class, 'insights'])
+                ->name('data-table.ai.insights');
+            Route::post($prefix . '/ai/{table}/column-summary', [DataTableAiController::class, 'columnSummary'])
+                ->name('data-table.ai.column-summary');
+            Route::post($prefix . '/ai/{table}/suggest', [DataTableAiController::class, 'suggest'])
+                ->name('data-table.ai.suggest');
+            Route::post($prefix . '/ai/{table}/enrich', [DataTableAiController::class, 'enrich'])
+                ->name('data-table.ai.enrich');
+            Route::post($prefix . '/ai/{table}/visualize', [DataTableAiController::class, 'visualize'])
+                ->name('data-table.ai.visualize');
 
             // Saved views API
             Route::get($prefix . '/saved-views/{tableName}', [SavedViewController::class, 'index'])

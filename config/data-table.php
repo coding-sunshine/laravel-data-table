@@ -119,6 +119,7 @@ return [
         'toggle' => 60,
         'export' => 10,
         'import' => 5,
+        'ai' => 30,
     ],
 
     /*
@@ -131,5 +132,37 @@ return [
     |
     */
     'audit_table' => 'data_table_audit_log',
+
+    /*
+    |--------------------------------------------------------------------------
+    | AI Features (Laravel AI SDK or Prism PHP)
+    |--------------------------------------------------------------------------
+    |
+    | Configure AI-powered features for data tables.
+    |
+    | Preferred: composer require laravel/ai
+    | Fallback:  composer require prism-php/prism
+    |
+    | By default, the package respects your parent application's AI config:
+    |   - Laravel AI SDK: uses the model configured in config/ai.php
+    |   - Prism PHP: uses the default model from config/prism.php
+    |
+    | Set 'model' below only if you want to override the parent app's
+    | default specifically for data table AI features.
+    |
+    | Supported model strings (for Prism): 'openai:gpt-4o-mini', 'openai:gpt-4o',
+    | 'anthropic:claude-sonnet-4-20250514', 'anthropic:claude-haiku-4-5-20251001', 'ollama:llama3', etc.
+    |
+    | For Thesys C1 generative UI, set DATA_TABLE_THESYS_API_KEY in .env.
+    | Get an API key at https://www.thesys.dev
+    |
+    */
+    'ai' => [
+        'model' => env('DATA_TABLE_AI_MODEL'),
+        'max_tokens' => null, // Falls back to parent app's Prism config, then 1024
+        'sample_size' => 50,
+        'thesys_api_key' => env('DATA_TABLE_THESYS_API_KEY'),
+        'thesys_model' => env('DATA_TABLE_THESYS_MODEL', 'c1-nightly'),
+    ],
 
 ];
