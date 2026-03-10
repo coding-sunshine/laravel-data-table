@@ -1,12 +1,8 @@
 import { router } from "@inertiajs/react";
 import { useCallback, useMemo, useRef } from "react";
+import type { FilterValue, ActiveFilters } from "../filters/types";
 
-export interface FilterValue {
-    operator: string;
-    values: string[];
-}
-
-export type ActiveFilters = Record<string, FilterValue>;
+export type { FilterValue, ActiveFilters };
 
 export interface UseDataTableFiltersOptions {
     /** Server-provided filters (from DataTableResponse.meta.filters) */

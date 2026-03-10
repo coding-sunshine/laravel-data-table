@@ -492,7 +492,13 @@ trait HasAi
             }
 
             $data = $response->json();
-            $content = $data['choices'][0]['message']['content'] ?? null;
+            $content = $data['choices'][0]['message']['content']
+                ?? $data['content']
+                ?? null;
+
+            if ($content === null) {
+                return response()->json(['error' => 'Thesys API returned an unexpected response format.'], 502);
+            }
 
             return response()->json([
                 'html' => $content,

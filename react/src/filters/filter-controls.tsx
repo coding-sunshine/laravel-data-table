@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import { isEqual } from "date-fns";
 import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import type { DataTableTranslations } from "../data-table/i18n";
 import { DEFAULT_OPERATOR, OPERATORS, type FilterColumn, type FilterValue } from "./types";
@@ -91,7 +91,7 @@ export function OptionFilter({ column, value, onSubmit, hideOperator, t }: Filte
                     <Input
                         placeholder={t.search}
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
                         className="h-8 pl-8 text-sm"
                     />
                 </div>
@@ -150,7 +150,7 @@ export function NumberFilter({ value, onSubmit, hideOperator, t }: FilterControl
                     type="number"
                     placeholder={isRange ? t.min : t.value}
                     value={val1}
-                    onChange={(e) => setVal1(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal1(e.target.value)}
                     onKeyDown={handleKeyDown}
                     autoFocus
                     className="h-8 text-sm"
@@ -160,7 +160,7 @@ export function NumberFilter({ value, onSubmit, hideOperator, t }: FilterControl
                         type="number"
                         placeholder={t.max}
                         value={val2}
-                        onChange={(e) => setVal2(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal2(e.target.value)}
                         onKeyDown={handleKeyDown}
                         className="h-8 text-sm"
                     />
@@ -250,7 +250,7 @@ export function TextFilter({ value, onSubmit, hideOperator, t }: FilterControlPr
             <Input
                 placeholder={t.search}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 autoFocus
                 className="h-8 text-sm"
