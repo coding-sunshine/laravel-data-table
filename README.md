@@ -1635,7 +1635,7 @@ The `DataTableTranslations` interface has **100+ keys** covering every UI string
 | Column auto-size | `autosizeColumn`, `autosizeAllColumns` | Auto-size tooltips |
 | Cell range | `cellsSelected`, `clearSelection` | Range selection indicator |
 | Sparklines | `sparklineLabel` | Sparkline chart label |
-| AI assistant | `aiAssistant`, `aiPlaceholder`, `aiQuerying`, `aiInsights`, `aiInsightsLoading`, `aiSuggestions`, `aiSuggestionsLoading`, `aiColumnSummary`, `aiColumnSummaryLoading`, `aiEnrich`, `aiEnrichPrompt`, `aiEnrichColumnName`, `aiEnrichLoading`, `aiEnrichSuccess`, `aiError`, `aiApply`, `aiAnomaly`, `aiTrend`, `aiPattern`, `aiRecommendation`, `aiVisualize`, `aiVisualizePrompt`, `aiVisualizeLoading`, `aiVisualizeGenerate` | AI-native features |
+| AI assistant | `aiAssistant`, `aiPlaceholder`, `aiQuerying`, `aiInsights`, `aiInsightsLoading`, `aiSuggestions`, `aiSuggestionsLoading`, `aiColumnSummary`, `aiColumnSummaryLoading`, `aiEnrich`, `aiEnrichPrompt`, `aiEnrichColumnName`, `aiEnrichLoading`, `aiEnrichSuccess`, `aiError`, `aiApply`, `aiAnomaly`, `aiTrend`, `aiPattern`, `aiRecommendation`, `aiVisualize`, `aiVisualizePrompt`, `aiVisualizeLoading`, `aiVisualizeGenerate`, `aiNoInsights`, `aiNoSuggestions`, `aiEnrichDescription`, `aiSelectColumn`, `aiRefresh` | AI-native features |
 | Pivot | `pivotMode`, `pivotRowFields`, `pivotValueField` | Pivot mode controls |
 | Window scroller | `scrollToTop` | Scroll-to-top button |
 | API ref | `apiScrollToRow`, `apiAutosize`, `apiExport`, `apiResetFilters` | API ref action labels |
