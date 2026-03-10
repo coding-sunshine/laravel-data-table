@@ -2966,10 +2966,12 @@ function useAiAssistant(aiBaseUrl: string | undefined) {
     const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
     const [columnSummary, setColumnSummary] = useState<AiColumnSummaryResult | null>(null);
     const [enrichResult, setEnrichResult] = useState<AiEnrichResult | null>(null);
+    const [visualizeHtml, setVisualizeHtml] = useState<string | null>(null);
     const [loadingInsights, setLoadingInsights] = useState(false);
     const [loadingSuggestions, setLoadingSuggestions] = useState(false);
     const [loadingColumnSummary, setLoadingColumnSummary] = useState(false);
     const [loadingEnrich, setLoadingEnrich] = useState(false);
+    const [loadingVisualize, setLoadingVisualize] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const fetchJson = useCallback(async (endpoint: string, body: Record<string, unknown>) => {
@@ -3052,25 +3054,41 @@ function useAiAssistant(aiBaseUrl: string | undefined) {
         }
     }, [fetchJson]);
 
+    const fetchVisualize = useCallback(async (prompt?: string) => {
+        setLoadingVisualize(true);
+        setError(null);
+        setVisualizeHtml(null);
+        try {
+            const data = await fetchJson("visualize", { prompt: prompt || "" });
+            setVisualizeHtml(data.html || null);
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setLoadingVisualize(false);
+        }
+    }, [fetchJson]);
+
     return {
-        insights, suggestions, columnSummary, enrichResult,
-        loadingInsights, loadingSuggestions, loadingColumnSummary, loadingEnrich,
-        error, queryNlp, fetchInsights, fetchSuggestions, fetchColumnSummary, enrichRows,
+        insights, suggestions, columnSummary, enrichResult, visualizeHtml,
+        loadingInsights, loadingSuggestions, loadingColumnSummary, loadingEnrich, loadingVisualize,
+        error, queryNlp, fetchInsights, fetchSuggestions, fetchColumnSummary, enrichRows, fetchVisualize,
         clearError: () => setError(null),
     };
 }
 
 /** AI Assistant Panel — displays insights, suggestions, NLQ input, and enrichment */
-function AiAssistantPanel({ ai, t, onApplyAction, onClose, columns, selectedRowIds }: {
+function AiAssistantPanel({ ai, t, onApplyAction, onClose, columns, selectedRowIds, hasThesys }: {
     ai: ReturnType<typeof useAiAssistant>;
     t: DataTableTranslations;
     onApplyAction: (action: { filters?: Record<string, unknown>; sort?: string }) => void;
     onClose: () => void;
     columns: DataTableColumnDef[];
     selectedRowIds: unknown[];
+    hasThesys?: boolean;
 }) {
-    const [activeTab, setActiveTab] = useState<"insights" | "suggestions" | "enrich">("insights");
+    const [activeTab, setActiveTab] = useState<"insights" | "suggestions" | "enrich" | "visualize">("insights");
     const [enrichPrompt, setEnrichPrompt] = useState("");
+    const [vizPrompt, setVizPrompt] = useState("");
     const [enrichColName, setEnrichColName] = useState("");
     const [summaryColumnId, setSummaryColumnId] = useState<string | null>(null);
 
@@ -3142,10 +3160,20 @@ function AiAssistantPanel({ ai, t, onApplyAction, onClose, columns, selectedRowI
                     <Sparkles className="mr-1 h-3 w-3" />
                     {t.aiEnrich}
                 </Button>
+                {hasThesys && (
+                    <Button
+                        variant={activeTab === "visualize" ? "secondary" : "ghost"}
+                        size="sm" className="h-7 px-2.5 text-xs"
+                        onClick={() => setActiveTab("visualize")}
+                    >
+                        <BarChart3 className="mr-1 h-3 w-3" />
+                        {t.aiVisualize}
+                    </Button>
+                )}
             </div>
 
             {/* Content */}
-            <div className="max-h-72 overflow-y-auto p-3">
+            <div className="max-h-96 overflow-y-auto p-3">
                 {/* Insights tab */}
                 {activeTab === "insights" && (
                     <div className="space-y-2">
@@ -3295,6 +3323,41 @@ function AiAssistantPanel({ ai, t, onApplyAction, onClose, columns, selectedRowI
                         )}
                     </div>
                 )}
+
+                {/* Visualize tab (Thesys C1) */}
+                {activeTab === "visualize" && hasThesys && (
+                    <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">
+                            Generate interactive visualizations from your data using Thesys C1.
+                        </p>
+                        <div className="flex gap-2">
+                            <Input
+                                placeholder={t.aiVisualizePrompt}
+                                value={vizPrompt}
+                                onChange={(e) => setVizPrompt(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") ai.fetchVisualize(vizPrompt || undefined); }}
+                                className="h-7 text-xs"
+                            />
+                            <Button
+                                variant="outline" size="sm" className="h-7 shrink-0 text-xs"
+                                disabled={ai.loadingVisualize}
+                                onClick={() => ai.fetchVisualize(vizPrompt || undefined)}
+                            >
+                                {ai.loadingVisualize ? (
+                                    <><Loader2 className="mr-1 h-3 w-3 animate-spin" />{t.aiVisualizeLoading}</>
+                                ) : (
+                                    <><BarChart3 className="mr-1 h-3 w-3" />{t.aiVisualizeGenerate}</>
+                                )}
+                            </Button>
+                        </div>
+                        {ai.visualizeHtml && (
+                            <div
+                                className="rounded-md border bg-background p-3"
+                                dangerouslySetInnerHTML={{ __html: ai.visualizeHtml }}
+                            />
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -3320,7 +3383,7 @@ function DataTableInner<TData extends object>({
     kanbanColumnId, onKanbanMove, facetedCounts: facetedCountsProp,
     presenceChannel, currentUser,
     cardImageColumn, cardTitleColumn, cardSubtitleColumn,
-    renderMasterDetail, onFindReplace, chartTypes, aiBaseUrl,
+    renderMasterDetail, onFindReplace, chartTypes, aiBaseUrl, aiThesys,
 }: DataTableProps<TData>) {
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
@@ -5213,6 +5276,7 @@ function DataTableInner<TData extends object>({
                             onClose={() => setAiPanelOpen(false)}
                             columns={mergedColumns}
                             selectedRowIds={Object.keys(rowSelection).filter(k => rowSelection[k])}
+                            hasThesys={!!aiThesys}
                         />
                     )}
                 </div>

@@ -117,6 +117,22 @@ class DataTableAiController
     }
 
     /**
+     * POST /data-table/ai/{table}/visualize
+     *
+     * Generate interactive UI via Thesys C1.
+     */
+    public function visualize(string $table, Request $request): JsonResponse
+    {
+        $class = $this->resolve($table, 'ai_visualize', $request);
+
+        if (! method_exists($class, 'handleAiVisualize')) {
+            abort(404, 'AI visualization is not enabled for this table.');
+        }
+
+        return $class::handleAiVisualize($request);
+    }
+
+    /**
      * Resolve and authorize the DataTable class.
      *
      * @return class-string<AbstractDataTable>

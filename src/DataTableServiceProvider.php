@@ -108,6 +108,8 @@ class DataTableServiceProvider extends ServiceProvider
                 ->name('data-table.ai.suggest');
             Route::post($prefix . '/ai/{table}/enrich', [DataTableAiController::class, 'enrich'])
                 ->name('data-table.ai.enrich');
+            Route::post($prefix . '/ai/{table}/visualize', [DataTableAiController::class, 'visualize'])
+                ->name('data-table.ai.visualize');
 
             // Saved views API
             Route::get($prefix . '/saved-views/{tableName}', [SavedViewController::class, 'index'])

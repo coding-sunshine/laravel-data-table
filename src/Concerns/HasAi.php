@@ -4,14 +4,23 @@ namespace Machour\DataTable\Concerns;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Machour\DataTable\Ai\Agents\DataTableColumnSummaryAgent;
+use Machour\DataTable\Ai\Agents\DataTableEnrichAgent;
+use Machour\DataTable\Ai\Agents\DataTableInsightsAgent;
+use Machour\DataTable\Ai\Agents\DataTableQueryAgent;
+use Machour\DataTable\Ai\Agents\DataTableSuggestAgent;
 use Machour\DataTable\Columns\Column;
 
 /**
- * Add AI-powered features to a DataTable using Prism PHP or Laravel AI.
+ * Add AI-powered features to a DataTable.
  *
- * Requires `prism-php/prism` to be installed:
- *   composer require prism-php/prism
+ * Supports two backends (auto-detected):
+ *   1. Laravel AI SDK (preferred): composer require laravel/ai
+ *   2. Prism PHP (fallback):       composer require prism-php/prism
+ *
+ * Optionally integrates with Thesys C1 for generative UI visualizations.
  *
  * Features:
  * - Natural language query → filters/sort
@@ -19,12 +28,13 @@ use Machour\DataTable\Columns\Column;
  * - AI column summaries (distribution analysis)
  * - AI smart suggestions (recommended filters)
  * - AI row enrichment (generate new column values via LLM)
+ * - AI visualization (Thesys C1 generative UI)
  */
 trait HasAi
 {
     /**
-     * The Prism model to use for AI features.
-     * Override to use a different model (e.g., 'anthropic:claude-sonnet-4-20250514', 'openai:gpt-4o').
+     * The AI model to use. For Laravel AI SDK this sets the default;
+     * for Prism this is the provider:model string.
      */
     public static function tableAiModel(): string
     {
@@ -46,6 +56,26 @@ trait HasAi
     public static function tableAiSystemContext(): string
     {
         return '';
+    }
+
+    /**
+     * Detect which AI backend is available.
+     *
+     * @return 'laravel-ai'|'prism'|null
+     */
+    protected static function detectAiBackend(): ?string
+    {
+        // Laravel AI SDK (preferred)
+        if (class_exists(\Laravel\Ai\Contracts\Agent::class)) {
+            return 'laravel-ai';
+        }
+
+        // Prism PHP (fallback)
+        if (class_exists(\PrismPHP\Prism::class)) {
+            return 'prism';
+        }
+
+        return null;
     }
 
     /**
@@ -100,6 +130,29 @@ trait HasAi
             ->all();
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // Laravel AI SDK helpers
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Prompt a Laravel AI SDK Agent and return the structured response.
+     *
+     * @param  object  $agent  An Agent implementing HasStructuredOutput
+     * @param  string  $prompt  The user prompt
+     * @return array  Structured response
+     */
+    protected static function promptAgent(object $agent, string $prompt): array
+    {
+        $response = $agent->prompt($prompt);
+
+        // HasStructuredOutput returns array-accessible responses
+        return is_array($response) ? $response : (array) $response;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Prism PHP helpers
+    // ──────────────────────────────────────────────────────────────────────
+
     /**
      * Resolve Prism text generator. Returns null if Prism is not installed.
      */
@@ -109,61 +162,67 @@ trait HasAi
             return null;
         }
 
-        $model = static::tableAiModel();
-
         return \PrismPHP\Prism::text()
-            ->using($model)
+            ->using(static::tableAiModel())
             ->withMaxTokens((int) config('data-table.ai.max_tokens', 1024));
     }
+
+    /**
+     * Send a prompt to Prism and parse the JSON response.
+     */
+    protected static function prismPrompt(string $systemPrompt, string $userPrompt): array
+    {
+        $prism = static::resolvePrism();
+
+        $response = $prism
+            ->withSystemPrompt($systemPrompt)
+            ->withPrompt($userPrompt)
+            ->generate();
+
+        $text = trim($response->text);
+        $text = preg_replace('/^```(?:json)?\s*/i', '', $text);
+        $text = preg_replace('/\s*```$/i', '', $text);
+
+        $result = json_decode($text, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \RuntimeException('AI returned invalid JSON: ' . $text);
+        }
+
+        return $result;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Handlers (auto-detect Laravel AI SDK vs Prism)
+    // ──────────────────────────────────────────────────────────────────────
 
     /**
      * Handle natural language query → filters/sort.
      */
     public static function handleAiQuery(string $query, Request $request): JsonResponse
     {
-        $prism = static::resolvePrism();
+        $backend = static::detectAiBackend();
 
-        if (! $prism) {
-            return response()->json(['error' => 'Prism PHP is not installed. Run: composer require prism-php/prism'], 500);
+        if (! $backend) {
+            return response()->json(['error' => 'No AI backend found. Install laravel/ai or prism-php/prism.'], 500);
         }
 
-        $schema = static::buildSchemaDescription();
-        $filterOperators = 'is, not, contains, gt, gte, lt, lte, between (val1,val2), before, after, null, not_null';
-        $extraContext = static::tableAiSystemContext();
-
-        $systemPrompt = <<<PROMPT
-You are a data table filter assistant. Given a table schema and a natural language query, return a JSON object with filters and/or sort to apply.
-
-{$schema}
-
-Available filter operators: {$filterOperators}
-Filter format: {"filters": {"column_id": "operator:value"}, "sort": "-column_id"}
-Sort format: "column_id" for ASC, "-column_id" for DESC. Multiple: "col1,-col2"
-
-Rules:
-- Only use columns that exist in the schema above
-- Only use operators appropriate for the column type
-- For option columns, only use values from the options list
-- Return ONLY valid JSON, no markdown, no explanation
-{$extraContext}
-PROMPT;
-
         try {
-            $response = $prism
-                ->withSystemPrompt($systemPrompt)
-                ->withPrompt("User query: \"{$query}\"")
-                ->generate();
+            if ($backend === 'laravel-ai') {
+                $agent = new DataTableQueryAgent(
+                    schemaDescription: static::buildSchemaDescription(),
+                    extraContext: static::tableAiSystemContext(),
+                );
+                $result = static::promptAgent($agent, "User query: \"{$query}\"");
+            } else {
+                $schema = static::buildSchemaDescription();
+                $filterOperators = 'is, not, contains, gt, gte, lt, lte, between (val1,val2), before, after, null, not_null';
+                $extra = static::tableAiSystemContext();
 
-            $text = trim($response->text);
-
-            // Strip markdown fences if present
-            $text = preg_replace('/^```(?:json)?\s*/i', '', $text);
-            $text = preg_replace('/\s*```$/i', '', $text);
-
-            $result = json_decode($text, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return response()->json(['error' => 'AI returned invalid JSON', 'raw' => $text], 422);
+                $result = static::prismPrompt(
+                    "You are a data table filter assistant.\n\n{$schema}\n\nAvailable filter operators: {$filterOperators}\nReturn JSON: {\"filters\": {...}, \"sort\": \"...\"}. Only use columns from the schema. Return ONLY valid JSON.\n{$extra}",
+                    "User query: \"{$query}\""
+                );
             }
 
             return response()->json([
@@ -182,48 +241,31 @@ PROMPT;
      */
     public static function handleAiInsights(Request $request): JsonResponse
     {
-        $prism = static::resolvePrism();
+        $backend = static::detectAiBackend();
 
-        if (! $prism) {
-            return response()->json(['error' => 'Prism PHP is not installed.'], 500);
+        if (! $backend) {
+            return response()->json(['error' => 'No AI backend found.'], 500);
         }
 
-        $schema = static::buildSchemaDescription();
         $sample = static::getSampleData($request, 30);
         $sampleJson = json_encode(array_slice($sample, 0, 15), JSON_PRETTY_PRINT);
-        $extraContext = static::tableAiSystemContext();
-
-        $systemPrompt = <<<PROMPT
-You are a data analyst. Analyze the table schema and sample data, then return insights as a JSON array.
-
-{$schema}
-
-Each insight should be an object with:
-- "type": "anomaly" | "trend" | "pattern" | "recommendation"
-- "title": Short headline (max 60 chars)
-- "description": 1-2 sentence explanation
-- "severity": "info" | "warning" | "critical" (for anomalies)
-- "column": Related column ID (optional)
-- "action": Suggested filter/sort to apply (optional, same format as query endpoint)
-
-Return 3-5 most interesting insights. Return ONLY valid JSON array, no markdown.
-{$extraContext}
-PROMPT;
 
         try {
-            $response = $prism
-                ->withSystemPrompt($systemPrompt)
-                ->withPrompt("Sample data (first 15 rows):\n{$sampleJson}")
-                ->generate();
-
-            $text = trim($response->text);
-            $text = preg_replace('/^```(?:json)?\s*/i', '', $text);
-            $text = preg_replace('/\s*```$/i', '', $text);
-
-            $insights = json_decode($text, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return response()->json(['error' => 'AI returned invalid response'], 422);
+            if ($backend === 'laravel-ai') {
+                $agent = new DataTableInsightsAgent(
+                    schemaDescription: static::buildSchemaDescription(),
+                    extraContext: static::tableAiSystemContext(),
+                );
+                $result = static::promptAgent($agent, "Sample data (first 15 rows):\n{$sampleJson}");
+                $insights = $result['insights'] ?? [];
+            } else {
+                $schema = static::buildSchemaDescription();
+                $extra = static::tableAiSystemContext();
+                $raw = static::prismPrompt(
+                    "You are a data analyst.\n\n{$schema}\n\nReturn a JSON object with \"insights\" array. Each insight: {type, title, description, severity, column, action}. Types: anomaly|trend|pattern|recommendation. Return 3-5 insights.\n{$extra}",
+                    "Sample data:\n{$sampleJson}"
+                );
+                $insights = $raw['insights'] ?? $raw;
             }
 
             return response()->json(['insights' => $insights]);
@@ -239,10 +281,10 @@ PROMPT;
      */
     public static function handleAiColumnSummary(string $columnId, Request $request): JsonResponse
     {
-        $prism = static::resolvePrism();
+        $backend = static::detectAiBackend();
 
-        if (! $prism) {
-            return response()->json(['error' => 'Prism PHP is not installed.'], 500);
+        if (! $backend) {
+            return response()->json(['error' => 'No AI backend found.'], 500);
         }
 
         $column = collect(static::tableColumns())->first(fn (Column $col) => $col->id === $columnId);
@@ -251,38 +293,23 @@ PROMPT;
             return response()->json(['error' => 'Column not found.'], 404);
         }
 
-        // Get column values from sample data
         $sample = static::getSampleData($request, 100);
         $values = collect($sample)->pluck($columnId)->filter()->values()->all();
         $valuesJson = json_encode(array_slice($values, 0, 50));
 
-        $systemPrompt = <<<PROMPT
-You are a data analyst. Analyze the values from a single column and return a JSON summary.
-
-Column: {$column->id} (type: {$column->type}, label: "{$column->label}")
-
-Return a JSON object with:
-- "summary": 2-3 sentence plain English summary of the data distribution
-- "highlights": Array of 2-4 key observations (strings)
-- "suggestion": A recommended filter or action (optional string)
-
-Return ONLY valid JSON, no markdown.
-PROMPT;
-
         try {
-            $response = $prism
-                ->withSystemPrompt($systemPrompt)
-                ->withPrompt("Column values (sample of up to 50):\n{$valuesJson}")
-                ->generate();
-
-            $text = trim($response->text);
-            $text = preg_replace('/^```(?:json)?\s*/i', '', $text);
-            $text = preg_replace('/\s*```$/i', '', $text);
-
-            $result = json_decode($text, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return response()->json(['error' => 'AI returned invalid response'], 422);
+            if ($backend === 'laravel-ai') {
+                $agent = new DataTableColumnSummaryAgent(
+                    columnId: $column->id,
+                    columnType: $column->type,
+                    columnLabel: $column->label ?? $column->id,
+                );
+                $result = static::promptAgent($agent, "Column values (sample of up to 50):\n{$valuesJson}");
+            } else {
+                $result = static::prismPrompt(
+                    "You are a data analyst. Column: {$column->id} ({$column->type}, \"{$column->label}\"). Return JSON: {summary, highlights[], suggestion?}. Return ONLY valid JSON.",
+                    "Column values:\n{$valuesJson}"
+                );
             }
 
             return response()->json($result);
@@ -298,51 +325,34 @@ PROMPT;
      */
     public static function handleAiSuggest(Request $request): JsonResponse
     {
-        $prism = static::resolvePrism();
+        $backend = static::detectAiBackend();
 
-        if (! $prism) {
-            return response()->json(['error' => 'Prism PHP is not installed.'], 500);
+        if (! $backend) {
+            return response()->json(['error' => 'No AI backend found.'], 500);
         }
 
-        $schema = static::buildSchemaDescription();
         $sample = static::getSampleData($request, 20);
         $sampleJson = json_encode(array_slice($sample, 0, 10), JSON_PRETTY_PRINT);
-
-        // Include current filters context
         $currentFilters = $request->get('current_filters', []);
         $filtersContext = ! empty($currentFilters) ? "\nCurrently active filters: " . json_encode($currentFilters) : '';
-        $extraContext = static::tableAiSystemContext();
-
-        $systemPrompt = <<<PROMPT
-You are a data assistant. Based on the table schema, sample data, and current filters, suggest useful filter/sort actions the user might want to apply.
-
-{$schema}
-{$filtersContext}
-
-Return a JSON array of 3-5 suggestions, each with:
-- "label": Short human-readable label (e.g., "Show high-value orders")
-- "description": Brief explanation of what this does
-- "action": {"filters": {...}, "sort": "..."} to apply (same format as query endpoint)
-- "icon": One of: "trending-up", "alert-triangle", "filter", "sort-desc", "eye"
-
-Return ONLY valid JSON array, no markdown.
-{$extraContext}
-PROMPT;
 
         try {
-            $response = $prism
-                ->withSystemPrompt($systemPrompt)
-                ->withPrompt("Sample data:\n{$sampleJson}")
-                ->generate();
-
-            $text = trim($response->text);
-            $text = preg_replace('/^```(?:json)?\s*/i', '', $text);
-            $text = preg_replace('/\s*```$/i', '', $text);
-
-            $suggestions = json_decode($text, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return response()->json(['error' => 'AI returned invalid response'], 422);
+            if ($backend === 'laravel-ai') {
+                $agent = new DataTableSuggestAgent(
+                    schemaDescription: static::buildSchemaDescription(),
+                    filtersContext: $filtersContext,
+                    extraContext: static::tableAiSystemContext(),
+                );
+                $result = static::promptAgent($agent, "Sample data:\n{$sampleJson}");
+                $suggestions = $result['suggestions'] ?? [];
+            } else {
+                $schema = static::buildSchemaDescription();
+                $extra = static::tableAiSystemContext();
+                $raw = static::prismPrompt(
+                    "You are a data assistant.\n\n{$schema}{$filtersContext}\n\nReturn JSON: {\"suggestions\": [{label, description, action: {filters, sort}, icon}]}. 3-5 suggestions.\n{$extra}",
+                    "Sample data:\n{$sampleJson}"
+                );
+                $suggestions = $raw['suggestions'] ?? $raw;
             }
 
             return response()->json(['suggestions' => $suggestions]);
@@ -358,13 +368,12 @@ PROMPT;
      */
     public static function handleAiEnrich(string $prompt, string $columnName, array $rowIds, Request $request): JsonResponse
     {
-        $prism = static::resolvePrism();
+        $backend = static::detectAiBackend();
 
-        if (! $prism) {
-            return response()->json(['error' => 'Prism PHP is not installed.'], 500);
+        if (! $backend) {
+            return response()->json(['error' => 'No AI backend found.'], 500);
         }
 
-        // Get the actual rows
         $query = static::tableBaseQuery();
         $rows = $query->whereIn('id', $rowIds)->limit(50)->get();
 
@@ -372,37 +381,23 @@ PROMPT;
             return response()->json(['error' => 'No rows found.'], 404);
         }
 
-        $rowsData = $rows->map(fn ($row) => $row->toArray())->all();
-        $rowsJson = json_encode($rowsData, JSON_PRETTY_PRINT);
-        $extraContext = static::tableAiSystemContext();
-
-        $systemPrompt = <<<PROMPT
-You are a data enrichment assistant. For each row provided, generate a value for a new column based on the user's prompt.
-
-Return a JSON object mapping row ID to the generated value:
-{"row_id_1": "generated value", "row_id_2": "generated value", ...}
-
-Rules:
-- Generate a concise, useful value for each row
-- Values should be consistent in format across rows
-- Return ONLY valid JSON, no markdown
-{$extraContext}
-PROMPT;
+        $rowsJson = json_encode($rows->map(fn ($row) => $row->toArray())->all(), JSON_PRETTY_PRINT);
 
         try {
-            $response = $prism
-                ->withSystemPrompt($systemPrompt)
-                ->withPrompt("Generate \"{$columnName}\" column values using this prompt: \"{$prompt}\"\n\nRows:\n{$rowsJson}")
-                ->generate();
-
-            $text = trim($response->text);
-            $text = preg_replace('/^```(?:json)?\s*/i', '', $text);
-            $text = preg_replace('/\s*```$/i', '', $text);
-
-            $enrichments = json_decode($text, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return response()->json(['error' => 'AI returned invalid response'], 422);
+            if ($backend === 'laravel-ai') {
+                $agent = new DataTableEnrichAgent(
+                    columnName: $columnName,
+                    extraContext: static::tableAiSystemContext(),
+                );
+                $result = static::promptAgent($agent, "Generate \"{$columnName}\" values using: \"{$prompt}\"\n\nRows:\n{$rowsJson}");
+                $enrichments = $result['enrichments'] ?? $result;
+            } else {
+                $extra = static::tableAiSystemContext();
+                $result = static::prismPrompt(
+                    "You are a data enrichment assistant. For each row, generate a value for \"{$columnName}\". Return JSON: {\"enrichments\": {\"row_id\": \"value\", ...}}. Return ONLY valid JSON.\n{$extra}",
+                    "Prompt: \"{$prompt}\"\n\nRows:\n{$rowsJson}"
+                );
+                $enrichments = $result['enrichments'] ?? $result;
             }
 
             return response()->json([
@@ -413,6 +408,66 @@ PROMPT;
             Log::error('DataTable AI enrich failed', ['error' => $e->getMessage()]);
 
             return response()->json(['error' => 'AI enrichment failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle Thesys C1 generative UI visualization.
+     *
+     * Sends table data + a visualization prompt to Thesys C1,
+     * which returns interactive UI components (charts, cards, tables).
+     */
+    public static function handleAiVisualize(Request $request): JsonResponse
+    {
+        $thesysApiKey = config('data-table.ai.thesys_api_key');
+
+        if (! $thesysApiKey) {
+            return response()->json(['error' => 'Thesys API key not configured. Set DATA_TABLE_THESYS_API_KEY in .env.'], 500);
+        }
+
+        $request->validate([
+            'prompt' => 'nullable|string|max:500',
+        ]);
+
+        $sample = static::getSampleData($request, 30);
+        $schema = static::buildSchemaDescription();
+        $userPrompt = $request->input('prompt', 'Create an insightful dashboard with charts and key metrics from this data');
+
+        $messages = [
+            [
+                'role' => 'system',
+                'content' => "You are a data visualization expert. Given table data, create interactive visualizations.\n\n{$schema}\n\n" . static::tableAiSystemContext(),
+            ],
+            [
+                'role' => 'user',
+                'content' => "{$userPrompt}\n\nData (sample):\n" . json_encode(array_slice($sample, 0, 20), JSON_PRETTY_PRINT),
+            ],
+        ];
+
+        try {
+            $response = Http::withToken($thesysApiKey)
+                ->timeout(30)
+                ->post('https://api.thesys.dev/v1/embed', [
+                    'model' => config('data-table.ai.thesys_model', 'c1-nightly'),
+                    'messages' => $messages,
+                    'stream' => false,
+                ]);
+
+            if (! $response->successful()) {
+                return response()->json(['error' => 'Thesys API error: ' . $response->body()], $response->status());
+            }
+
+            $data = $response->json();
+            $content = $data['choices'][0]['message']['content'] ?? null;
+
+            return response()->json([
+                'html' => $content,
+                'model' => $data['model'] ?? 'c1-nightly',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('DataTable Thesys visualization failed', ['error' => $e->getMessage()]);
+
+            return response()->json(['error' => 'Visualization failed: ' . $e->getMessage()], 500);
         }
     }
 }

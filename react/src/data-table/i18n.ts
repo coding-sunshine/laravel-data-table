@@ -281,6 +281,10 @@ export interface DataTableTranslations {
     aiTrend: string;
     aiPattern: string;
     aiRecommendation: string;
+    aiVisualize: string;
+    aiVisualizePrompt: string;
+    aiVisualizeLoading: string;
+    aiVisualizeGenerate: string;
 
     // Pivot
     pivotMode: string;
@@ -660,6 +664,10 @@ export const defaultTranslations: DataTableTranslations = {
     aiTrend: "Trend",
     aiPattern: "Pattern",
     aiRecommendation: "Recommendation",
+    aiVisualize: "Visualize",
+    aiVisualizePrompt: "Describe the visualization you want...",
+    aiVisualizeLoading: "Generating visualization...",
+    aiVisualizeGenerate: "Generate",
 
     // Pivot
     pivotMode: "Pivot mode",
@@ -1010,6 +1018,10 @@ export const frTranslations: DataTableTranslations = {
     aiTrend: "Tendance",
     aiPattern: "Motif",
     aiRecommendation: "Recommandation",
+    aiVisualize: "Visualiser",
+    aiVisualizePrompt: "Décrivez la visualisation souhaitée...",
+    aiVisualizeLoading: "Génération de la visualisation...",
+    aiVisualizeGenerate: "Générer",
 
     // Pivot
     pivotMode: "Mode tableau croisé",
