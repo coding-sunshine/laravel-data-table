@@ -239,7 +239,16 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 Your project must be set up with [shadcn/ui](https://ui.shadcn.com) (React + Tailwind CSS).
 
-The `shadcn add` command will automatically install all required shadcn components (button, table, checkbox, skeleton, etc.) and npm dependencies (`@tanstack/react-table`, `@inertiajs/react`, `date-fns`, `lucide-react`).
+The `shadcn add` command will automatically install all required shadcn components (button, table, checkbox, skeleton, etc.) and npm dependencies (`@tanstack/react-table`, `@inertiajs/react`, `date-fns`, `lucide-react`, `react-day-picker`).
+
+**Peer dependencies** (must already be in your project):
+
+- `react` ^18.0 || ^19.0
+- `react-dom` ^18.0 || ^19.0
+- `@inertiajs/react` ^1.0 || ^2.0
+- `date-fns` ^3.0 || ^4.0
+- `lucide-react` >=0.300.0
+- `react-day-picker` ^8.0 || ^9.0
 
 ## Installation
 
