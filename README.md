@@ -113,7 +113,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 ### Data Import/Export
 
-- **XLSX/CSV/PDF export** — Via Maatwebsite Excel with optional queued exports and DomPDF
+- **XLSX/CSV/PDF export** — XLSX/CSV via Maatwebsite Excel (with optional queued exports), PDF via spatie/laravel-pdf
 - **Export with progress** — Spinner and blob download instead of raw navigation
 - **Export status polling** — Dedicated `/export-status` endpoint for polling queued export completion
 - **CSV/Excel import** — Upload dialog with file validation and error handling

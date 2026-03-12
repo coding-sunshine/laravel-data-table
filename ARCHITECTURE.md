@@ -153,7 +153,7 @@ Each trait is opt-in — add it to your DataTable class to enable the feature:
 
 | Trait | Purpose | Key Methods |
 |-------|---------|-------------|
-| `HasExport` | XLSX/CSV/PDF export via Maatwebsite Excel | `tableExportEnabled()`, `downloadExport()`, `makeExportQuery()` |
+| `HasExport` | XLSX/CSV export via Maatwebsite Excel, PDF via spatie/laravel-pdf | `tableExportEnabled()`, `downloadExport()`, `makeExportQuery()` |
 | `HasImport` | CSV/XLSX file import | `tableImportEnabled()`, `processImport()`, `handleImport()` |
 | `HasInlineEdit` | Cell-level inline editing | `tableInlineEditModel()`, `handleInlineEdit()`, auto-generates validation rules from column type |
 | `HasToggle` | Boolean column toggle switch | `tableToggleModel()`, `handleToggle()` |
