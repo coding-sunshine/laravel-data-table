@@ -152,11 +152,11 @@ test('i18n has saved filters translation keys', function () {
 
 // ── Feature 7: PDF Export ─────────────────────────────────────────
 
-test('HasExport trait supports PDF format', function () {
+test('HasExport trait supports PDF format via spatie/laravel-pdf', function () {
     $source = file_get_contents(__DIR__ . '/../../src/Concerns/HasExport.php');
 
     expect($source)->toContain("'pdf'");
-    expect($source)->toContain('DOMPDF');
+    expect($source)->toContain('Spatie\LaravelPdf');
 });
 
 test('React export dropdown includes PDF option', function () {

@@ -232,7 +232,7 @@ A reusable, server-side DataTable system for **Laravel + Inertia.js + React** (T
 
 **Optional:**
 - `maatwebsite/excel ^3.1` — for XLSX/CSV export
-- `barryvdh/laravel-dompdf ^2.0 || ^3.0` — for PDF export
+- `spatie/laravel-pdf ^1.0` — for PDF export (uses headless Chrome via Browsershot)
 - `spatie/laravel-typescript-transformer ^2.5` — for TypeScript type generation from DTOs
 
 ### JavaScript
@@ -292,7 +292,7 @@ This creates:
 composer require maatwebsite/excel
 
 # For PDF export (additionally)
-composer require barryvdh/laravel-dompdf
+composer require spatie/laravel-pdf
 ```
 
 ## Quick Start
