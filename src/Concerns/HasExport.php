@@ -17,6 +17,13 @@ trait HasExport
 
     abstract public static function tableExportFilename(): string|\Closure;
 
+    /**
+     * Define columns for export, independent of display columns.
+     * Override to include columns not visible in the UI (e.g., email)
+     * or exclude display-only columns from exports.
+     *
+     * @return array<int, array{id: string, label: string}>
+     */
     public static function tableExportColumns(): array
     {
         return collect(static::tableColumns())

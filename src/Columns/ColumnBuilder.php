@@ -136,6 +136,8 @@ class ColumnBuilder
 
     private bool $headerFilter = false;
 
+    private ?string $currencyColumn = null;
+
     private ?string $sparkline = null;
 
     private ?string $treeParent = null;
@@ -227,6 +229,17 @@ class ColumnBuilder
         if ($code !== null) {
             $this->currencyCode = $code;
         }
+
+        return $this;
+    }
+
+    /**
+     * Specify a column ID that holds the per-row currency code (e.g., 'currency_code').
+     * Overrides the static currency per-row.
+     */
+    public function currencyColumn(string $columnId): self
+    {
+        $this->currencyColumn = $columnId;
 
         return $this;
     }
@@ -711,6 +724,7 @@ class ColumnBuilder
             valueGetter: $this->valueGetter,
             valueFormatter: $this->valueFormatter,
             headerFilter: $this->headerFilter,
+            currencyColumn: $this->currencyColumn,
             sparkline: $this->sparkline,
             treeParent: $this->treeParent,
         );

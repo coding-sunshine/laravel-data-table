@@ -602,6 +602,7 @@ interface ColumnMeta {
     group?: string | null;
     editable?: boolean;
     currency?: string;
+    currencyColumn?: string | null;
     locale?: string;
     toggleable?: boolean;
     prefix?: string | null;
@@ -2544,6 +2545,51 @@ function SelectCell({ value, options, onSave }: {
     );
 }
 
+// ─── Multi-select cell for inline editing multiOption columns ─────────────────
+
+function MultiSelectCell({ value, options, onSave }: {
+    value: string[]; options: { label: string; value: string }[];
+    onSave: (value: string[]) => Promise<void> | void;
+}) {
+    const [selected, setSelected] = useState<string[]>(value);
+    const [saving, setSaving] = useState(false);
+    const [open, setOpen] = useState(false);
+
+    const toggleOption = useCallback(async (optValue: string) => {
+        const next = selected.includes(optValue)
+            ? selected.filter((v) => v !== optValue)
+            : [...selected, optValue];
+        setSelected(next);
+        setSaving(true);
+        try { await onSave(next); } finally { setSaving(false); }
+    }, [selected, onSave]);
+
+    const selectedLabels = selected
+        .map((v) => options.find((o) => o.value === v)?.label ?? v)
+        .join(", ");
+
+    return (
+        <DropdownMenu open={open} onOpenChange={setOpen}>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 w-auto min-w-[100px] text-sm font-normal justify-start" disabled={saving}>
+                    {selectedLabels || <span className="text-muted-foreground">Select...</span>}
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+                {options.map((opt) => (
+                    <DropdownMenuItem key={opt.value} onClick={(e) => { e.preventDefault(); toggleOption(opt.value); }}
+                        className="flex items-center gap-2">
+                        <span className={`h-4 w-4 border rounded flex items-center justify-center text-xs ${selected.includes(opt.value) ? "bg-primary text-primary-foreground border-primary" : "border-input"}`}>
+                            {selected.includes(opt.value) ? "✓" : ""}
+                        </span>
+                        {opt.label}
+                    </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
 // ─── Form action dialog ──────────────────────────────────────────────────────
 
 function FormActionDialog<TData>({ open, onOpenChange, action, row, t }: {
@@ -3576,13 +3622,16 @@ function DataTableInner<TData extends object>({
         };
     }, [resolvedOptions.loading]);
 
-    // Real-time updates via Laravel Echo
+    // Real-time updates via Laravel Echo — uses partial reload scoped to the data prop
     useEffect(() => {
         if (!realtimeChannel) return;
-        const Echo = (window as unknown as { Echo?: { channel: (name: string) => { listen: (event: string, cb: () => void) => { stopListening: (event: string) => void } } } }).Echo;
+        const Echo = (window as unknown as { Echo?: { channel: (name: string) => { listen: (event: string, cb: (payload?: Record<string, unknown>) => void) => { stopListening: (event: string) => void } } } }).Echo;
         if (!Echo) return;
         const channel = Echo.channel(realtimeChannel);
-        const handler = () => { router.reload({ only: partialReloadKey ? [partialReloadKey] : undefined }); };
+        const handler = (_payload?: Record<string, unknown>) => {
+            // Targeted partial reload — only refreshes the table data prop, not the full page
+            router.reload({ only: partialReloadKey ? [partialReloadKey] : undefined });
+        };
         channel.listen(realtimeEvent, handler);
         return () => { channel.stopListening(realtimeEvent); };
     }, [realtimeChannel, realtimeEvent, partialReloadKey]);
@@ -3664,10 +3713,10 @@ function DataTableInner<TData extends object>({
 
     // Layout mode state (persisted to localStorage)
     const [layoutMode, setLayoutMode] = useState<DataTableLayoutMode>(() => {
-        if (!resolvedOptions.layoutSwitcher) return "table";
+        if (!resolvedOptions.layoutSwitcher) return (config?.defaultLayout as DataTableLayoutMode) ?? "table";
         const stored = safeGetItem(`dt-layout-${tableName}`);
         if (stored === "grid" || stored === "cards" || stored === "kanban" || stored === "table") return stored;
-        return "table";
+        return (config?.defaultLayout as DataTableLayoutMode) ?? "table";
     });
     const handleLayoutChange = useCallback((mode: DataTableLayoutMode) => {
         setLayoutMode(mode);
@@ -3768,24 +3817,23 @@ function DataTableInner<TData extends object>({
     useEffect(() => {
         if (!apiRef) return;
         apiRef.current = {
-            scrollToRow: (index: number) => { scrollToIndex?.(index); },
-            autosizeColumns: () => {
+            scrollToRow: async (index: number) => { scrollToIndex?.(index); },
+            autosizeColumns: async () => {
                 if (tableElementRef.current) {
                     const sizes = autosizeAllColumns(tableElementRef, visibleColumnIds);
-                    // Apply sizes via column sizing if available
                     Object.entries(sizes).forEach(([id, width]) => {
                         const col = table.getColumn(id);
-                        if (col) col.getSize(); // trigger re-render
+                        if (col) col.getSize();
                     });
                 }
             },
-            triggerExport: (format: string) => {
+            triggerExport: async (format: string) => {
                 if (tableData.exportUrl) {
                     const url = buildExportUrl(tableData.exportUrl, format, visibleColumnIds);
                     window.open(url, "_blank");
                 }
             },
-            resetFilters: () => {
+            resetFilters: async () => {
                 const url = new URL(window.location.href);
                 for (const key of [...url.searchParams.keys()]) {
                     if (key.startsWith("filter")) url.searchParams.delete(key);
@@ -3793,7 +3841,7 @@ function DataTableInner<TData extends object>({
                 router.visit(url.toString());
             },
             getState: () => ({ sorting: meta.sorts, filters: meta.filters, page: meta.currentPage, perPage: meta.perPage }),
-            focusCell: (rowIndex: number, columnId: string) => {
+            focusCell: async (rowIndex: number, columnId: string) => {
                 const cell = tableElementRef.current?.querySelector(`[data-row-index="${rowIndex}"][data-column-id="${columnId}"]`) as HTMLElement;
                 cell?.focus();
             },
@@ -3995,11 +4043,12 @@ function DataTableInner<TData extends object>({
         return () => document.removeEventListener("paste", handlePaste);
     }, [resolvedOptions.clipboardPaste, onClipboardPaste, focusedRowIndex, table, mergedColumns, t]);
 
-    // Server-driven action rules helper
-    const checkActionRule = useCallback((actionLabel: string, row: Record<string, unknown>): boolean => {
+    // Server-driven action rules helper — matches by action.id first, then falls back to action.label
+    const checkActionRule = useCallback((actionId: string | undefined, actionLabel: string, row: Record<string, unknown>): boolean => {
         const rules = tableData.actionRules;
-        if (!rules || !rules[actionLabel]) return true;
-        const rule = rules[actionLabel];
+        if (!rules) return true;
+        const rule = (actionId && rules[actionId]) ? rules[actionId] : rules[actionLabel];
+        if (!rule) return true;
         const cellValue = row[rule.column];
         switch (rule.operator) {
             case "eq": return cellValue === rule.value;
@@ -4061,7 +4110,7 @@ function DataTableInner<TData extends object>({
             return {
                 id: col.id, accessorKey: col.id, header: col.label, enableHiding: true,
                 enableResizing: resolvedOptions.columnResizing, size: columnSizing[col.id] || undefined,
-                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix, computedFrom: col.computedFrom, colSpan: col.colSpan, autoHeight: col.autoHeight, valueGetter: col.valueGetter, valueFormatter: col.valueFormatter, headerFilter: col.headerFilter, sparkline: col.sparkline, treeParent: col.treeParent } satisfies ColumnMeta,
+                meta: { type: col.type, group: col.group ?? null, editable: col.editable, currency: col.currency, currencyColumn: col.currencyColumn, locale: col.locale, toggleable: col.toggleable, prefix: col.prefix, suffix: col.suffix, tooltip: col.tooltip, description: col.description, lineClamp: col.lineClamp, iconMap: col.iconMap, colorMap: col.colorMap, selectOptions: col.selectOptions, html: col.html, markdown: col.markdown, bulleted: col.bulleted, stacked: col.stacked, rowIndex: col.rowIndex, avatarColumn: col.avatarColumn, hasDynamicSuffix: col.hasDynamicSuffix, computedFrom: col.computedFrom, colSpan: col.colSpan, autoHeight: col.autoHeight, valueGetter: col.valueGetter, valueFormatter: col.valueFormatter, headerFilter: col.headerFilter, sparkline: col.sparkline, treeParent: col.treeParent } satisfies ColumnMeta,
                 cell: ({ row }) => {
                     // valueGetter: derive value from another column or dot-path
                     let value = row.getValue(col.id);
@@ -4076,9 +4125,12 @@ function DataTableInner<TData extends object>({
                         if (resolved !== undefined) value = resolved;
                     }
 
-                    // Sparkline column
+                    // Sparkline column — supports both array (by row index) and object (by row ID) formats
                     if (col.sparkline && sparklineData?.[col.id]) {
-                        const sparkData = sparklineData[col.id][row.index];
+                        const colSparkData = sparklineData[col.id];
+                        const sparkData = Array.isArray(colSparkData)
+                            ? colSparkData[row.index]
+                            : colSparkData[(rowData as Record<string, unknown>).id as string | number];
                         if (sparkData) return <SparklineChart data={sparkData} type={col.sparkline as "line" | "bar"} />;
                     }
 
@@ -4120,6 +4172,15 @@ function DataTableInner<TData extends object>({
                     if (col.toggleable && tableData.toggleUrl) {
                         return <ToggleCell value={!!value} row={rowData}
                             columnId={col.id} toggleUrl={tableData.toggleUrl} />;
+                    }
+
+                    // Inline multi-select dropdown for multiOption columns
+                    if (col.type === "multiOption" && col.options && col.editable && onInlineEdit) {
+                        const arrValue = Array.isArray(value) ? value.map(String) : [];
+                        return <MultiSelectCell value={arrValue} options={col.options} onSave={(newVal) => {
+                            pushEdit({ rowId: rowData.id, columnId: col.id, oldValue: value, newValue: newVal });
+                            return onInlineEdit(row.original, col.id, newVal);
+                        }} />;
                     }
 
                     // Inline select dropdown
@@ -4196,7 +4257,11 @@ function DataTableInner<TData extends object>({
                     if (col.type === "currency" && (typeof value === "number" || typeof value === "string")) {
                         const numValue = typeof value === "string" ? parseFloat(value) : value;
                         if (!isNaN(numValue)) {
-                            try { return wrapCell(<span className="tabular-nums">{numValue.toLocaleString(col.locale ?? undefined, { style: "currency", currency: col.currency ?? "USD" })}</span>); }
+                            // Per-row currency via currencyColumn, or static currency, or default USD
+                            const rowCurrency = col.currencyColumn
+                                ? String((rowData as Record<string, unknown>)[col.currencyColumn] ?? col.currency ?? "USD")
+                                : (col.currency ?? "USD");
+                            try { return wrapCell(<span className="tabular-nums">{numValue.toLocaleString(col.locale ?? undefined, { style: "currency", currency: rowCurrency })}</span>); }
                             catch { return wrapCell(<span className="tabular-nums">{numValue.toLocaleString()}</span>); }
                         }
                     }
@@ -4245,9 +4310,19 @@ function DataTableInner<TData extends object>({
 
                     if (col.type === "number" && typeof value === "number") return wrapCell(<span className="tabular-nums">{value.toLocaleString()}</span>);
 
-                    // valueFormatter: apply format string (e.g., '{value} USD')
+                    // valueFormatter: apply format string (e.g., '{value} USD') or JS expression (e.g., '(value, row) => ...')
                     if (col.valueFormatter) {
-                        const formatted = col.valueFormatter.replace(/\{value\}/g, String(value));
+                        let formatted: string;
+                        if (col.valueFormatter.trim().startsWith("(")) {
+                            try {
+                                const fn = new Function("return " + col.valueFormatter)();
+                                formatted = String(fn(value, rowData));
+                            } catch {
+                                formatted = col.valueFormatter.replace(/\{value\}/g, String(value));
+                            }
+                        } else {
+                            formatted = col.valueFormatter.replace(/\{value\}/g, String(value));
+                        }
                         return wrapCell(formatted);
                     }
 
@@ -4363,7 +4438,7 @@ function DataTableInner<TData extends object>({
                 cell: ({ row }) => {
                     // Apply server-driven action visibility rules
                     const filteredActions = tableData.actionRules
-                        ? actions.filter((a) => checkActionRule(a.label, row.original as Record<string, unknown>))
+                        ? actions.filter((a) => checkActionRule(a.id, a.label, row.original as Record<string, unknown>))
                         : actions;
                     return filteredActions.length > 0 ? (
                         <DataTableRowActions row={row.original} actions={filteredActions} t={t}

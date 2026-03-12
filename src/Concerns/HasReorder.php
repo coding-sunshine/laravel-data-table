@@ -38,6 +38,8 @@ trait HasReorder
 
     /**
      * Handle a reorder request.
+     * If the model implements Spatie\EloquentSortable\Sortable, delegates to setNewOrder()
+     * which preserves gap-closing and fires model events.
      */
     public static function handleReorder(Request $request): JsonResponse
     {
@@ -50,8 +52,12 @@ trait HasReorder
         $column = static::tableReorderColumn();
         $ids = $request->input('ids');
 
-        foreach ($ids as $position => $id) {
-            $modelClass::where('id', $id)->update([$column => $position]);
+        if (is_a($modelClass, \Spatie\EloquentSortable\Sortable::class, true)) {
+            $modelClass::setNewOrder($ids);
+        } else {
+            foreach ($ids as $position => $id) {
+                $modelClass::where('id', $id)->update([$column => $position]);
+            }
         }
 
         return response()->json(['success' => true]);

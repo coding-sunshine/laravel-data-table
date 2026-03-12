@@ -33,6 +33,17 @@ class DataTableCascadingFilterController
         $parentValue = $request->get('parent_value');
         $options = $class::resolveCascadingFilterOptions($column, $parentValue);
 
-        return response()->json(['options' => $options]);
+        // For multi-level cascades, include descendant columns that should be reset
+        $descendants = [];
+        foreach ($cascading as $child => $parent) {
+            if ($parent === $column) {
+                $descendants[] = $child;
+            }
+        }
+
+        return response()->json([
+            'options' => $options,
+            'resetColumns' => $descendants,
+        ]);
     }
 }
