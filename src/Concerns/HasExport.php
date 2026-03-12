@@ -46,7 +46,7 @@ trait HasExport
         return preg_replace('/[^a-zA-Z0-9_\-]/', '_', basename($filename));
     }
 
-    public static function downloadExport(string $format = 'xlsx', ?Request $request = null): BinaryFileResponse
+    public static function downloadExport(string $format = 'xlsx', ?Request $request = null): BinaryFileResponse|\Illuminate\Http\Response
     {
         $request = $request ?? request();
         $query = static::makeExportQuery($request);
@@ -67,21 +67,72 @@ trait HasExport
 
         $filename = static::resolveExportFilename($request);
 
+        if ($format === 'pdf') {
+            return static::downloadPdfExport($query->getEloquentBuilder(), $columns, $filename);
+        }
+
         $writerType = match ($format) {
             'csv' => \Maatwebsite\Excel\Excel::CSV,
-            'pdf' => \Maatwebsite\Excel\Excel::DOMPDF,
             default => \Maatwebsite\Excel\Excel::XLSX,
         };
 
         $extension = match ($format) {
             'csv' => 'csv',
-            'pdf' => 'pdf',
             default => 'xlsx',
         };
 
         $export = new DataTableExport($query->getEloquentBuilder(), $columns);
 
         return Excel::download($export, "{$filename}.{$extension}", $writerType);
+    }
+
+    protected static function downloadPdfExport($query, array $columns, string $filename): \Illuminate\Http\Response
+    {
+        $rows = $query->get()->map(function ($row) use ($columns) {
+            $data = [];
+            foreach ($columns as $col) {
+                $data[$col['id']] = data_get($row, $col['id'], '');
+            }
+
+            return $data;
+        });
+
+        $html = static::buildPdfHtml($columns, $rows, $filename);
+
+        return \Spatie\LaravelPdf\Facades\Pdf::html($html)
+            ->name("{$filename}.pdf")
+            ->download();
+    }
+
+    protected static function buildPdfHtml(array $columns, $rows, string $title): string
+    {
+        $headerCells = implode('', array_map(
+            fn (array $col) => '<th style="border:1px solid #ddd;padding:8px;background:#f5f5f5;text-align:left;">' . e($col['label']) . '</th>',
+            $columns,
+        ));
+
+        $bodyRows = $rows->map(function ($row) use ($columns) {
+            $cells = implode('', array_map(
+                fn (array $col) => '<td style="border:1px solid #ddd;padding:8px;">' . e($row[$col['id']] ?? '') . '</td>',
+                $columns,
+            ));
+
+            return "<tr>{$cells}</tr>";
+        })->implode('');
+
+        return <<<HTML
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><title>{$title}</title></head>
+        <body style="font-family:sans-serif;font-size:12px;margin:20px;">
+            <h2 style="margin-bottom:16px;">{$title}</h2>
+            <table style="width:100%;border-collapse:collapse;">
+                <thead><tr>{$headerCells}</tr></thead>
+                <tbody>{$bodyRows}</tbody>
+            </table>
+        </body>
+        </html>
+        HTML;
     }
 
     public static function makeExportQuery(?Request $request = null): QueryBuilder

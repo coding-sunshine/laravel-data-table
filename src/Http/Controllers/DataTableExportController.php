@@ -22,7 +22,7 @@ class DataTableExportController
         static::$registry[$tableName] = $dataTableClass;
     }
 
-    public function __invoke(string $table, Request $request): BinaryFileResponse|\Illuminate\Http\JsonResponse
+    public function __invoke(string $table, Request $request): BinaryFileResponse|\Illuminate\Http\JsonResponse|\Illuminate\Http\Response
     {
         $class = static::$registry[$table] ?? null;
 
@@ -52,8 +52,8 @@ class DataTableExportController
         $format = $request->get('format', 'xlsx');
         abort_unless(in_array($format, ['xlsx', 'csv', 'pdf'], true), 422, 'Invalid format.');
 
-        // Queued export support
-        if ($request->boolean('queued') && class_exists(\Maatwebsite\Excel\Facades\Excel::class)) {
+        // Queued export support (PDF uses spatie/laravel-pdf which handles its own response)
+        if ($format !== 'pdf' && $request->boolean('queued') && class_exists(\Maatwebsite\Excel\Facades\Excel::class)) {
             return $this->queuedExport($class, $format, $request);
         }
 
@@ -71,7 +71,6 @@ class DataTableExportController
 
         $writerType = match ($format) {
             'csv' => \Maatwebsite\Excel\Excel::CSV,
-            'pdf' => \Maatwebsite\Excel\Excel::DOMPDF,
             default => \Maatwebsite\Excel\Excel::XLSX,
         };
 
