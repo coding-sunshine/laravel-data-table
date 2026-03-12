@@ -99,6 +99,14 @@ abstract class AbstractDataTable extends Data
     }
 
     /**
+     * Default layout mode: 'table', 'grid', 'cards', or 'kanban'.
+     */
+    public static function tableDefaultLayout(): string
+    {
+        return 'table';
+    }
+
+    /**
      * Whether pivot mode is available for this table.
      */
     public static function tablePivotEnabled(): bool
@@ -118,8 +126,9 @@ abstract class AbstractDataTable extends Data
 
     /**
      * Server-driven action visibility rules.
-     * Return an array mapping action labels to column-based conditions.
-     * Example: ['Delete' => ['column' => 'status', 'operator' => 'neq', 'value' => 'archived']]
+     * Return an array mapping action IDs (or labels for backwards compat) to column-based conditions.
+     * Prefer using stable action IDs rather than display labels (which may change with i18n).
+     * Example: ['delete' => ['column' => 'status', 'operator' => 'neq', 'value' => 'archived']]
      *
      * @return array<string, array{column: string, operator: string, value: mixed}>
      */
@@ -383,7 +392,8 @@ abstract class AbstractDataTable extends Data
 
     /**
      * Cascading/interdependent filter relationships.
-     * Example: ['city' => 'country'] means city options depend on selected country.
+     * Supports multi-level chains: ['city' => 'state', 'state' => 'country']
+     * means city depends on state, which depends on country (A → B → C).
      *
      * @return array<string, string>  dependent column => parent column
      */
@@ -394,6 +404,7 @@ abstract class AbstractDataTable extends Data
 
     /**
      * Resolve cascading filter options for a dependent column.
+     * For multi-level cascades, receives the direct parent value.
      *
      * @return array<int, array{label: string, value: string}>
      */
@@ -435,11 +446,30 @@ abstract class AbstractDataTable extends Data
      */
     public static function tableAllowedSorts(): array
     {
-        return collect(static::tableColumns())
+        $autoSorts = collect(static::tableColumns())
             ->filter(fn (Column $col) => $col->sortable)
             ->map(fn (Column $col) => $col->internalName ?? $col->id)
             ->values()
             ->all();
+
+        $additional = static::tableAdditionalSorts();
+        if (! empty($additional)) {
+            return array_values(array_unique(array_merge($autoSorts, $additional)));
+        }
+
+        return $autoSorts;
+    }
+
+    /**
+     * Additional sorts to merge with auto-detected sortable columns.
+     * Unlike overriding tableAllowedSorts() which replaces auto-detected sorts,
+     * this method merges with them so you don't have to re-declare every sortable column.
+     *
+     * @return array<int, AllowedSort|string>
+     */
+    public static function tableAdditionalSorts(): array
+    {
+        return [];
     }
 
     /**
@@ -644,6 +674,7 @@ abstract class AbstractDataTable extends Data
             'infiniteScroll' => static::tableInfiniteScroll(),
             'pivotEnabled' => static::tablePivotEnabled(),
             'pivotConfig' => static::tablePivotConfig(),
+            'defaultLayout' => static::tableDefaultLayout(),
         ];
 
         // Toggle URL

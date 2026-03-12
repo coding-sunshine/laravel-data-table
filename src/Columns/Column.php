@@ -79,6 +79,8 @@ class Column extends Data
         public ?string $valueFormatter = null,
         /** Whether this column supports header filter (inline filter in column header) */
         public bool $headerFilter = false,
+        /** Column ID that holds per-row currency code (e.g., 'currency_code'). Overrides static $currency per-row. */
+        public ?string $currencyColumn = null,
         /** Sparkline chart type for this column: 'line', 'bar', or null */
         public ?string $sparkline = null,
         /** Tree data: column ID used as the tree path parent reference */
