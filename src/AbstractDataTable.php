@@ -454,7 +454,20 @@ abstract class AbstractDataTable extends Data
 
         $additional = static::tableAdditionalSorts();
         if (! empty($additional)) {
-            return array_values(array_unique(array_merge($autoSorts, $additional)));
+            // Merge and deduplicate: AllowedSort objects are kept as-is,
+            // strings are deduplicated against auto-detected ones
+            $merged = $autoSorts;
+            $existingStrings = array_flip($autoSorts);
+            foreach ($additional as $sort) {
+                if ($sort instanceof AllowedSort) {
+                    $merged[] = $sort;
+                } elseif (! isset($existingStrings[$sort])) {
+                    $merged[] = $sort;
+                    $existingStrings[$sort] = true;
+                }
+            }
+
+            return array_values($merged);
         }
 
         return $autoSorts;
