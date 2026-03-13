@@ -176,17 +176,7 @@ class MakeDataTable extends Command
         $exportMethods = $withExport ? <<<PHP
 
 
-    public static function tableExportEnabled(): bool
-    {
-        return true;
-    }
-
     public static function tableExportName(): string
-    {
-        return '{$kebab}s';
-    }
-
-    public static function tableExportFilename(): string|\Closure
     {
         return '{$kebab}s';
     }
@@ -402,7 +392,7 @@ import { Head } from "@inertiajs/react";
 // App.DataTables.{$model}DataTable as the generic type
 
 interface Props {
-    tableData: DataTableResponse<App.DataTables.{$model}DataTable>;
+    tableData?: DataTableResponse<App.DataTables.{$model}DataTable>;
 }
 
 export default function {$model}TablePage({ tableData }: Props) {
@@ -410,15 +400,10 @@ export default function {$model}TablePage({ tableData }: Props) {
         <>
             <Head title="{$model}" />
             <div className="flex h-full flex-1 flex-col gap-4 p-4">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight">{$model}</h1>
-                    <p className="text-muted-foreground">
-                        {tableData.meta.total} results
-                    </p>
-                </div>
                 <DataTable<App.DataTables.{$model}DataTable>
                     tableData={tableData}
                     tableName="{$kebab}"
+                    partialReloadKey="tableData"
                 />
             </div>
         </>

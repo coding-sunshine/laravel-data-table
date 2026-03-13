@@ -349,7 +349,7 @@ abstract class AbstractDataTable extends Data
      */
     public static function tablePersistState(): bool
     {
-        return false;
+        return true;
     }
 
     /**

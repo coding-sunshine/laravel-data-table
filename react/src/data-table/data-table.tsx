@@ -3564,6 +3564,29 @@ function DataTableInner<TData extends object>({
     cardImageColumn, cardTitleColumn, cardSubtitleColumn,
     renderMasterDetail, onFindReplace, chartTypes, aiBaseUrl, aiThesys,
 }: DataTableProps<TData>) {
+    // Handle deferred/lazy loading: show skeleton until data is available
+    if (!tableData) {
+        return (
+            <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                    <Skeleton className="h-9 w-64" />
+                    <Skeleton className="h-9 w-24 ml-auto" />
+                    <Skeleton className="h-9 w-24" />
+                </div>
+                <div className="rounded-md border">
+                    <Skeleton className="h-10 w-full rounded-b-none" />
+                    {Array.from({ length: 5 }).map((_, i) => (
+                        <Skeleton key={i} className="h-12 w-full rounded-none border-t" />
+                    ))}
+                </div>
+                <div className="flex items-center justify-between">
+                    <Skeleton className="h-5 w-32" />
+                    <Skeleton className="h-9 w-48" />
+                </div>
+            </div>
+        );
+    }
+
     // Extract column configs from JSX children (<DataTable.Column>)
     const jsxColumnConfigs = useMemo(
         () => children ? extractColumnConfigs<TData>(children) : null,
@@ -3580,7 +3603,7 @@ function DataTableInner<TData extends object>({
     const resolvedOptions = useMemo<DataTableOptions>(() => ({
         quickViews: true, customQuickViews: true, exports: true, filters: true,
         columnVisibility: true, columnOrdering: true, columnResizing: false,
-        stickyHeader: false, globalSearch: false, loading: true,
+        stickyHeader: true, globalSearch: true, loading: true,
         keyboardNavigation: false, printable: false, density: false,
         copyCell: false, contextMenu: false, virtualScrolling: false,
         rowGrouping: false, rowReorder: false, batchEdit: false,
