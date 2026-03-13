@@ -11,11 +11,17 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 trait HasExport
 {
-    abstract public static function tableExportEnabled(): bool;
+    public static function tableExportEnabled(): bool
+    {
+        return true;
+    }
 
     abstract public static function tableExportName(): string;
 
-    abstract public static function tableExportFilename(): string|\Closure;
+    public static function tableExportFilename(): string|\Closure
+    {
+        return fn(): string => static::tableExportName().'-'.now()->format('Y-m-d-His');
+    }
 
     /**
      * Define columns for export, independent of display columns.
