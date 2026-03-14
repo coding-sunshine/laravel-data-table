@@ -3695,12 +3695,6 @@ function DataTableInner<TData extends object>({
     const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
     const tableBodyRef = useRef<HTMLTableSectionElement>(null);
     const virtualContainerRef = useRef<HTMLDivElement>(null);
-    const allRows = table.getRowModel().rows;
-    const { virtualRows, totalHeight, offsetTop, scrollToIndex } = useVirtualRows(
-        resolvedOptions.virtualScrolling, virtualContainerRef, allRows.length,
-        density === "compact" ? 32 : density === "spacious" ? 52 : 40,
-        resolvedOptions.directionalOverscan
-    );
     const tableElementRef = useRef<HTMLTableElement>(null);
 
     // Spreadsheet mode (Tab/Enter navigation)
@@ -3780,7 +3774,6 @@ function DataTableInner<TData extends object>({
     // Integrated Charts
     const [chartState, setChartState] = useState<IntegratedChartState | null>(null);
     const resolvedChartTypes = chartTypes ?? (["bar", "line", "pie", "doughnut"] as ChartKind[]);
-    const numericCols = useMemo(() => mergedColumns.filter(c => c.type === "number" || c.type === "currency" || c.type === "percentage"), [mergedColumns]);
     const openChart = useCallback(() => {
         const firstNumCol = numericCols[0];
         if (firstNumCol) setChartState({ columnId: firstNumCol.id, chartType: "bar" });
@@ -3788,7 +3781,6 @@ function DataTableInner<TData extends object>({
 
     // Find & Replace
     const [findReplaceOpen, setFindReplaceOpen] = useState(false);
-    const findReplace = useFindReplace(resolvedOptions.findReplace && findReplaceOpen, tableData.data as Record<string, unknown>[], mergedColumns);
 
     // Ctrl+F keyboard shortcut for Find & Replace
     useEffect(() => {
@@ -4137,6 +4129,9 @@ function DataTableInner<TData extends object>({
         return tableData.columns.map((col) =>
             tableData.enumOptions?.[col.id] ? { ...col, options: tableData.enumOptions[col.id] } : col);
     }, [tableData.columns, tableData.enumOptions]);
+
+    const numericCols = useMemo(() => mergedColumns.filter(c => c.type === "number" || c.type === "currency" || c.type === "percentage"), [mergedColumns]);
+    const findReplace = useFindReplace(resolvedOptions.findReplace && findReplaceOpen, tableData.data as Record<string, unknown>[], mergedColumns);
 
     const columnDefs = useMemo<ColumnDef<TData>[]>(() => {
         function makeLeafCol(col: DataTableColumnDef): ColumnDef<TData> {
@@ -4488,6 +4483,13 @@ function DataTableInner<TData extends object>({
         handleGlobalSearch, handleApplyQuickView, handleApplyCustomSearch,
     } = useDataTable<TData>({ tableData, tableName, columnDefs, prefix, debounceMs, partialReloadKey,
         columnResizing: resolvedOptions.columnResizing, columnSizing, onColumnSizingChange: setColumnSizing, onStateChange });
+
+    const allRows = table.getRowModel().rows;
+    const { virtualRows, totalHeight, offsetTop, scrollToIndex } = useVirtualRows(
+        resolvedOptions.virtualScrolling, virtualContainerRef, allRows.length,
+        density === "compact" ? 32 : density === "spacious" ? 52 : 40,
+        resolvedOptions.directionalOverscan
+    );
 
     const filterColumns = useMemo(() => buildFilterColumns(mergedColumns), [mergedColumns]);
     const selectedRows = useMemo(() => table.getFilteredSelectedRowModel().rows.map((r) => r.original),
