@@ -239,14 +239,24 @@ function useAutoSizer(enabled: boolean, containerRef: React.RefObject<HTMLElemen
 function useScrollAwareRendering(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>, resetDelay = 150) {
     const [isScrolling, setIsScrolling] = useState(false);
     const timerRef = useRef<ReturnType<typeof setTimeout>>();
+    const lastScrollTop = useRef(0);
+    const lastScrollTime = useRef(0);
 
     useEffect(() => {
         if (!enabled || !containerRef.current) return;
         const el = containerRef.current;
+        const VELOCITY_THRESHOLD = 2; // px/ms — only activate for fast scroll
         const handleScroll = () => {
-            setIsScrolling(true);
-            if (timerRef.current) clearTimeout(timerRef.current);
-            timerRef.current = setTimeout(() => setIsScrolling(false), resetDelay);
+            const now = Date.now();
+            const dt = now - lastScrollTime.current;
+            const dy = Math.abs(el.scrollTop - lastScrollTop.current);
+            lastScrollTop.current = el.scrollTop;
+            lastScrollTime.current = now;
+            if (dt > 0 && dy / dt > VELOCITY_THRESHOLD) {
+                setIsScrolling(true);
+                if (timerRef.current) clearTimeout(timerRef.current);
+                timerRef.current = setTimeout(() => setIsScrolling(false), resetDelay);
+            }
         };
         el.addEventListener("scroll", handleScroll, { passive: true });
         return () => { el.removeEventListener("scroll", handleScroll); if (timerRef.current) clearTimeout(timerRef.current); };
