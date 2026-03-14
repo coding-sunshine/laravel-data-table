@@ -3793,56 +3793,6 @@ function DataTableInner<TData extends object>({
     // Faceted counts: merge from prop and server response
     const facetedCounts = facetedCountsProp ?? tableData.facetedCounts ?? null;
 
-    // Imperative API ref
-    useEffect(() => {
-        if (!apiRef) return;
-        apiRef.current = {
-            scrollToRow: async (index: number) => { scrollToIndex?.(index); },
-            autosizeColumns: async () => {
-                if (tableElementRef.current) {
-                    const sizes = autosizeAllColumns(tableElementRef, visibleColumnIds);
-                    Object.entries(sizes).forEach(([id, width]) => {
-                        const col = table.getColumn(id);
-                        if (col) col.getSize();
-                    });
-                }
-            },
-            triggerExport: async (format: string) => {
-                if (tableData.exportUrl) {
-                    const url = buildExportUrl(tableData.exportUrl, format, visibleColumnIds);
-                    window.open(url, "_blank");
-                }
-            },
-            resetFilters: async () => {
-                const url = new URL(window.location.href);
-                for (const key of [...url.searchParams.keys()]) {
-                    if (key.startsWith("filter")) url.searchParams.delete(key);
-                }
-                router.visit(url.toString());
-            },
-            getState: () => ({ sorting: meta.sorts, filters: meta.filters, page: meta.currentPage, perPage: meta.perPage }),
-            focusCell: async (rowIndex: number, columnId: string) => {
-                const cell = tableElementRef.current?.querySelector(`[data-row-index="${rowIndex}"][data-column-id="${columnId}"]`) as HTMLElement;
-                cell?.focus();
-            },
-        };
-    }, [apiRef, table, tableData.exportUrl, visibleColumnIds, meta, scrollToIndex]);
-
-    // Infinite scroll observer
-    useEffect(() => {
-        if (!resolvedOptions.infiniteScroll || !onLoadMore || !hasMore) return;
-        const sentinel = infiniteScrollSentinelRef.current;
-        if (!sentinel) return;
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0]?.isIntersecting && !isLoadingMore) {
-                setIsLoadingMore(true);
-                Promise.resolve(onLoadMore(meta.currentPage + 1)).finally(() => setIsLoadingMore(false));
-            }
-        }, { threshold: 0.1 });
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, [resolvedOptions.infiniteScroll, onLoadMore, hasMore, isLoadingMore, meta.currentPage]);
-
     // Header filter handler
     const handleHeaderFilterChange = useCallback((columnId: string, value: string) => {
         setHeaderFilterValues(prev => ({ ...prev, [columnId]: value }));
@@ -3987,27 +3937,6 @@ function DataTableInner<TData extends object>({
         setDragFillState(null);
         setDragFillEndIndex(null);
     }, [dragFillState, dragFillEndIndex, onDragToFill, tableData.data]);
-
-    // Clipboard paste handler
-    useEffect(() => {
-        if (!resolvedOptions.clipboardPaste || !onClipboardPaste) return;
-        const handlePaste = (e: ClipboardEvent) => {
-            const target = e.target as HTMLElement;
-            if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-            const text = e.clipboardData?.getData("text/plain");
-            if (!text) return;
-            const rows = text.split("\n").filter(Boolean).map((line) => line.split("\t"));
-            if (rows.length === 0 || rows[0].length === 0) return;
-            e.preventDefault();
-            const startRow = focusedRowIndex ?? 0;
-            const visibleCols = table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id);
-            const editableCols = visibleCols.filter((id) => mergedColumns.find((c) => c.id === id)?.editable);
-            if (editableCols.length === 0) return;
-            onClipboardPaste(startRow, editableCols[0], rows).then(() => showToast(t.pasteSuccess, "success")).catch(() => showToast(t.pasteError, "error"));
-        };
-        document.addEventListener("paste", handlePaste);
-        return () => document.removeEventListener("paste", handlePaste);
-    }, [resolvedOptions.clipboardPaste, onClipboardPaste, focusedRowIndex, table, mergedColumns, t]);
 
     // Server-driven action rules helper — matches by action.id first, then falls back to action.label
     const checkActionRule = useCallback((actionId: string | undefined, actionLabel: string, row: Record<string, unknown>): boolean => {
@@ -4476,6 +4405,77 @@ function DataTableInner<TData extends object>({
         density === "compact" ? 32 : density === "spacious" ? 52 : 40,
         resolvedOptions.directionalOverscan
     );
+
+    // Imperative API ref
+    useEffect(() => {
+        if (!apiRef) return;
+        apiRef.current = {
+            scrollToRow: async (index: number) => { scrollToIndex?.(index); },
+            autosizeColumns: async () => {
+                if (tableElementRef.current) {
+                    const sizes = autosizeAllColumns(tableElementRef, visibleColumnIds);
+                    Object.entries(sizes).forEach(([id, width]) => {
+                        const col = table.getColumn(id);
+                        if (col) col.getSize();
+                    });
+                }
+            },
+            triggerExport: async (format: string) => {
+                if (tableData.exportUrl) {
+                    const url = buildExportUrl(tableData.exportUrl, format, visibleColumnIds);
+                    window.open(url, "_blank");
+                }
+            },
+            resetFilters: async () => {
+                const url = new URL(window.location.href);
+                for (const key of [...url.searchParams.keys()]) {
+                    if (key.startsWith("filter")) url.searchParams.delete(key);
+                }
+                router.visit(url.toString());
+            },
+            getState: () => ({ sorting: meta.sorts, filters: meta.filters, page: meta.currentPage, perPage: meta.perPage }),
+            focusCell: async (rowIndex: number, columnId: string) => {
+                const cell = tableElementRef.current?.querySelector(`[data-row-index="${rowIndex}"][data-column-id="${columnId}"]`) as HTMLElement;
+                cell?.focus();
+            },
+        };
+    }, [apiRef, table, tableData.exportUrl, visibleColumnIds, meta, scrollToIndex]);
+
+    // Infinite scroll observer
+    useEffect(() => {
+        if (!resolvedOptions.infiniteScroll || !onLoadMore || !hasMore) return;
+        const sentinel = infiniteScrollSentinelRef.current;
+        if (!sentinel) return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0]?.isIntersecting && !isLoadingMore) {
+                setIsLoadingMore(true);
+                Promise.resolve(onLoadMore(meta.currentPage + 1)).finally(() => setIsLoadingMore(false));
+            }
+        }, { threshold: 0.1 });
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [resolvedOptions.infiniteScroll, onLoadMore, hasMore, isLoadingMore, meta.currentPage]);
+
+    // Clipboard paste handler
+    useEffect(() => {
+        if (!resolvedOptions.clipboardPaste || !onClipboardPaste) return;
+        const handlePaste = (e: ClipboardEvent) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+            const text = e.clipboardData?.getData("text/plain");
+            if (!text) return;
+            const rows = text.split("\n").filter(Boolean).map((line) => line.split("\t"));
+            if (rows.length === 0 || rows[0].length === 0) return;
+            e.preventDefault();
+            const startRow = focusedRowIndex ?? 0;
+            const visibleCols = table.getVisibleLeafColumns().filter((c) => c.getCanHide()).map((c) => c.id);
+            const editableCols = visibleCols.filter((id) => mergedColumns.find((c) => c.id === id)?.editable);
+            if (editableCols.length === 0) return;
+            onClipboardPaste(startRow, editableCols[0], rows).then(() => showToast(t.pasteSuccess, "success")).catch(() => showToast(t.pasteError, "error"));
+        };
+        document.addEventListener("paste", handlePaste);
+        return () => document.removeEventListener("paste", handlePaste);
+    }, [resolvedOptions.clipboardPaste, onClipboardPaste, focusedRowIndex, table, mergedColumns, t]);
 
     const treeRows = useMemo(() => {
         if (!treeConfig?.treeDataEnabled) return null;
