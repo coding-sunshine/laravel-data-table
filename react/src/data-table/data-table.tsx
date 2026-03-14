@@ -3645,13 +3645,11 @@ function DataTableInner<TData extends object>({
     const [isNavigating, setIsNavigating] = useState(false);
     useEffect(() => {
         if (!resolvedOptions.loading) return;
-        const startHandler = () => setIsNavigating(true);
-        const finishHandler = () => setIsNavigating(false);
-        router.on("start", startHandler);
-        router.on("finish", finishHandler);
+        const removeStart = router.on("start", () => setIsNavigating(true));
+        const removeFinish = router.on("finish", () => setIsNavigating(false));
         return () => {
-            router.off("start", startHandler);
-            router.off("finish", finishHandler);
+            removeStart();
+            removeFinish();
         };
     }, [resolvedOptions.loading]);
 
