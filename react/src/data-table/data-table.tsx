@@ -217,7 +217,7 @@ function useVirtualRows(enabled: boolean, containerRef: React.RefObject<HTMLElem
 // ─── AutoSizer hook ──────────────────────────────────────────────────────────
 
 function useAutoSizer(enabled: boolean, containerRef: React.RefObject<HTMLElement | null>) {
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
 
     useEffect(() => {
         if (!enabled || !containerRef.current) return;
