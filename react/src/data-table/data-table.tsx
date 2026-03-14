@@ -3774,11 +3774,6 @@ function DataTableInner<TData extends object>({
     // Integrated Charts
     const [chartState, setChartState] = useState<IntegratedChartState | null>(null);
     const resolvedChartTypes = chartTypes ?? (["bar", "line", "pie", "doughnut"] as ChartKind[]);
-    const openChart = useCallback(() => {
-        const firstNumCol = numericCols[0];
-        if (firstNumCol) setChartState({ columnId: firstNumCol.id, chartType: "bar" });
-    }, [numericCols]);
-
     // Find & Replace
     const [findReplaceOpen, setFindReplaceOpen] = useState(false);
 
@@ -3794,46 +3789,6 @@ function DataTableInner<TData extends object>({
         document.addEventListener("keydown", handler);
         return () => document.removeEventListener("keydown", handler);
     }, [resolvedOptions.findReplace]);
-
-    // Find & Replace highlight set for cell rendering
-    const findReplaceHighlights = useMemo<Set<string>>(() => {
-        if (!findReplaceOpen || findReplace.matches.length === 0) return new Set();
-        return new Set(findReplace.matches.map(m => `${m.rowIndex}:${m.columnId}`));
-    }, [findReplaceOpen, findReplace.matches]);
-
-    const findReplaceCurrentKey = findReplace.matches[findReplace.currentIndex]
-        ? `${findReplace.matches[findReplace.currentIndex].rowIndex}:${findReplace.matches[findReplace.currentIndex].columnId}`
-        : null;
-
-    const handleFindReplace = useCallback((match: FindReplaceMatch, newValue: string) => {
-        if (onFindReplace) {
-            const row = tableData.data[match.rowIndex] as Record<string, unknown>;
-            const oldValue = row[match.columnId];
-            const replaced = String(oldValue ?? "").replace(
-                findReplace.caseSensitive ? match.value : new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
-                newValue
-            );
-            onFindReplace(match.rowId, match.columnId, oldValue, replaced);
-            showToast(t.replaceSuccess(1), "success");
-        }
-    }, [onFindReplace, tableData.data, findReplace.caseSensitive, findReplace.query, t]);
-
-    const handleFindReplaceAll = useCallback((matches: FindReplaceMatch[], replacement: string) => {
-        if (onFindReplace) {
-            for (const match of matches) {
-                const row = tableData.data[match.rowIndex] as Record<string, unknown>;
-                const oldValue = row[match.columnId];
-                const replaced = String(oldValue ?? "").replace(
-                    findReplace.caseSensitive
-                        ? new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
-                        : new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
-                    replacement
-                );
-                onFindReplace(match.rowId, match.columnId, oldValue, replaced);
-            }
-            showToast(t.replaceSuccess(matches.length), "success");
-        }
-    }, [onFindReplace, tableData.data, findReplace.caseSensitive, findReplace.query, t]);
 
     // Faceted counts: merge from prop and server response
     const facetedCounts = facetedCountsProp ?? tableData.facetedCounts ?? null;
@@ -3952,20 +3907,6 @@ function DataTableInner<TData extends object>({
 
     // Tree data: build hierarchy from flat data
     const treeConfig = config;
-    const treeRows = useMemo(() => {
-        if (!treeConfig?.treeDataEnabled) return null;
-        const parentKey = treeConfig.treeDataParentKey ?? "parent_id";
-        const rows = allRows;
-        // Group rows by parent
-        const childMap = new Map<string | null, typeof rows>();
-        for (const row of rows) {
-            const parentId = String((row.original as Record<string, unknown>)[parentKey] ?? "null");
-            const parent = parentId === "null" || parentId === "undefined" || parentId === "" ? null : parentId;
-            if (!childMap.has(parent)) childMap.set(parent, []);
-            childMap.get(parent)!.push(row);
-        }
-        return childMap;
-    }, [treeConfig, allRows]);
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [showTrashed, setShowTrashed] = useState(false);
 
@@ -4132,6 +4073,51 @@ function DataTableInner<TData extends object>({
 
     const numericCols = useMemo(() => mergedColumns.filter(c => c.type === "number" || c.type === "currency" || c.type === "percentage"), [mergedColumns]);
     const findReplace = useFindReplace(resolvedOptions.findReplace && findReplaceOpen, tableData.data as Record<string, unknown>[], mergedColumns);
+
+    const openChart = useCallback(() => {
+        const firstNumCol = numericCols[0];
+        if (firstNumCol) setChartState({ columnId: firstNumCol.id, chartType: "bar" });
+    }, [numericCols]);
+
+    // Find & Replace highlight set for cell rendering
+    const findReplaceHighlights = useMemo<Set<string>>(() => {
+        if (!findReplaceOpen || findReplace.matches.length === 0) return new Set();
+        return new Set(findReplace.matches.map(m => `${m.rowIndex}:${m.columnId}`));
+    }, [findReplaceOpen, findReplace.matches]);
+
+    const findReplaceCurrentKey = findReplace.matches[findReplace.currentIndex]
+        ? `${findReplace.matches[findReplace.currentIndex].rowIndex}:${findReplace.matches[findReplace.currentIndex].columnId}`
+        : null;
+
+    const handleFindReplace = useCallback((match: FindReplaceMatch, newValue: string) => {
+        if (onFindReplace) {
+            const row = tableData.data[match.rowIndex] as Record<string, unknown>;
+            const oldValue = row[match.columnId];
+            const replaced = String(oldValue ?? "").replace(
+                findReplace.caseSensitive ? match.value : new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+                newValue
+            );
+            onFindReplace(match.rowId, match.columnId, oldValue, replaced);
+            showToast(t.replaceSuccess(1), "success");
+        }
+    }, [onFindReplace, tableData.data, findReplace.caseSensitive, findReplace.query, t]);
+
+    const handleFindReplaceAll = useCallback((matches: FindReplaceMatch[], replacement: string) => {
+        if (onFindReplace) {
+            for (const match of matches) {
+                const row = tableData.data[match.rowIndex] as Record<string, unknown>;
+                const oldValue = row[match.columnId];
+                const replaced = String(oldValue ?? "").replace(
+                    findReplace.caseSensitive
+                        ? new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
+                        : new RegExp(findReplace.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+                    replacement
+                );
+                onFindReplace(match.rowId, match.columnId, oldValue, replaced);
+            }
+            showToast(t.replaceSuccess(matches.length), "success");
+        }
+    }, [onFindReplace, tableData.data, findReplace.caseSensitive, findReplace.query, t]);
 
     const columnDefs = useMemo<ColumnDef<TData>[]>(() => {
         function makeLeafCol(col: DataTableColumnDef): ColumnDef<TData> {
@@ -4490,6 +4476,21 @@ function DataTableInner<TData extends object>({
         density === "compact" ? 32 : density === "spacious" ? 52 : 40,
         resolvedOptions.directionalOverscan
     );
+
+    const treeRows = useMemo(() => {
+        if (!treeConfig?.treeDataEnabled) return null;
+        const parentKey = treeConfig.treeDataParentKey ?? "parent_id";
+        const rows = allRows;
+        // Group rows by parent
+        const childMap = new Map<string | null, typeof rows>();
+        for (const row of rows) {
+            const parentId = String((row.original as Record<string, unknown>)[parentKey] ?? "null");
+            const parent = parentId === "null" || parentId === "undefined" || parentId === "" ? null : parentId;
+            if (!childMap.has(parent)) childMap.set(parent, []);
+            childMap.get(parent)!.push(row);
+        }
+        return childMap;
+    }, [treeConfig, allRows]);
 
     const filterColumns = useMemo(() => buildFilterColumns(mergedColumns), [mergedColumns]);
     const selectedRows = useMemo(() => table.getFilteredSelectedRowModel().rows.map((r) => r.original),
