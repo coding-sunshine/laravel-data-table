@@ -123,7 +123,7 @@ export function DataTableRowActions<TData>({
         <>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 p-0">
+                    <Button variant="ghost" className="h-9 w-9 p-0">
                         <span className="sr-only">{t.actions}</span>
                         <MoreHorizontal className="h-4 w-4" />
                     </Button>

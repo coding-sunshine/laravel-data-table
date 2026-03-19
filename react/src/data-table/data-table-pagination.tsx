@@ -113,6 +113,7 @@ export function DataTablePagination({
                             className="h-8 w-8"
                             onClick={() => onCursorChange?.(meta.prevCursor ?? null)}
                             disabled={!meta.prevCursor}
+                            aria-label="Previous page"
                         >
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
@@ -122,6 +123,7 @@ export function DataTablePagination({
                             className="h-8 w-8"
                             onClick={() => onCursorChange?.(meta.nextCursor ?? null)}
                             disabled={!meta.nextCursor}
+                            aria-label="Next page"
                         >
                             <ChevronRight className="h-4 w-4" />
                         </Button>
@@ -136,6 +138,7 @@ export function DataTablePagination({
                                 onClick={() => onPageChange(1)}
                                 onMouseEnter={() => meta.currentPage > 1 && prefetchPage(1)}
                                 disabled={meta.currentPage <= 1}
+                                aria-label="First page"
                             >
                                 <ChevronsLeft className="h-4 w-4" />
                             </Button>
@@ -147,6 +150,7 @@ export function DataTablePagination({
                             onClick={() => onPageChange(meta.currentPage - 1)}
                             onMouseEnter={() => meta.currentPage > 1 && prefetchPage(meta.currentPage - 1)}
                             disabled={meta.currentPage <= 1}
+                            aria-label="Previous page"
                         >
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
@@ -157,6 +161,7 @@ export function DataTablePagination({
                             onClick={() => onPageChange(meta.currentPage + 1)}
                             onMouseEnter={() => meta.currentPage < meta.lastPage && prefetchPage(meta.currentPage + 1)}
                             disabled={meta.currentPage >= meta.lastPage}
+                            aria-label="Next page"
                         >
                             <ChevronRight className="h-4 w-4" />
                         </Button>
@@ -168,6 +173,7 @@ export function DataTablePagination({
                                 onClick={() => onPageChange(meta.lastPage)}
                                 onMouseEnter={() => meta.currentPage < meta.lastPage && prefetchPage(meta.lastPage)}
                                 disabled={meta.currentPage >= meta.lastPage}
+                                aria-label="Last page"
                             >
                                 <ChevronsRight className="h-4 w-4" />
                             </Button>
