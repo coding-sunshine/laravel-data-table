@@ -51,8 +51,8 @@ trait HasAi
             return $override;
         }
 
-        // Fall back to parent app's Prism default model
-        $prismModel = config('prism.default_model');
+        // Fall back to parent app's Prism default model (check both config paths)
+        $prismModel = config('prism.default_model') ?? config('prism.defaults.model');
         if ($prismModel) {
             return $prismModel;
         }
