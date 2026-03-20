@@ -512,8 +512,8 @@ abstract class AbstractDataTable extends Data
         }
 
         $query = QueryBuilder::for($baseQuery, $request)
-            ->allowedFilters(static::tableAllowedFilters())
-            ->allowedSorts(static::tableAllowedSorts())
+            ->allowedFilters(...static::tableAllowedFilters())
+            ->allowedSorts(...static::tableAllowedSorts())
             ->defaultSort(static::tableDefaultSort());
 
         // Global search
