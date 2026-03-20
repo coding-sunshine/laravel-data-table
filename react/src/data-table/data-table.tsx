@@ -221,12 +221,16 @@ function useAutoSizer(enabled: boolean, containerRef: React.RefObject<HTMLElemen
     useEffect(() => {
         if (!enabled || !containerRef.current) return;
         const el = containerRef.current;
+        const parent = el.parentElement;
         const updateDimensions = () => {
-            setDimensions({ width: el.clientWidth, height: el.clientHeight });
+            // Use parent's width to avoid exceeding overflow-hidden container bounds
+            const width = parent ? parent.clientWidth : el.clientWidth;
+            setDimensions({ width, height: el.clientHeight });
         };
         updateDimensions();
         const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateDimensions) : null;
-        ro?.observe(el);
+        // Observe the parent so we resize when the container changes, not when the scroll area changes
+        if (parent) ro?.observe(parent); else ro?.observe(el);
         return () => { ro?.disconnect(); };
     }, [enabled, containerRef]);
 
@@ -5036,7 +5040,7 @@ function DataTableInner<TData extends object>({
                     <div ref={scrollShadowLeftRef} className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 z-20 bg-gradient-to-r from-background/80 to-transparent opacity-0 transition-opacity duration-150" aria-hidden="true" />
                     <div ref={scrollShadowRightRef} className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 z-20 bg-gradient-to-l from-background/80 to-transparent opacity-0 transition-opacity duration-150" aria-hidden="true" />
                     <div ref={virtualContainerRef} className={cn("overflow-x-auto", resolvedOptions.virtualScrolling && "max-h-[600px] overflow-y-auto")}
-                        style={autoSizerDimensions && autoSizerDimensions.width > 0 && autoSizerDimensions.height > 0 ? { width: autoSizerDimensions.width, height: autoSizerDimensions.height } : undefined}>
+                        style={autoSizerDimensions && autoSizerDimensions.height > 0 ? { height: autoSizerDimensions.height } : undefined}>
                         <Table ref={tableElementRef} style={resolvedOptions.columnResizing ? { width: table.getCenterTotalSize() } : undefined}
                             role="grid" aria-rowcount={meta.total} aria-colcount={table.getVisibleLeafColumns().length}>
                             <TableHeader className={cn(resolvedOptions.stickyHeader && "sticky top-0 z-10 bg-background shadow-[0_1px_3px_-1px_rgba(0,0,0,0.1)]")}>
