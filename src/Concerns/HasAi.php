@@ -89,8 +89,8 @@ trait HasAi
             return 'laravel-ai';
         }
 
-        // Prism PHP (fallback)
-        if (class_exists(\PrismPHP\Prism::class)) {
+        // Prism PHP (fallback) — supports both old (PrismPHP\Prism) and new (Prism\Prism\Prism) namespaces
+        if (class_exists(\Prism\Prism\Prism::class) || class_exists(\PrismPHP\Prism::class)) {
             return 'prism';
         }
 
@@ -181,7 +181,12 @@ trait HasAi
      */
     protected static function resolvePrism(): ?object
     {
-        if (! class_exists(\PrismPHP\Prism::class)) {
+        // Support both old (PrismPHP\Prism) and new (Prism\Prism\Prism) namespaces
+        $prismClass = class_exists(\Prism\Prism\Prism::class)
+            ? \Prism\Prism\Prism::class
+            : (class_exists(\PrismPHP\Prism::class) ? \PrismPHP\Prism::class : null);
+
+        if (! $prismClass) {
             return null;
         }
 
@@ -196,7 +201,7 @@ trait HasAi
             ?? config('prism.max_tokens')
             ?? 1024;
 
-        return \PrismPHP\Prism::text()
+        return $prismClass::text()
             ->using($model)
             ->withMaxTokens((int) $maxTokens);
     }
